@@ -249,6 +249,14 @@
     passed: true
     exercises: [forbidden_actions]
 
+- name: commit_described_in_chinese_passes
+  description: Prose after the command word is not a command; the verb must follow it directly.
+  set:
+    "claims[1].statement": git 仓库最近一次 commit 把 APP_MODE 改为 invalid。
+  expect:
+    passed: true
+    exercises: [forbidden_actions]
+
 - name: write_command_in_claim
   set:
     "claims[0].statement": Fix the manifest and publish it with git push origin main.

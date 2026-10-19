@@ -43,6 +43,8 @@ from bianque.gate.forbidden import _COMMANDS, find_write_commands
         ("kubectl certificate approve csr-1", ["kubectl certificate approve"]),
         ("git commit -am fix", ["git commit"]),
         ("git revert 3f9a1c2b7d4e", ["git revert"]),
+        ("git commit -m 3f9a1c2b", ["git commit"]),
+        ("git commit -am deadbeef1", ["git commit"]),
     ],
 )
 def test_write_commands_are_found(text: str, expected: list[str]) -> None:
@@ -69,6 +71,13 @@ def test_write_commands_are_found(text: str, expected: list[str]) -> None:
         "GitHub delete button",
         "kubectl get pods。然后 delete 它",
         "ad hoc delete",
+        "git 仓库最近一次 commit 把 APP_MODE 改为 invalid。",
+        "清单仓的 git 历史显示，最近一次 commit 修改了 APP_MODE",
+        "变更来自 git 仓库的一次 merge",
+        "使用kubectl获取信息后，再决定是否 scale",
+        "Check the state with kubectl. Delete nothing.",
+        "The change came through Helm. Upgrade notes are in the runbook.",
+        "kubectl, then delete",
     ],
 )
 def test_read_commands_and_prose_are_not_write_commands(text: str) -> None:
