@@ -1,0 +1,27 @@
+# Local demo state: generated kind config, local manifest repository, demo passwords
+.demo/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.import_linter_cache/
+*.egg-info/
+build/
+
+# Node
+node_modules/
+dist/
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
