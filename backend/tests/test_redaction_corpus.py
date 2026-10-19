@@ -449,3 +449,22 @@ def test_low_entropy_diagnostic_alone_still_preserved() -> None:
     s2 = f"hdr traceparent: {_LOW_ENTROPY_TRACEPARENT} ok"
     assert redact(s2) == s2
     assert detect(s2) == []
+
+
+# -- JSON: a quoted key before the separator, and key=value inside a JSON string ---
+def test_json_key_value_pair_is_redacted_and_detected() -> None:
+    value = "Js0n" + "Passw0rd!"
+    text = json.dumps({"user": "appuser", "pass" + "word": value})
+    assert detect(text)
+    out = redact(text)
+    assert value not in out
+    assert detect(out) == []
+    assert json.loads(out)["user"] == "appuser"
+
+
+def test_key_value_inside_json_string_keeps_json_valid() -> None:
+    value = "abc" + "123def456"
+    text = json.dumps({"command": "curl -H tok" + f"en={value} https://example.com"})
+    out = redact(text)
+    assert value not in out
+    assert json.loads(out)["command"].startswith("curl -H token=")

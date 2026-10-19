@@ -77,17 +77,20 @@ def _placeholder(kind: str) -> str:
 
 # -- Key-value: key=value / key: value, value optionally quoted -------------------
 # Only the value is masked; the key and separator are kept so log lines stay readable.
+# The key may be followed by its own closing quote, so JSON pairs such as
+# "password": "value" match as well as key=value.
 # The value has mutually exclusive branches, quoted forms first:
 #   1. quoted: mask everything up to the matching quote (spaces included);
-#   2. unquoted: mask the non-empty run up to a delimiter (whitespace , ; &).
+#   2. unquoted: mask the non-empty run up to a delimiter (whitespace , ; & or a quote),
+#      so a key=value inside a quoted string does not swallow the closing quote.
 # The key lookbehind (?<![A-Za-z0-9]) lets compound keys joined with _ or - match
 # (db_secret, x-api_key: the preceding separator is not alphanumeric), but does not cut
 # into unrelated words (in "mysecretive:secret" the "secret" after "my" is preceded by a
 # letter and is rejected).
-_KV_VALUE = r"""(?:"(?P<vdq>[^"\r\n]+)"|'(?P<vsq>[^'\r\n]+)'|(?P<vraw>(?:(?![\s,;&])[^\r\n])+))"""
+_KV_VALUE = r"""(?:"(?P<vdq>[^"\r\n]+)"|'(?P<vsq>[^'\r\n]+)'|(?P<vraw>(?:(?![\s,;&"'])[^\r\n])+))"""
 _kv_key_alt = "|".join(_SENSITIVE_KEYS)
 _KV_RE = re.compile(
-    rf"""(?<![A-Za-z0-9])(?P<key>(?:{_kv_key_alt}))(?P<sep>\s*[=:]\s*){_KV_VALUE}""",
+    rf"""(?<![A-Za-z0-9])(?P<key>(?:{_kv_key_alt}))(?P<sep>["']?\s*[=:]\s*){_KV_VALUE}""",
     re.IGNORECASE,
 )
 
