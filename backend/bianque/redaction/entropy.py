@@ -37,6 +37,7 @@ from __future__ import annotations
 import math
 import re
 from collections import Counter
+from collections.abc import Collection
 
 #: Minimum length of a high-entropy candidate token. Shorter tokens are never checked,
 #: so ordinary identifiers and short hashes are not misclassified.
@@ -108,6 +109,32 @@ def iter_diagnostic_structure_spans(text: str) -> list[tuple[int, int]]:
     return spans
 
 
+def iter_preserved_spans(
+    text: str, preserve: Collection[str], *, min_len: int = MIN_HIGH_ENTROPY_LEN
+) -> list[tuple[int, int]]:
+    """Return ``(start, end)`` of every occurrence of a preserved identifier.
+
+    Preserved identifiers are object names and commit hashes taken from a structured tool
+    result. A later tool call needs them verbatim, so the entropy fallback must not mask
+    them. Two restrictions keep the exemption from hiding a secret:
+
+    - Only identifiers of at least ``min_len`` characters count. A shorter one is never
+      masked by the entropy check anyway, and cutting it out of a candidate could split
+      a real secret into two pieces that are each too short to be checked.
+    - Only occurrences bounded by non-alphanumeric characters (or the text edges)
+      count, so an identifier that happens to appear inside a longer random run does
+      not cut that run apart.
+
+    Like the diagnostic spans, these spans are subtracted from each candidate and the
+    remaining pieces are still checked, so a secret glued to an identifier is masked.
+    """
+    spans: list[tuple[int, int]] = []
+    for ident in sorted({item for item in preserve if len(item) >= min_len}):
+        pattern = re.compile(rf"(?<![A-Za-z0-9]){re.escape(ident)}(?![A-Za-z0-9])")
+        spans.extend((m.start(), m.end()) for m in pattern.finditer(text))
+    return spans
+
+
 def _subtract_spans(start: int, end: int, cut: list[tuple[int, int]]) -> list[tuple[int, int]]:
     """Remove every overlapping diagnostic ``cut`` span from ``[start, end)``.
 
@@ -158,6 +185,7 @@ def iter_high_entropy_spans(
     *,
     threshold: float = DEFAULT_ENTROPY_THRESHOLD,
     min_len: int = MIN_HIGH_ENTROPY_LEN,
+    preserve: Collection[str] = (),
 ) -> list[tuple[int, int, str]]:
     """Scan text and return ``(start, end, token)`` for every high-entropy token.
 
@@ -183,8 +211,13 @@ def iter_high_entropy_spans(
     so the difference is the string itself and it is checked and masked as usual.
     Returned spans are sorted by start and non-overlapping, ready for in-place
     replacement.
+
+    Occurrences of ``preserve`` identifiers are subtracted the same way as diagnostic
+    structures (see ``iter_preserved_spans``).
     """
-    diagnostic = iter_diagnostic_structure_spans(text)
+    diagnostic = iter_diagnostic_structure_spans(text) + iter_preserved_spans(
+        text, preserve, min_len=min_len
+    )
     spans: list[tuple[int, int, str]] = []
     for m in _CANDIDATE_RE.finditer(text):
         for seg_start, seg_end in _subtract_spans(m.start(), m.end(), diagnostic):

@@ -16,7 +16,9 @@ Every request passes three gates before it reaches the provider:
    ``RedactedText``. This covers dynamic construction and deserialization.
 3. **Pre-send recheck**: the redaction engine's ``detect()`` runs on every message text
    and every tool call argument right before sending and raises on any residue. This
-   covers a ``RedactedText`` forged with the construction sentinel.
+   covers a ``RedactedText`` forged with the construction sentinel. The identifiers a
+   text carries in ``preserved`` are exempt from the entropy check only, exactly as
+   they were during redaction; the rules still apply.
 
 ## Around the provider call
 
@@ -244,7 +246,7 @@ class LLMGateway:
             RedactionResidueError: A text still contains sensitive content.
         """
         for index, item in enumerate(texts):
-            findings = self._engine.detect(item.text)
+            findings = self._engine.detect(item.text, preserve=item.preserved)
             if findings:
                 rules = sorted({finding.rule for finding in findings})
                 raise RedactionResidueError(
@@ -383,8 +385,13 @@ class LLMGateway:
             # Show the model its own call and why it was rejected, then ask again. When
             # it made no call, a placeholder call keeps the tool message well-formed.
             rejected = call or ToolCall(f"{function_name}-missing", function_name, "{}")
+            # The rejected arguments may name objects from earlier tool results; keep
+            # the identifiers the prompt already preserves.
+            preserve = frozenset().union(*(m.content.preserved for m in prompt.messages))
             conversation = conversation + (
-                assistant_message(completion.text, (rejected,), engine=self._engine),
+                assistant_message(
+                    completion.text, (rejected,), engine=self._engine, preserve=preserve
+                ),
                 tool_result_message(
                     rejected.id,
                     f"The arguments were rejected: {problem}. Call {function_name} again "

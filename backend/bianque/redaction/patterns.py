@@ -203,6 +203,9 @@ def _compile_internal_domain_rule(suffixes: Iterable[str]) -> Rule | None:
     )
 
 
+#: The private IP rule on its own, for callers that generalize addresses only.
+PRIVATE_IP_RULE = Rule("private-ip", _IPV4_RE, _rewrite_private_ip)
+
 #: Rules that do not depend on the suffix list. Order is rewrite priority: an earlier
 #: rule rewrites first, and later rules do not touch its output. DSN runs before
 #: key-value because the password@ part of a connection string has a different
@@ -212,7 +215,7 @@ _STATIC_RULES: tuple[Rule, ...] = (
     Rule("authorization", _AUTH_RE, _rewrite_auth),
     Rule("known-token", _KNOWN_TOKEN_RE, _rewrite_known_token),
     Rule("kv-secret", _KV_RE, _rewrite_kv),
-    Rule("private-ip", _IPV4_RE, _rewrite_private_ip),
+    PRIVATE_IP_RULE,
 )
 
 

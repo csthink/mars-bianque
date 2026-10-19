@@ -24,7 +24,7 @@ This module does not import the provider layer; only ``bianque.llm.gateway`` doe
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Final, Literal
 
@@ -46,17 +46,24 @@ class RedactedText:
     """Text that went through the redaction pipeline; built only by ``redact_for_llm()``.
 
     Frozen so that the text cannot be swapped back to the original after redaction.
+    ``preserved`` holds the identifiers the redaction left intact on purpose (object
+    names, commit hashes); the gateway's pre-send recheck exempts the same set. Only
+    ``text`` is sent and only ``text`` enters the request key.
     """
 
     text: str
+    preserved: frozenset[str]
 
-    def __init__(self, text: str, *, sentinel: object = None) -> None:
+    def __init__(
+        self, text: str, *, sentinel: object = None, preserved: Collection[str] = ()
+    ) -> None:
         """Check the construction sentinel, then store the text.
 
         Args:
             text: Text already rewritten by the redaction engine.
             sentinel: Construction sentinel. Must be this module's
                 ``_CONSTRUCTION_SENTINEL``.
+            preserved: The identifiers the redaction was told to keep.
 
         Raises:
             TypeError: The sentinel is missing, i.e. the text did not come from
@@ -67,6 +74,7 @@ class RedactedText:
                 "RedactedText can only be built by bianque.llm.redacted.redact_for_llm()"
             )
         object.__setattr__(self, "text", text)
+        object.__setattr__(self, "preserved", frozenset(preserved))
 
 
 @dataclass(frozen=True)
@@ -164,25 +172,34 @@ def build_redaction_engine(settings: Settings) -> RedactionEngine:
     return build_engine(parse_internal_domain_suffixes(settings.redact_internal_domains))
 
 
-def redact_for_llm(text: str, *, engine: RedactionEngine | None = None) -> RedactedText:
+def redact_for_llm(
+    text: str, *, engine: RedactionEngine | None = None, preserve: Collection[str] = ()
+) -> RedactedText:
     """Run text through the redaction pipeline; the only way to build ``RedactedText``.
 
     Args:
         text: Raw text (logs, events, configuration, diffs, user messages).
         engine: The redaction engine; when omitted, one is built from the current
             settings via ``get_settings()``.
+        preserve: Identifiers taken from structured tool results (object names,
+            commit hashes) that the entropy fallback must leave intact.
 
     Returns:
         The redacted text.
     """
     active = engine if engine is not None else build_redaction_engine(get_settings())
-    return RedactedText(active.redact(text), sentinel=_CONSTRUCTION_SENTINEL)
+    return RedactedText(
+        active.redact(text, preserve=preserve),
+        sentinel=_CONSTRUCTION_SENTINEL,
+        preserved=preserve,
+    )
 
 
 def redact_prompt_for_llm(
     messages: Iterable[tuple[MessageRole, str]],
     *,
     engine: RedactionEngine | None = None,
+    preserve: Collection[str] = (),
 ) -> RedactedPrompt:
     """Run a sequence of ``(role, raw text)`` pairs through the redaction pipeline.
 
@@ -190,18 +207,25 @@ def redact_prompt_for_llm(
         messages: ``(role, raw text)`` pairs.
         engine: The redaction engine; when omitted, one is built as in
             ``redact_for_llm()``.
+        preserve: Identifiers to keep, as in ``redact_for_llm()``.
 
     Returns:
         A chat message sequence whose contents are all redacted.
     """
     active = engine if engine is not None else build_redaction_engine(get_settings())
     return RedactedPrompt(
-        RedactedMessage(role, redact_for_llm(raw, engine=active)) for role, raw in messages
+        RedactedMessage(role, redact_for_llm(raw, engine=active, preserve=preserve))
+        for role, raw in messages
     )
 
 
 def redact_tool_call(
-    call_id: str, name: str, arguments: str, *, engine: RedactionEngine | None = None
+    call_id: str,
+    name: str,
+    arguments: str,
+    *,
+    engine: RedactionEngine | None = None,
+    preserve: Collection[str] = (),
 ) -> RedactedToolCall:
     """Run the arguments of a model tool call through the redaction pipeline.
 
@@ -210,15 +234,22 @@ def redact_tool_call(
         name: The function name.
         arguments: The raw JSON arguments.
         engine: The redaction engine; built as in ``redact_for_llm()`` when omitted.
+        preserve: Identifiers to keep, as in ``redact_for_llm()``.
 
     Returns:
         The tool call with redacted arguments.
     """
-    return RedactedToolCall(call_id, name, redact_for_llm(arguments, engine=engine))
+    return RedactedToolCall(
+        call_id, name, redact_for_llm(arguments, engine=engine, preserve=preserve)
+    )
 
 
 def tool_result_message(
-    call_id: str, result: str, *, engine: RedactionEngine | None = None
+    call_id: str,
+    result: str,
+    *,
+    engine: RedactionEngine | None = None,
+    preserve: Collection[str] = (),
 ) -> RedactedMessage:
     """Build the ``tool`` message that returns a result for the call ``call_id``.
 
@@ -226,15 +257,24 @@ def tool_result_message(
         call_id: The ID of the tool call being answered.
         result: The raw result text.
         engine: The redaction engine; built as in ``redact_for_llm()`` when omitted.
+        preserve: Identifiers to keep, as in ``redact_for_llm()``.
 
     Returns:
         The redacted tool message.
     """
-    return RedactedMessage("tool", redact_for_llm(result, engine=engine), tool_call_id=call_id)
+    return RedactedMessage(
+        "tool",
+        redact_for_llm(result, engine=engine, preserve=preserve),
+        tool_call_id=call_id,
+    )
 
 
 def assistant_message(
-    text: str, tool_calls: Sequence[ToolCall] = (), *, engine: RedactionEngine | None = None
+    text: str,
+    tool_calls: Sequence[ToolCall] = (),
+    *,
+    engine: RedactionEngine | None = None,
+    preserve: Collection[str] = (),
 ) -> RedactedMessage:
     """Build the assistant message that records a model reply in the conversation.
 
@@ -242,6 +282,8 @@ def assistant_message(
         text: The text the model returned.
         tool_calls: The tool calls the model made.
         engine: The redaction engine; built as in ``redact_for_llm()`` when omitted.
+        preserve: Identifiers to keep, as in ``redact_for_llm()``; tool call arguments
+            name the objects earlier results returned.
 
     Returns:
         The redacted assistant message, ready to be sent back with the next request.
@@ -249,9 +291,9 @@ def assistant_message(
     active = engine if engine is not None else build_redaction_engine(get_settings())
     return RedactedMessage(
         "assistant",
-        redact_for_llm(text, engine=active),
+        redact_for_llm(text, engine=active, preserve=preserve),
         tool_calls=tuple(
-            redact_tool_call(call.id, call.name, call.arguments, engine=active)
+            redact_tool_call(call.id, call.name, call.arguments, engine=active, preserve=preserve)
             for call in tool_calls
         ),
     )

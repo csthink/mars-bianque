@@ -22,7 +22,7 @@ and threshold parameters and never reads ``os.environ``.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass, field
 
 from bianque.redaction.entropy import (
@@ -30,6 +30,7 @@ from bianque.redaction.entropy import (
     MIN_HIGH_ENTROPY_LEN,
     iter_high_entropy_spans,
 )
+from bianque.redaction.patterns import PRIVATE_IP_RULE as _PRIVATE_IP_RULE
 from bianque.redaction.patterns import Rule, build_rules
 
 #: Number of leading and trailing characters a high-entropy placeholder keeps
@@ -69,26 +70,32 @@ class RedactionEngine:
         object.__setattr__(self, "_rules", build_rules(self.internal_domain_suffixes))
 
     # -- Rewriting -------------------------------------------------------------
-    def redact(self, text: str) -> str:
+    def redact(self, text: str, *, preserve: Collection[str] = ()) -> str:
         """Mask sensitive content while keeping diagnosable structure; idempotent.
 
         Pipeline: apply each rule in order (order is priority), then run the
         high-entropy fallback over the remaining long tokens. Each rule scans the text
         once, and its placeholders contain no triggering form, so rules do not stack on
         each other or on a second call.
+
+        Args:
+            text: The text to redact.
+            preserve: Identifiers (object names, commit hashes) the entropy fallback
+                must leave intact; the rules still apply to them.
         """
         if not text:
             return text
         for rule in self._rules:
             text = rule.regex.sub(rule.rewrite, text)
-        text = self._redact_high_entropy(text)
+        text = self._redact_high_entropy(text, preserve)
         return text
 
-    def _redact_high_entropy(self, text: str) -> str:
+    def _redact_high_entropy(self, text: str, preserve: Collection[str]) -> str:
         spans = iter_high_entropy_spans(
             text,
             threshold=self.entropy_threshold,
             min_len=self.min_high_entropy_len,
+            preserve=preserve,
         )
         if not spans:
             return text
@@ -105,14 +112,19 @@ class RedactionEngine:
         return "".join(out)
 
     # -- Detection (read-only, no rewriting) -----------------------------------
-    def detect(self, text: str) -> list[Finding]:
+    def detect(self, text: str, *, preserve: Collection[str] = ()) -> list[Finding]:
         """Locate every sensitive hit without rewriting.
 
         A non-empty result means the text still contains sensitive content. Uses the
         same rules and entropy settings as ``redact``, so an output check can reject on
         any hit. For redacted text ``detect(redact(x))`` is empty: a placeholder may be
         matched by a rule again, but its rewrite is a no-op (identical to the matched
-        text) and is filtered out, so it is not reported as leftover content.
+        text) and is filtered out, so it is not reported as leftover content. The same
+        holds for ``detect(redact(x, preserve=p), preserve=p)``.
+
+        Args:
+            text: The text to check.
+            preserve: Identifiers that do not count as high-entropy residue.
         """
         findings: list[Finding] = []
         for rule in self._rules:
@@ -131,6 +143,7 @@ class RedactionEngine:
             text,
             threshold=self.entropy_threshold,
             min_len=self.min_high_entropy_len,
+            preserve=preserve,
         ):
             if _is_within_existing_placeholder(text, start, end):
                 continue
@@ -161,18 +174,31 @@ def _is_within_existing_placeholder(text: str, start: int, end: int) -> bool:
 _DEFAULT_ENGINE = RedactionEngine()
 
 
-def redact(text: str, *, engine: RedactionEngine | None = None) -> str:
+def redact(
+    text: str, *, engine: RedactionEngine | None = None, preserve: Collection[str] = ()
+) -> str:
     """Module-level rewriting helper.
 
     Uses the default engine with no internal domain suffixes; pass a configured
     ``engine`` when suffixes are needed.
     """
-    return (engine or _DEFAULT_ENGINE).redact(text)
+    return (engine or _DEFAULT_ENGINE).redact(text, preserve=preserve)
 
 
-def detect(text: str, *, engine: RedactionEngine | None = None) -> list[Finding]:
+def detect(
+    text: str, *, engine: RedactionEngine | None = None, preserve: Collection[str] = ()
+) -> list[Finding]:
     """Module-level detection helper (read-only)."""
-    return (engine or _DEFAULT_ENGINE).detect(text)
+    return (engine or _DEFAULT_ENGINE).detect(text, preserve=preserve)
+
+
+def generalize_private_ips(text: str) -> str:
+    """Generalize RFC 1918 addresses only, keeping the first two octets (``10.244.x.x``).
+
+    This is the private IP rule of the engine on its own, for content that is stored
+    rather than sent to the model, such as a recorded evidence pack.
+    """
+    return _PRIVATE_IP_RULE.regex.sub(_PRIVATE_IP_RULE.rewrite, text)
 
 
 def build_engine(
