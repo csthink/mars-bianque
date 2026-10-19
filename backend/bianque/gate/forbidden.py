@@ -1,11 +1,14 @@
 """Recognize write commands in text.
 
-A command is a command word (``kubectl``, ``helm``, ``git``) followed by its verb. The
-text is split into command segments at shell separators and quotes, each segment into
-words; after a command word, options are skipped (with their value for the options that
-take one) and the first other word is the verb. Words after the command word that are
-not a write verb, such as ``kubectl get`` or the prose in "use kubectl to delete", are
-not write commands.
+A command is a command word (``kubectl``, ``oc``, ``helm``, ``git``) followed by its
+verb. A command word is found wherever it is not part of a longer ASCII word, so text,
+Markdown emphasis or full-width punctuation around it do not hide it (``执行kubectl``,
+``**kubectl delete**``). The words after it are ASCII tokens; any other character
+separates them, and a quoted value stays inside its token (``--context="kind"``). A
+command ends at a shell separator or a full-width sentence end. Options are skipped,
+with their value for the options that take one, and the first other word is the verb.
+Words that are not a write verb, such as ``kubectl get`` or the prose in "use kubectl
+to delete", are not write commands.
 
 These patterns are domain knowledge: a new domain changes this table.
 """
@@ -21,56 +24,71 @@ class _Command:
     verbs: frozenset[str]
     #: Verbs that are write commands only with one of these sub-verbs.
     sub_verbs: dict[str, frozenset[str]]
-    #: Options before the verb that take a separate value.
+    #: Options that take a separate value.
     value_options: frozenset[str]
 
 
-_COMMANDS: dict[str, _Command] = {
-    "kubectl": _Command(
-        verbs=frozenset(
-            {
-                "apply",
-                "create",
-                "replace",
-                "patch",
-                "edit",
-                "delete",
-                "scale",
-                "autoscale",
-                "set",
-                "label",
-                "annotate",
-                "taint",
-                "drain",
-                "cordon",
-                "uncordon",
-                "expose",
-                "run",
-                "exec",
-                "cp",
-            }
-        ),
-        sub_verbs={"rollout": frozenset({"undo", "restart", "pause", "resume"})},
-        value_options=frozenset(
-            {
-                "-n",
-                "--namespace",
-                "--context",
-                "--cluster",
-                "--user",
-                "--kubeconfig",
-                "-s",
-                "--server",
-                "--token",
-                "--as",
-                "--as-group",
-                "--request-timeout",
-                "-l",
-                "--selector",
-                "-v",
-            }
-        ),
+_KUBECTL = _Command(
+    verbs=frozenset(
+        {
+            "apply",
+            "create",
+            "replace",
+            "patch",
+            "edit",
+            "delete",
+            "scale",
+            "autoscale",
+            "set",
+            "label",
+            "annotate",
+            "taint",
+            "drain",
+            "cordon",
+            "uncordon",
+            "expose",
+            "run",
+            "exec",
+            "cp",
+            "debug",
+        }
     ),
+    sub_verbs={
+        "rollout": frozenset({"undo", "restart", "pause", "resume"}),
+        "certificate": frozenset({"approve", "deny"}),
+    },
+    value_options=frozenset(
+        {
+            "-n",
+            "--namespace",
+            "--context",
+            "--cluster",
+            "--user",
+            "--kubeconfig",
+            "-s",
+            "--server",
+            "--token",
+            "--as",
+            "--as-group",
+            "--as-uid",
+            "--request-timeout",
+            "--cache-dir",
+            "--certificate-authority",
+            "--client-certificate",
+            "--client-key",
+            "--tls-server-name",
+            "--username",
+            "--password",
+            "-l",
+            "--selector",
+            "-v",
+        }
+    ),
+)
+
+_COMMANDS: dict[str, _Command] = {
+    "kubectl": _KUBECTL,
+    "oc": _KUBECTL,
     "helm": _Command(
         verbs=frozenset({"install", "upgrade", "uninstall", "delete", "rollback"}),
         sub_verbs={},
@@ -83,26 +101,41 @@ _COMMANDS: dict[str, _Command] = {
     ),
 }
 
-#: Shell separators, quotes and brackets end a command.
-_SEGMENT_END = re.compile(r"[;|&`'\"()\[\]{}<>\n]")
+#: A command word that is not part of a longer ASCII word; a path prefix is allowed.
+_COMMAND_WORD = re.compile(
+    r"(?<![A-Za-z0-9_.-])(?:[A-Za-z0-9_./-]*/)?(kubectl|oc|helm|git)(?![A-Za-z0-9_-])",
+    re.IGNORECASE,
+)
 
-#: Punctuation a sentence may attach to the last word of a command.
-_TRAILING = ".,:!?"
+#: An ASCII word; quoted parts belong to the word they are attached to.
+_TOKEN = re.compile(r"""(?:[A-Za-z0-9_./=:@+%,~-]|"[^"\n]*"|'[^'\n]*')+""")
+
+#: Shell separators and full-width sentence ends end a command.
+_COMMAND_END = re.compile(r"[;|&`\n。；！？]")
+
+#: Punctuation a sentence may attach to a word.
+_TRAILING = ".,:"
+
+#: ``git commit`` followed by a commit hash names a commit; it is not a command, since
+#: ``git commit`` takes no commit argument.
+_COMMIT_HASH = re.compile(r"[0-9a-f]{7,40}")
 
 
-def _words(segment: str, start: int, command: _Command) -> list[str]:
+def _words(rest: str, command: _Command) -> list[str]:
     """Return the verb and the next word after a command word, skipping options."""
-    tokens = segment.split()[start:]
     words: list[str] = []
     skip_value = False
-    for token in tokens:
+    for token in _TOKEN.findall(_COMMAND_END.split(rest, maxsplit=1)[0]):
+        word = token.rstrip(_TRAILING)
+        if not word:
+            continue
         if skip_value:
             skip_value = False
             continue
-        if token.startswith("-"):
-            skip_value = "=" not in token and token in command.value_options
+        if word.startswith("-"):
+            skip_value = "=" not in word and word in command.value_options
             continue
-        words.append(token.rstrip(_TRAILING).lower())
+        words.append(word)
         if len(words) == 2:
             break
     return words
@@ -119,20 +152,18 @@ def find_write_commands(text: str) -> list[str]:
         has no write command.
     """
     hits: list[str] = []
-    for segment in _SEGMENT_END.split(text):
-        tokens = segment.split()
-        for index, token in enumerate(tokens):
-            name = token.rsplit("/", 1)[-1].lower()
-            command = _COMMANDS.get(name)
-            if command is None:
+    for match in _COMMAND_WORD.finditer(text):
+        name = match.group(1).lower()
+        command = _COMMANDS[name]
+        words = _words(text[match.end() :], command)
+        if not words:
+            continue
+        verb = words[0].lower()
+        following = words[1] if len(words) > 1 else ""
+        if verb in command.verbs:
+            if name == "git" and verb == "commit" and _COMMIT_HASH.fullmatch(following):
                 continue
-            words = _words(segment, index + 1, command)
-            if not words:
-                continue
-            verb = words[0]
-            if verb in command.verbs:
-                hits.append(f"{name} {verb}")
-            elif verb in command.sub_verbs and len(words) > 1:
-                if words[1] in command.sub_verbs[verb]:
-                    hits.append(f"{name} {verb} {words[1]}")
+            hits.append(f"{name} {verb}")
+        elif following.lower() in command.sub_verbs.get(verb, frozenset()):
+            hits.append(f"{name} {verb} {following.lower()}")
     return hits

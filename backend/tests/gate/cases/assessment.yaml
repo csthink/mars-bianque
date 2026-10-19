@@ -17,6 +17,13 @@
     passed: false
     violations: [[schema, sufficient, missing]]
 
+- name: verdict_written_as_text
+  set:
+    "sufficient": "yes"
+  expect:
+    passed: false
+    violations: [[schema, sufficient, bool_type]]
+
 - name: write_command_in_reason
   set:
     "reason": Fix it with kubectl -n demo-s1 set env deployment/s1-app APP_MODE=normal.

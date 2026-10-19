@@ -22,7 +22,7 @@ class FailedCall:
     tool: str
     domain: str
     error: str
-    caps_confidence: bool = False
+    caps_confidence: bool
 
 
 @dataclass(frozen=True)

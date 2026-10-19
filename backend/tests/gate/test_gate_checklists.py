@@ -123,3 +123,11 @@ def _strings(data: object) -> list[str]:
     if isinstance(data, list):
         return [s for value in data for s in _strings(value)]
     return []
+
+
+def test_an_invented_key_does_not_reach_the_result() -> None:
+    key = "".join(["ghp_", "ABCDEFabcdef0123456789", "ABCDEFabcd"])
+    output = {"findings": [{"statement": "x", "citations": ["ev_0000000001"], key: 1}]}
+    result = validate(OutputType.FINDINGS, output, GateContext())
+    assert [(v.path, v.code) for v in result.violations] == [("findings[0].*", "extra_forbidden")]
+    assert "ABCDEFabcdef0123456789" not in json.dumps(result.to_json())

@@ -63,14 +63,30 @@
     "timeline[0].time": yesterday
   expect:
     passed: false
-    violations: [[schema, "timeline[0].time", datetime_from_date_parsing]]
+    violations: [[schema, "timeline[0].time", datetime_parsing]]
 
 - name: unexpected_field
+  description: A key the model invented is shown as "*", since it may hold any text.
   set:
     "verdict": done
   expect:
     passed: false
-    violations: [[schema, verdict, extra_forbidden]]
+    violations: [[schema, "*", extra_forbidden]]
+
+- name: number_written_where_text_belongs
+  description: The schema is strict, like the exported JSON Schema.
+  set:
+    "followup_questions": [42]
+  expect:
+    passed: false
+    violations: [[schema, "followup_questions[0]", string_type]]
+
+- name: timeline_time_as_a_number
+  set:
+    "timeline[0].time": 1760875080
+  expect:
+    passed: false
+    violations: [[schema, "timeline[0].time", datetime_type]]
 
 - name: other_schema_version
   set:
@@ -144,6 +160,13 @@
       - [citation_integrity, "suggestions[0].citations[0]", unknown_id]
       - [knowledge_boundary, "suggestions[0].citations[0]", knowledge_outside_references]
 
+- name: knowledge_id_touching_chinese_text
+  set:
+    "claims[1].statement": 根据手册kn_0f1e2d3c4b5a，APP_MODE 必须合法。
+  expect:
+    passed: false
+    violations: [[knowledge_boundary, "claims[1].statement", knowledge_outside_references]]
+
 - name: knowledge_id_in_claim_text
   set:
     "claims[1].statement": The runbook kn_0f1e2d3c4b5a says APP_MODE must be valid.
@@ -203,6 +226,28 @@
   expect:
     passed: false
     violations: [[forbidden_actions, summary, "write_command:kubectl delete"]]
+
+- name: write_command_in_markdown_emphasis
+  set:
+    "summary": Fix it with **kubectl delete pod s1-app-7d9f8c6b5-x2k4p**.
+  expect:
+    passed: false
+    violations: [[forbidden_actions, summary, "write_command:kubectl delete"]]
+
+- name: write_command_touching_chinese_text
+  set:
+    "summary": 可执行：kubectl delete pod s1-app-7d9f8c6b5-x2k4p 以重启。
+  expect:
+    passed: false
+    violations: [[forbidden_actions, summary, "write_command:kubectl delete"]]
+
+- name: commit_named_in_prose_passes
+  description: '"git commit <hash>" names a commit; git commit takes no commit argument.'
+  set:
+    "claims[1].statement": The git commit 3f9a1c2b7d4e5f60718293a4b5c6d7e8f9012345 set APP_MODE to invalid.
+  expect:
+    passed: true
+    exercises: [forbidden_actions]
 
 - name: write_command_in_claim
   set:

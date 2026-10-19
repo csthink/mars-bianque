@@ -17,7 +17,7 @@
     "findings[0].conclusion": config_error
   expect:
     passed: false
-    violations: [[schema, "findings[0].conclusion", extra_forbidden]]
+    violations: [[schema, "findings[0].*", extra_forbidden]]
 
 - name: finding_without_citation
   set:

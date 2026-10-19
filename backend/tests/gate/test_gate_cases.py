@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 from gate_cases import GateCase, load_cases
 
-from bianque.gate import CHECKLISTS, validate
+from bianque.gate import CHECKLISTS, checklist, validate
 
 CASES = load_cases()
 
@@ -35,6 +35,8 @@ def test_every_validator_has_rejected_and_passing_cases() -> None:
     assert len(VALIDATORS) == 7
     rejecting = {validator for case in CASES for validator, _, _ in case.violations}
     exercising = {validator for case in CASES if case.passed for validator in case.exercises}
+    for case in CASES:
+        assert case.exercises <= set(checklist(case.output_type)), case.id
     assert rejecting == VALIDATORS
     assert exercising == VALIDATORS
 

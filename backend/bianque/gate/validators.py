@@ -7,7 +7,9 @@ None of them calls a model.
 
 from __future__ import annotations
 
+import json
 import re
+import typing
 from collections.abc import Callable, Iterator, Mapping
 from typing import Any
 
@@ -22,8 +24,35 @@ from bianque.gate.text import iter_strings, join, top_key
 #: A validator: the output type, the output as JSON and the context, to violations.
 Validator = Callable[[OutputType, Mapping[str, Any], GateContext], list[Violation]]
 
-#: Anything that looks like a knowledge ID.
-KNOWLEDGE_ID_RE = re.compile(r"\bkn_[0-9A-Za-z]+")
+#: Anything that looks like a knowledge ID, also when it touches non-ASCII text
+#: (``手册kn_…``): ``\b`` would see no boundary between a CJK character and ``k``.
+KNOWLEDGE_ID_RE = re.compile(r"(?<![0-9A-Za-z_])kn_[0-9A-Za-z]+")
+
+
+def _field_names(model: type[BaseModel], seen: set[str]) -> set[str]:
+    if model.__name__ in seen:
+        return set()
+    seen.add(model.__name__)
+    names = set(model.model_fields)
+    for field in model.model_fields.values():
+        for nested in _models_in(field.annotation):
+            names |= _field_names(nested, seen)
+    return names
+
+
+def _models_in(annotation: Any) -> Iterator[type[BaseModel]]:
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        yield annotation
+    for arg in typing.get_args(annotation):
+        yield from _models_in(arg)
+
+
+#: Every field name of every schema. A schema violation path keeps only these: a key the
+#: model invented may hold any text, including a secret, and the path is stored and sent
+#: back to the model.
+_SCHEMA_FIELDS = frozenset(
+    name for model in SCHEMAS.values() for name in _field_names(model, set())
+)
 
 
 def check_schema(
@@ -32,15 +61,21 @@ def check_schema(
     """Parse an output with the schema of its type.
 
     The ``schema`` validator differs from the others: it runs first and produces the
-    parsed object the others check. Violations carry the pydantic error type only, never
-    the input value.
+    parsed object the others check. The output is parsed as JSON in strict mode, the way
+    the exported JSON Schema reads it: ``"yes"`` is not a boolean and a number is not a
+    timestamp. Violations carry the pydantic error type and a path of schema field names
+    only, never the input value or a key the model invented.
 
     Returns:
         The parsed output, or ``None`` and the violations.
     """
     data = output.model_dump(mode="json") if isinstance(output, BaseModel) else output
     try:
-        return SCHEMAS[output_type].model_validate(data), []
+        text = json.dumps(data)
+    except (TypeError, ValueError):
+        return None, [Violation("schema", "(root)", "not_json")]
+    try:
+        return SCHEMAS[output_type].model_validate_json(text, strict=True), []
     except ValidationError as error:
         violations = [
             Violation("schema", _loc_path(item["loc"]) or "(root)", item["type"])
@@ -52,7 +87,7 @@ def check_schema(
 def _loc_path(loc: tuple[int | str, ...]) -> str:
     path = ""
     for part in loc:
-        path = join(path, part)
+        path = join(path, part if isinstance(part, int) or part in _SCHEMA_FIELDS else "*")
     return path
 
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from bianque.gate.forbidden import find_write_commands
+from bianque.gate.forbidden import _COMMANDS, find_write_commands
 
 
 @pytest.mark.parametrize(
@@ -29,6 +29,20 @@ from bianque.gate.forbidden import find_write_commands
         ("First kubectl get pods; then kubectl delete pod x", ["kubectl delete"]),
         ("KUBECTL DELETE POD X", ["kubectl delete"]),
         ("Restart it with kubectl delete.", ["kubectl delete"]),
+        ("**kubectl delete pod x**", ["kubectl delete"]),
+        ("*kubectl delete pod x*", ["kubectl delete"]),
+        ("执行kubectl delete pod x", ["kubectl delete"]),
+        ("（kubectl delete pod x）", ["kubectl delete"]),
+        ("可执行：kubectl scale deploy/x --replicas=0", ["kubectl scale"]),
+        ("运行 kubectl delete，然后观察", ["kubectl delete"]),
+        ("kubectl delete—then", ["kubectl delete"]),
+        ('kubectl -n "demo-s1" delete pod x', ["kubectl delete"]),
+        ('kubectl --context="kind" apply -f a.yaml', ["kubectl apply"]),
+        ("kubectl --cache-dir /tmp/kube delete pod x", ["kubectl delete"]),
+        ("oc delete pod x", ["oc delete"]),
+        ("kubectl certificate approve csr-1", ["kubectl certificate approve"]),
+        ("git commit -am fix", ["git commit"]),
+        ("git revert 3f9a1c2b7d4e", ["git revert"]),
     ],
 )
 def test_write_commands_are_found(text: str, expected: list[str]) -> None:
@@ -51,7 +65,27 @@ def test_write_commands_are_found(text: str, expected: list[str]) -> None:
         "The deployment was scaled by the autoscaler.",
         "kubectl",
         "",
+        "The git commit 3f9a1c2b7d4e changed APP_MODE.",
+        "GitHub delete button",
+        "kubectl get pods。然后 delete 它",
+        "ad hoc delete",
     ],
 )
 def test_read_commands_and_prose_are_not_write_commands(text: str) -> None:
     assert find_write_commands(text) == []
+
+
+def _table() -> list[str]:
+    commands = []
+    for name, command in _COMMANDS.items():
+        commands += [f"{name} {verb}" for verb in command.verbs]
+        for verb, subs in command.sub_verbs.items():
+            commands += [f"{name} {verb} {sub}" for sub in subs]
+    return sorted(commands)
+
+
+@pytest.mark.parametrize("command", _table())
+def test_every_verb_of_the_table_is_found(command: str) -> None:
+    name, rest = command.split(" ", 1)
+    option = "--namespace=demo-s1" if name != "git" else "-C /repo"
+    assert find_write_commands(f"Then run `{name} {option} {rest} target`.") == [command]
