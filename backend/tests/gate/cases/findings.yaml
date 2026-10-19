@@ -1,0 +1,60 @@
+# Findings cases on top of bases/findings.yaml (format: report.yaml).
+- name: findings_pass
+  expect:
+    passed: true
+    exercises: [schema, citation_integrity, knowledge_boundary, forbidden_actions, redaction_residue]
+
+- name: no_findings_pass
+  description: A step may find nothing; its evidence is kept anyway.
+  set:
+    "findings": []
+  expect:
+    passed: true
+    exercises: [schema]
+
+- name: unexpected_field
+  set:
+    "findings[0].conclusion": config_error
+  expect:
+    passed: false
+    violations: [[schema, "findings[0].conclusion", extra_forbidden]]
+
+- name: finding_without_citation
+  set:
+    "findings[0].citations": []
+  expect:
+    passed: false
+    violations: [[citation_integrity, "findings[0]", missing_citation]]
+
+- name: finding_cites_nonexistent_evidence
+  set:
+    "findings[0].citations": [ev_ffffffffff]
+  expect:
+    passed: false
+    violations: [[citation_integrity, "findings[0].citations[0]", unknown_id]]
+
+- name: finding_cites_knowledge
+  set:
+    "findings[0].citations": [kn_0f1e2d3c4b5a]
+  expect:
+    passed: false
+    violations:
+      - [citation_integrity, "findings[0].citations[0]", unknown_id]
+      - [knowledge_boundary, "findings[0].citations[0]", knowledge_outside_references]
+
+- name: write_command_in_finding
+  set:
+    "findings[0].statement": "The release can be reverted with helm rollback s1-app 1."
+  expect:
+    passed: false
+    violations: [[forbidden_actions, "findings[0].statement", "write_command:helm rollback"]]
+
+- name: unredacted_secret
+  set:
+    "findings[0].statement": "The container printed db_secret={secret} before exiting."
+  secret_parts: [Sup3rSecret, V@lue]
+  expect:
+    passed: false
+    violations:
+      - [redaction_residue, "findings[0].statement", "residue:high-entropy"]
+      - [redaction_residue, "findings[0].statement", "residue:kv-secret"]

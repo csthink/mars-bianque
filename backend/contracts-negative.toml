@@ -16,7 +16,9 @@
 
 # import-linter reads the [tool.importlinter] table even from a standalone file.
 [tool.importlinter]
-root_packages = ["bianque_negative_fixture"]
+# bianque is a root package as well, so that a forbidden module may be one of its
+# subpackages (an external forbidden module must be a top-level package).
+root_packages = ["bianque_negative_fixture", "bianque"]
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
@@ -30,6 +32,12 @@ name = "Negative: Only the real Kubernetes backend imports the Kubernetes client
 type = "forbidden"
 source_modules = ["bianque_negative_fixture"]
 forbidden_modules = ["kubernetes_asyncio"]
+
+[[tool.importlinter.contracts]]
+name = "Negative: The evidence gate does not import the model gateway"
+type = "forbidden"
+source_modules = ["bianque_negative_fixture"]
+forbidden_modules = ["bianque.llm"]
 
 [[tool.importlinter.contracts]]
 name = "Negative: Only the API package imports FastAPI"

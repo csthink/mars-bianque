@@ -1,0 +1,35 @@
+# Assessment cases on top of bases/assessment.yaml (format: report.yaml).
+- name: assessment_passes
+  expect:
+    passed: true
+    exercises: [schema, forbidden_actions, redaction_residue]
+
+- name: unknown_category
+  set:
+    "hypothesis_category": network
+  expect:
+    passed: false
+    violations: [[schema, hypothesis_category, literal_error]]
+
+- name: missing_verdict
+  delete: [sufficient]
+  expect:
+    passed: false
+    violations: [[schema, sufficient, missing]]
+
+- name: write_command_in_reason
+  set:
+    "reason": Fix it with kubectl -n demo-s1 set env deployment/s1-app APP_MODE=normal.
+  expect:
+    passed: false
+    violations: [[forbidden_actions, reason, "write_command:kubectl set"]]
+
+- name: unredacted_bearer_token
+  set:
+    "missing": ["The request that sent Authorization: Bearer {secret}"]
+  secret_parts: [eyJ, hbGciOi., JzdWIiOiIxMjM0., SflKxwRJSMeKKF2QT4]
+  expect:
+    passed: false
+    violations:
+      - [redaction_residue, "missing[0]", "residue:authorization"]
+      - [redaction_residue, "missing[0]", "residue:kv-secret"]

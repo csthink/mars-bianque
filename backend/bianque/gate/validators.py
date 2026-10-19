@@ -1,0 +1,232 @@
+"""The seven validators of the evidence gate.
+
+Each validator except ``schema`` is a pure function of the output, as the JSON object of
+its parsed schema model, and the gate context, and returns the rules the output breaks.
+None of them calls a model.
+"""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Callable, Iterator, Mapping
+from typing import Any
+
+from pydantic import BaseModel, ValidationError
+
+from bianque.gate.context import GateContext
+from bianque.gate.forbidden import find_write_commands
+from bianque.gate.result import Violation
+from bianque.gate.schemas import SCHEMAS, OutputType
+from bianque.gate.text import iter_strings, join, top_key
+
+#: A validator: the output type, the output as JSON and the context, to violations.
+Validator = Callable[[OutputType, Mapping[str, Any], GateContext], list[Violation]]
+
+#: Anything that looks like a knowledge ID.
+KNOWLEDGE_ID_RE = re.compile(r"\bkn_[0-9A-Za-z]+")
+
+
+def check_schema(
+    output_type: OutputType, output: Mapping[str, Any] | BaseModel
+) -> tuple[BaseModel | None, list[Violation]]:
+    """Parse an output with the schema of its type.
+
+    The ``schema`` validator differs from the others: it runs first and produces the
+    parsed object the others check. Violations carry the pydantic error type only, never
+    the input value.
+
+    Returns:
+        The parsed output, or ``None`` and the violations.
+    """
+    data = output.model_dump(mode="json") if isinstance(output, BaseModel) else output
+    try:
+        return SCHEMAS[output_type].model_validate(data), []
+    except ValidationError as error:
+        violations = [
+            Violation("schema", _loc_path(item["loc"]) or "(root)", item["type"])
+            for item in error.errors(include_url=False, include_input=False)
+        ]
+        return None, violations
+
+
+def _loc_path(loc: tuple[int | str, ...]) -> str:
+    path = ""
+    for part in loc:
+        path = join(path, part)
+    return path
+
+
+# -- citation_integrity -----------------------------------------------------------
+
+
+def _cited_items(output_type: OutputType, data: Mapping[str, Any]) -> Iterator[tuple[str, bool]]:
+    """Yield ``(path, needs_citation)`` for every item of an output that has citations."""
+    if output_type is OutputType.REPORT:
+        for index, _ in enumerate(data["timeline"]):
+            yield join("timeline", index), True
+        yield "root_cause", data["root_cause"]["status"] == "identified"
+        for index, _ in enumerate(data["claims"]):
+            yield join("claims", index), True
+        for index, _ in enumerate(data["suggestions"]):
+            yield join("suggestions", index), True
+    elif output_type is OutputType.FOLLOWUP_ANSWER:
+        for index, segment in enumerate(data["segments"]):
+            yield join("segments", index), not segment["insufficient_evidence"]
+    elif output_type is OutputType.FINDINGS:
+        for index, _ in enumerate(data["findings"]):
+            yield join("findings", index), True
+
+
+def _get(data: Mapping[str, Any], path: str) -> Any:
+    value: Any = data
+    for part in re.findall(r"[^.\[\]]+", path):
+        value = value[int(part)] if part.isdigit() else value[part]
+    return value
+
+
+def citation_integrity(
+    output_type: OutputType, data: Mapping[str, Any], context: GateContext
+) -> list[Violation]:
+    """Every cited ID belongs to the investigation, and every claim-like item cites one.
+
+    A follow-up answer may cite suggestion IDs as well as evidence IDs.
+    """
+    known = context.evidence_ids
+    if output_type is OutputType.FOLLOWUP_ANSWER:
+        known = known | context.suggestion_ids
+    violations = []
+    for path, needs_citation in _cited_items(output_type, data):
+        citations = _get(data, path)["citations"]
+        if needs_citation and not citations:
+            violations.append(Violation("citation_integrity", path, "missing_citation"))
+        for index, cited in enumerate(citations):
+            if cited not in known:
+                violations.append(
+                    Violation(
+                        "citation_integrity", join(join(path, "citations"), index), "unknown_id"
+                    )
+                )
+    return violations
+
+
+# -- knowledge_boundary -----------------------------------------------------------
+
+#: The field of each output type where knowledge IDs belong.
+_KNOWLEDGE_FIELD = {
+    OutputType.REPORT: "references",
+    OutputType.FOLLOWUP_ANSWER: "references",
+    OutputType.PLAN: "knowledge_refs",
+}
+
+
+def _referenced_knowledge(
+    output_type: OutputType, data: Mapping[str, Any]
+) -> Iterator[tuple[str, str]]:
+    field = _KNOWLEDGE_FIELD.get(output_type)
+    if field is None:
+        return
+    for index, item in enumerate(data[field]):
+        if output_type is OutputType.REPORT:
+            yield join(join(field, index), "knowledge_id"), item["knowledge_id"]
+        else:
+            yield join(field, index), item
+
+
+def knowledge_boundary(
+    output_type: OutputType, data: Mapping[str, Any], context: GateContext
+) -> list[Violation]:
+    """Knowledge IDs appear only where references belong, and only known ones.
+
+    Knowledge is not evidence: a ``kn_`` ID in a citation, a statement or any other field
+    is a violation, and so is a referenced knowledge ID that the model was not given.
+    """
+    field = _KNOWLEDGE_FIELD.get(output_type)
+    violations = [
+        Violation("knowledge_boundary", path, "knowledge_outside_references")
+        for path, value in iter_strings(data)
+        if top_key(path) != field and KNOWLEDGE_ID_RE.search(value)
+    ]
+    violations += [
+        Violation("knowledge_boundary", path, "unknown_knowledge_id")
+        for path, knowledge_id in _referenced_knowledge(output_type, data)
+        if knowledge_id not in context.knowledge_ids
+    ]
+    return violations
+
+
+# -- unknown_discipline and missing_evidence_consistency (reports only) -------------
+
+
+def unknown_discipline(
+    output_type: OutputType, data: Mapping[str, Any], context: GateContext
+) -> list[Violation]:
+    """A root cause without citations is ``unknown``, and an unknown one has low confidence."""
+    root_cause = data["root_cause"]
+    violations = []
+    if not root_cause["citations"] and root_cause["status"] != "unknown":
+        violations.append(
+            Violation("unknown_discipline", "root_cause.status", "uncited_root_cause_not_unknown")
+        )
+    if root_cause["status"] == "unknown" and root_cause["confidence"] != "low":
+        violations.append(
+            Violation("unknown_discipline", "root_cause.confidence", "unknown_confidence_not_low")
+        )
+    return violations
+
+
+def missing_evidence_consistency(
+    output_type: OutputType, data: Mapping[str, Any], context: GateContext
+) -> list[Violation]:
+    """Failed evidence calls are listed as missing evidence and limit the confidence."""
+    violations = []
+    if context.failed_calls and not data["missing_evidence"]:
+        violations.append(
+            Violation("missing_evidence_consistency", "missing_evidence", "failed_calls_not_listed")
+        )
+    capped = any(call.caps_confidence for call in context.failed_calls)
+    if capped and data["root_cause"]["confidence"] == "high":
+        violations.append(
+            Violation(
+                "missing_evidence_consistency",
+                "root_cause.confidence",
+                "high_confidence_after_failed_call",
+            )
+        )
+    return violations
+
+
+# -- forbidden_actions and redaction_residue (all output types) ---------------------
+
+_CHANGE_SUGGESTION_TEXT = re.compile(r"suggestions\[(\d+)\]\.(action|command)")
+
+
+def _write_commands_allowed(output_type: OutputType, data: Mapping[str, Any], path: str) -> bool:
+    if output_type is not OutputType.REPORT:
+        return False
+    match = _CHANGE_SUGGESTION_TEXT.fullmatch(path)
+    if match is None:
+        return False
+    return bool(data["suggestions"][int(match.group(1))]["risk"] == "change")
+
+
+def forbidden_actions(
+    output_type: OutputType, data: Mapping[str, Any], context: GateContext
+) -> list[Violation]:
+    """Write commands appear only in report suggestions whose risk is ``change``."""
+    return [
+        Violation("forbidden_actions", path, f"write_command:{command}")
+        for path, value in iter_strings(data)
+        if not _write_commands_allowed(output_type, data, path)
+        for command in find_write_commands(value)
+    ]
+
+
+def redaction_residue(
+    output_type: OutputType, data: Mapping[str, Any], context: GateContext
+) -> list[Violation]:
+    """No text field holds sensitive content; the investigation's identifiers are exempt."""
+    return [
+        Violation("redaction_residue", path, f"residue:{finding.rule}")
+        for path, value in iter_strings(data)
+        for finding in context.engine.detect(value, preserve=context.preserved)
+    ]

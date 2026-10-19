@@ -1,0 +1,19 @@
+# A first-round plan with a knowledge reference.
+context:
+  evidence_ids: [ev_a1e7000001]
+  knowledge_ids: [kn_0f1e2d3c4b5a]
+  suggestion_ids: []
+  preserved: [demo-s1, s1-app-7d9f8c6b5-x2k4p]
+  failed_calls: []
+output:
+  rationale: The alert names one restarting pod; read its state and its previous logs first.
+  steps:
+    - goal: Read the status of pod s1-app-7d9f8c6b5-x2k4p in demo-s1.
+      domain: kubernetes
+      suggested_tools: [k8s_get_pod_status]
+      expected_evidence: The reason and exit code of the last termination.
+    - goal: Read the previous container logs of s1-app-7d9f8c6b5-x2k4p.
+      domain: logs
+      suggested_tools: [logs_get_container_logs]
+      expected_evidence: The last log lines before the exit.
+  knowledge_refs: [kn_0f1e2d3c4b5a]

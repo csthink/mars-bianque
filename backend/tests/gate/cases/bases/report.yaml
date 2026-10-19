@@ -1,0 +1,52 @@
+# An S1-a style report that passes every validator: the root cause cites the commit
+# diff, the change suggestion holds a write command, and the claims name the pod and the
+# full commit hash, both preserved identifiers of the investigation.
+context:
+  evidence_ids: [ev_a1e7000001, ev_b2d5000002, ev_c3f9000003, ev_d4c1000004]
+  knowledge_ids: [kn_0f1e2d3c4b5a]
+  suggestion_ids: []
+  # The alert name comes from the alert evidence; like the pod name, it is high-entropy
+  # text unless preserved.
+  preserved: [BianquePodRestarting, demo-s1, s1-app, s1-app-7d9f8c6b5-x2k4p, 3f9a1c2b7d4e5f60718293a4b5c6d7e8f9012345]
+  failed_calls: []
+output:
+  schema_version: "1"
+  summary: Pod s1-app-7d9f8c6b5-x2k4p in demo-s1 restarts because APP_MODE was set to an invalid value.
+  impact: The s1-app deployment has no ready replica.
+  timeline:
+    - time: "2026-10-19T11:58:00Z"
+      event: A commit changed APP_MODE of s1-app to invalid.
+      citations: [ev_d4c1000004]
+    - time: "2026-10-19T12:01:30Z"
+      event: Alert BianquePodRestarting started firing.
+      citations: [ev_a1e7000001]
+  root_cause:
+    status: identified
+    category: config_error
+    object:
+      kind: Deployment
+      namespace: demo-s1
+      name: s1-app
+      field: spec.template.spec.containers[0].env[APP_MODE]
+    statement: APP_MODE was changed to an invalid value, so the application exits at startup.
+    citations: [ev_c3f9000003, ev_d4c1000004]
+    confidence: high
+  claims:
+    - statement: The previous container of s1-app-7d9f8c6b5-x2k4p exited with code 2 after logging invalid APP_MODE.
+      citations: [ev_b2d5000002, ev_c3f9000003]
+    - statement: Commit 3f9a1c2b7d4e5f60718293a4b5c6d7e8f9012345 set APP_MODE to invalid.
+      citations: [ev_d4c1000004]
+  missing_evidence: []
+  suggestions:
+    - action: Roll the deployment back to the revision before the APP_MODE change.
+      command: kubectl -n demo-s1 rollout undo deployment/s1-app
+      risk: change
+      citations: [ev_d4c1000004]
+    - action: Watch the rollout until the new pod is ready.
+      command: kubectl -n demo-s1 rollout status deployment/s1-app
+      risk: read_only
+      citations: [ev_b2d5000002]
+  references:
+    - knowledge_id: kn_0f1e2d3c4b5a
+      title: Pods in CrashLoopBackOff
+  followup_questions: ["Which commit changed APP_MODE?"]

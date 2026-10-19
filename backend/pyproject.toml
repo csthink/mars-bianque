@@ -23,6 +23,8 @@ bianque = "bianque.cli:main"
 dev = [
     "httpx>=0.27",
     "import-linter>=2.0",
+    "jsonschema>=4.23",
+    "rfc3339-validator>=0.1.4",
     "mypy>=1.11",
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
@@ -88,6 +90,12 @@ ignore_imports = [
     "bianque.tools.backends.kubernetes_live -> kubernetes_asyncio",
     "bianque.tools.backends.kubernetes_live -> kubernetes_asyncio.*",
 ]
+
+[[tool.importlinter.contracts]]
+name = "The evidence gate does not import the model gateway"
+type = "forbidden"
+source_modules = ["bianque.gate"]
+forbidden_modules = ["bianque.llm"]
 
 [[tool.importlinter.contracts]]
 name = "Only the API package imports FastAPI"

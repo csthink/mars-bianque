@@ -1,0 +1,248 @@
+# Report cases on top of bases/report.yaml. Each case changes the base with ``set``
+# (JSON path to value), ``delete`` (JSON paths) and ``context`` (fields replacing those of
+# the base context). ``{secret}`` in a string is replaced by the joined ``secret_parts``.
+# A passing case names the validators it exercises; a rejected case lists the exact
+# violations as [validator, path, code].
+- name: s1a_report_passes
+  description: The base report, with a pod name and a full commit hash in the text.
+  expect:
+    passed: true
+    exercises: [schema, citation_integrity, knowledge_boundary, unknown_discipline, forbidden_actions, redaction_residue]
+
+- name: unknown_root_cause_without_citations_passes
+  set:
+    root_cause:
+      status: unknown
+      statement: The evidence does not show why the container exits.
+      citations: []
+      confidence: low
+  expect:
+    passed: true
+    exercises: [citation_integrity, unknown_discipline]
+
+- name: failed_log_call_listed_with_medium_confidence_passes
+  context:
+    failed_calls: [{tool: logs_get_container_logs, domain: logs, error: timeout, caps_confidence: true}]
+  set:
+    missing_evidence: [{what: Previous container logs., reason: The log tool timed out.}]
+    root_cause.confidence: medium
+  expect:
+    passed: true
+    exercises: [missing_evidence_consistency]
+
+# -- schema --------------------------------------------------------------------------
+- name: missing_section
+  delete: [references]
+  expect:
+    passed: false
+    violations: [[schema, references, missing]]
+
+- name: unknown_root_cause_category
+  set:
+    "root_cause.category": network
+  expect:
+    passed: false
+    violations: [[schema, root_cause.category, literal_error]]
+
+- name: identified_root_cause_without_object
+  set:
+    "root_cause.object": null
+  expect:
+    passed: false
+    violations: [[schema, root_cause, value_error]]
+
+- name: unknown_risk_level
+  set:
+    "suggestions[0].risk": low
+  expect:
+    passed: false
+    violations: [[schema, "suggestions[0].risk", literal_error]]
+
+- name: timeline_time_not_a_timestamp
+  set:
+    "timeline[0].time": yesterday
+  expect:
+    passed: false
+    violations: [[schema, "timeline[0].time", datetime_from_date_parsing]]
+
+- name: unexpected_field
+  set:
+    "verdict": done
+  expect:
+    passed: false
+    violations: [[schema, verdict, extra_forbidden]]
+
+- name: other_schema_version
+  set:
+    "schema_version": "2"
+  expect:
+    passed: false
+    violations: [[schema, schema_version, literal_error]]
+
+# -- citation_integrity -----------------------------------------------------------------
+- name: claim_cites_nonexistent_evidence
+  set:
+    "claims[0].citations[1]": ev_ffffffffff
+  expect:
+    passed: false
+    violations: [[citation_integrity, "claims[0].citations[1]", unknown_id]]
+
+- name: claim_cites_evidence_of_another_investigation
+  description: A well-formed evidence ID that is not in this investigation's set.
+  set:
+    "claims[1].citations[0]": ev_7c7c000099
+  expect:
+    passed: false
+    violations: [[citation_integrity, "claims[1].citations[0]", unknown_id]]
+
+- name: claim_without_citation
+  set:
+    "claims[0].citations": []
+  expect:
+    passed: false
+    violations: [[citation_integrity, "claims[0]", missing_citation]]
+
+- name: timeline_entry_without_citation
+  set:
+    "timeline[1].citations": []
+  expect:
+    passed: false
+    violations: [[citation_integrity, "timeline[1]", missing_citation]]
+
+- name: suggestion_without_citation
+  set:
+    "suggestions[1].citations": []
+  expect:
+    passed: false
+    violations: [[citation_integrity, "suggestions[1]", missing_citation]]
+
+# -- knowledge_boundary ----------------------------------------------------------------
+- name: claim_cites_knowledge
+  set:
+    "claims[0].citations": [kn_0f1e2d3c4b5a]
+  expect:
+    passed: false
+    violations:
+      - [citation_integrity, "claims[0].citations[0]", unknown_id]
+      - [knowledge_boundary, "claims[0].citations[0]", knowledge_outside_references]
+
+- name: root_cause_cites_knowledge
+  set:
+    "root_cause.citations": [kn_0f1e2d3c4b5a]
+  expect:
+    passed: false
+    violations:
+      - [citation_integrity, "root_cause.citations[0]", unknown_id]
+      - [knowledge_boundary, "root_cause.citations[0]", knowledge_outside_references]
+
+- name: suggestion_cites_knowledge
+  set:
+    "suggestions[0].citations": [kn_0f1e2d3c4b5a]
+  expect:
+    passed: false
+    violations:
+      - [citation_integrity, "suggestions[0].citations[0]", unknown_id]
+      - [knowledge_boundary, "suggestions[0].citations[0]", knowledge_outside_references]
+
+- name: knowledge_id_in_claim_text
+  set:
+    "claims[1].statement": The runbook kn_0f1e2d3c4b5a says APP_MODE must be valid.
+  expect:
+    passed: false
+    violations: [[knowledge_boundary, "claims[1].statement", knowledge_outside_references]]
+
+- name: reference_to_knowledge_not_given
+  set:
+    "references[0].knowledge_id": kn_9a8b7c6d5e4f
+  expect:
+    passed: false
+    violations: [[knowledge_boundary, "references[0].knowledge_id", unknown_knowledge_id]]
+
+# -- unknown_discipline ----------------------------------------------------------------
+- name: identified_root_cause_without_citations
+  set:
+    "root_cause.citations": []
+  expect:
+    passed: false
+    violations:
+      - [citation_integrity, root_cause, missing_citation]
+      - [unknown_discipline, root_cause.status, uncited_root_cause_not_unknown]
+
+- name: unknown_root_cause_with_high_confidence
+  set:
+    root_cause:
+      status: unknown
+      statement: The evidence does not show why the container exits.
+      citations: []
+      confidence: high
+  expect:
+    passed: false
+    violations: [[unknown_discipline, root_cause.confidence, unknown_confidence_not_low]]
+
+# -- missing_evidence_consistency ------------------------------------------------------
+- name: failed_call_not_listed_as_missing
+  context:
+    failed_calls: [{tool: change_show_commit, domain: change, error: not_found, caps_confidence: false}]
+  expect:
+    passed: false
+    violations: [[missing_evidence_consistency, missing_evidence, failed_calls_not_listed]]
+
+- name: high_confidence_after_failed_log_call
+  context:
+    failed_calls: [{tool: logs_get_container_logs, domain: logs, error: timeout, caps_confidence: true}]
+  set:
+    missing_evidence: [{what: Previous container logs., reason: The log tool timed out.}]
+  expect:
+    passed: false
+    violations: [[missing_evidence_consistency, root_cause.confidence, high_confidence_after_failed_call]]
+
+# -- forbidden_actions -----------------------------------------------------------------
+- name: write_command_in_summary
+  set:
+    "summary": Run kubectl delete pod s1-app-7d9f8c6b5-x2k4p to restart it.
+  expect:
+    passed: false
+    violations: [[forbidden_actions, summary, "write_command:kubectl delete"]]
+
+- name: write_command_in_claim
+  set:
+    "claims[0].statement": Fix the manifest and publish it with git push origin main.
+  expect:
+    passed: false
+    violations: [[forbidden_actions, "claims[0].statement", "write_command:git push"]]
+
+- name: write_command_in_read_only_suggestion
+  set:
+    "suggestions[1].command": kubectl -n demo-s1 scale deployment/s1-app --replicas=0
+  expect:
+    passed: false
+    violations: [[forbidden_actions, "suggestions[1].command", "write_command:kubectl scale"]]
+
+- name: write_command_in_read_only_suggestion_action
+  set:
+    "suggestions[1].action": Watch the rollout and run kubectl rollout restart deployment/s1-app if it stalls.
+  expect:
+    passed: false
+    violations: [[forbidden_actions, "suggestions[1].action", "write_command:kubectl rollout restart"]]
+
+# -- redaction_residue -----------------------------------------------------------------
+- name: unredacted_token_in_claim
+  set:
+    "claims[0].statement": "The pod logged token={secret} at startup."
+  secret_parts: [ghp_, ABCDEFabcdef0123456789, ABCDEFabcd]
+  expect:
+    passed: false
+    violations:
+      - [redaction_residue, "claims[0].statement", "residue:high-entropy"]
+      - [redaction_residue, "claims[0].statement", "residue:known-token"]
+      - [redaction_residue, "claims[0].statement", "residue:kv-secret"]
+
+- name: pod_name_outside_preserved_identifiers
+  description: Without the investigation's identifiers the pod name is high-entropy residue.
+  context:
+    preserved: [BianquePodRestarting, demo-s1, s1-app, 3f9a1c2b7d4e5f60718293a4b5c6d7e8f9012345]
+  expect:
+    passed: false
+    violations:
+      - [redaction_residue, "claims[0].statement", "residue:high-entropy"]
+      - [redaction_residue, summary, "residue:high-entropy"]

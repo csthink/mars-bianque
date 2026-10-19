@@ -1,0 +1,66 @@
+# Follow-up answer cases on top of bases/followup_answer.yaml (format: report.yaml).
+- name: answer_passes
+  description: Cites evidence and a suggestion; the insufficient paragraph cites nothing.
+  expect:
+    passed: true
+    exercises: [schema, citation_integrity, knowledge_boundary, forbidden_actions, redaction_residue]
+
+- name: no_segment
+  set:
+    "segments": []
+  expect:
+    passed: false
+    violations: [[schema, segments, too_short]]
+
+- name: cites_nonexistent_evidence
+  set:
+    "segments[0].citations[0]": ev_ffffffffff
+  expect:
+    passed: false
+    violations: [[citation_integrity, "segments[0].citations[0]", unknown_id]]
+
+- name: cites_nonexistent_suggestion
+  set:
+    "segments[1].citations[0]": sg_ffffffffff
+  expect:
+    passed: false
+    violations: [[citation_integrity, "segments[1].citations[0]", unknown_id]]
+
+- name: sufficient_segment_without_citation
+  set:
+    "segments[0].citations": []
+  expect:
+    passed: false
+    violations: [[citation_integrity, "segments[0]", missing_citation]]
+
+- name: cites_knowledge
+  set:
+    "segments[0].citations": [kn_0f1e2d3c4b5a]
+  expect:
+    passed: false
+    violations:
+      - [citation_integrity, "segments[0].citations[0]", unknown_id]
+      - [knowledge_boundary, "segments[0].citations[0]", knowledge_outside_references]
+
+- name: reference_to_knowledge_not_given
+  set:
+    "references[0]": kn_9a8b7c6d5e4f
+  expect:
+    passed: false
+    violations: [[knowledge_boundary, "references[0]", unknown_knowledge_id]]
+
+- name: write_command_in_answer
+  description: An answer refers to the suggestion ID instead of writing the command.
+  set:
+    "segments[1].text": Run kubectl -n demo-s1 rollout undo deployment/s1-app.
+  expect:
+    passed: false
+    violations: [[forbidden_actions, "segments[1].text", "write_command:kubectl rollout undo"]]
+
+- name: unredacted_password
+  set:
+    "segments[2].text": "The deploy used password: '{secret}'."
+  secret_parts: [hunter2, Passw0rd!]
+  expect:
+    passed: false
+    violations: [[redaction_residue, "segments[2].text", "residue:kv-secret"]]

@@ -1,0 +1,50 @@
+# Plan cases on top of bases/plan.yaml (format: report.yaml).
+- name: plan_passes
+  expect:
+    passed: true
+    exercises: [schema, knowledge_boundary, forbidden_actions, redaction_residue]
+
+- name: no_step
+  set:
+    "steps": []
+  expect:
+    passed: false
+    violations: [[schema, steps, too_short]]
+
+- name: empty_domain
+  set:
+    "steps[0].domain": ""
+  expect:
+    passed: false
+    violations: [[schema, "steps[0].domain", string_too_short]]
+
+- name: knowledge_id_in_step
+  set:
+    "steps[0].goal": Follow kn_0f1e2d3c4b5a and read the pod status.
+  expect:
+    passed: false
+    violations: [[knowledge_boundary, "steps[0].goal", knowledge_outside_references]]
+
+- name: reference_to_knowledge_not_given
+  set:
+    "knowledge_refs": [kn_9a8b7c6d5e4f]
+  expect:
+    passed: false
+    violations: [[knowledge_boundary, "knowledge_refs[0]", unknown_knowledge_id]]
+
+- name: write_command_in_step
+  set:
+    "steps[0].goal": Restart the pod with kubectl delete pod s1-app-7d9f8c6b5-x2k4p.
+  expect:
+    passed: false
+    violations: [[forbidden_actions, "steps[0].goal", "write_command:kubectl delete"]]
+
+- name: unredacted_api_key
+  set:
+    "steps[1].expected_evidence": "Logs that print the API key {secret}"
+  secret_parts: [AKIA, IOSFODNN7EXAMPLE]
+  expect:
+    passed: false
+    violations:
+      - [redaction_residue, "steps[1].expected_evidence", "residue:high-entropy"]
+      - [redaction_residue, "steps[1].expected_evidence", "residue:known-token"]

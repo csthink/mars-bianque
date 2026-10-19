@@ -1,0 +1,19 @@
+# An answer that cites evidence and a suggestion, with one insufficient-evidence paragraph.
+context:
+  evidence_ids: [ev_b2d5000002, ev_d4c1000004]
+  knowledge_ids: [kn_0f1e2d3c4b5a]
+  suggestion_ids: [sg_5e6f000001]
+  preserved: [s1-app, s1-app-7d9f8c6b5-x2k4p]
+  failed_calls: []
+output:
+  segments:
+    - text: The container of s1-app-7d9f8c6b5-x2k4p exits with code 2 because APP_MODE is invalid.
+      citations: [ev_b2d5000002, ev_d4c1000004]
+      insufficient_evidence: false
+    - text: The remediation is the rollback in the suggestion of the report.
+      citations: [sg_5e6f000001]
+      insufficient_evidence: false
+    - text: The evidence does not show who approved the change.
+      citations: []
+      insufficient_evidence: true
+  references: [kn_0f1e2d3c4b5a]

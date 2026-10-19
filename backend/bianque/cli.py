@@ -4,18 +4,21 @@ Subcommands:
 
 - ``bianque pack record``: record an evidence pack from the demo environment.
 - ``bianque pack derive``: derive an evidence pack from a recorded one.
+- ``bianque gate export-schemas``: write the JSON Schema of every model output type.
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import sys
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
 from bianque.config import get_settings
+from bianque.gate import export_json_schemas
 from bianque.tools import registry
 from bianque.tools.backends.base import FaultMode
 from bianque.tools.pack.derive import KEEPABLE, derive_pack
@@ -80,6 +83,14 @@ def _derive(args: argparse.Namespace) -> None:
     print(f"derived {args.out} from {args.source}")
 
 
+def _export_schemas(args: argparse.Namespace) -> None:
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    for name, schema in export_json_schemas().items():
+        (out / name).write_text(json.dumps(schema, indent=2, ensure_ascii=False) + "\n")
+    print(f"wrote {len(export_json_schemas())} schemas to {out}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Return the argument parser of the ``bianque`` command."""
     parser = argparse.ArgumentParser(prog="bianque")
@@ -103,12 +114,22 @@ def build_parser() -> argparse.ArgumentParser:
     derive.add_argument("--case", required=True)
     derive.add_argument("--fault", action="append", default=[], help="<tool>:timeout")
     derive.add_argument("--only", help=f"comma-separated parts to keep: {','.join(KEEPABLE)}")
+
+    gate = commands.add_parser("gate", help="the evidence gate")
+    gate_commands = gate.add_subparsers(dest="gate_command", required=True)
+    export = gate_commands.add_parser(
+        "export-schemas", help="write the JSON Schema of every model output type"
+    )
+    export.add_argument("--out", required=True, help="directory for <type>.schema.json")
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the command line and return the exit status."""
     args = build_parser().parse_args(argv)
+    if args.command == "gate":
+        _export_schemas(args)
+        return 0
     try:
         if args.pack_command == "record":
             asyncio.run(_record(args))
