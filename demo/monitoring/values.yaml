@@ -1,0 +1,41 @@
+# Values for prometheus-community/prometheus in the demo cluster (the chart version
+# is pinned in the Makefile). Only the server, Alertmanager and kube-state-metrics
+# run; the alerting rule is in alert-rules.yaml.
+
+server:
+  global:
+    # The chart default of 1m is too slow to raise an alert within three minutes
+    # of a fault.
+    scrape_interval: 15s
+    evaluation_interval: 15s
+  retention: 1d
+  persistentVolume:
+    enabled: false
+
+alertmanager:
+  persistence:
+    enabled: false
+  config:
+    global: {}
+    receivers:
+      - name: bianque
+        webhook_configs:
+          # The Bianque backend Service; until Bianque is deployed, deliveries fail
+          # and are only logged by Alertmanager.
+          - url: http://bianque-backend.bianque.svc:8000/api/alerts/alertmanager
+            send_resolved: true
+    route:
+      receiver: bianque
+      group_by: [alertname, namespace, pod, container]
+      group_wait: 10s
+      group_interval: 1m
+      repeat_interval: 4h
+
+kube-state-metrics:
+  enabled: true
+
+prometheus-node-exporter:
+  enabled: false
+
+prometheus-pushgateway:
+  enabled: false

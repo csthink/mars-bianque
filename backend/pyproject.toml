@@ -48,7 +48,7 @@ convention = "google"
 python_version = "3.12"
 strict = true
 mypy_path = "."
-files = ["bianque", "migrations", "tools", "tests"]
+files = ["bianque", "migrations", "tools", "tests", "../demo/s1-app"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

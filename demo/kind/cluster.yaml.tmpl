@@ -1,0 +1,12 @@
+# kind cluster for the demo. demo/scripts/up.sh substitutes the placeholders and
+# writes the result to .demo/kind-config.yaml, which is not tracked because it
+# contains a local absolute path.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    image: @NODE_IMAGE@
+    extraMounts:
+      - hostPath: @MANIFESTS_DIR@
+        containerPath: /var/lib/bianque/manifests
+        readOnly: true

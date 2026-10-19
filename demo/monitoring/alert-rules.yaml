@@ -1,0 +1,29 @@
+# Alerting rules for the demo, passed to the prometheus chart as a second values
+# file.
+#
+# BianquePodRestarting fires when a container is in CrashLoopBackOff or restarted
+# more than twice within two minutes. Both conditions are aggregated by the same
+# labels, so one container yields one alert with one fingerprint.
+#
+# The CrashLoopBackOff condition looks at the last minute rather than the current
+# sample: between restarts the container is briefly running or terminated, and
+# without the window those moments reset the pending period, delaying the alert by
+# a full restart cycle (measured on kind: 102s instead of about 60s), or resolve it
+# and make it fire again. The window delays resolution by up to a minute.
+
+serverFiles:
+  alerting_rules.yml:
+    groups:
+      - name: bianque-demo
+        rules:
+          - alert: BianquePodRestarting
+            expr: |
+              max by (namespace, pod, container) (max_over_time(kube_pod_container_status_waiting_reason{reason="CrashLoopBackOff"}[1m])) > 0
+              or
+              max by (namespace, pod, container) (increase(kube_pod_container_status_restarts_total[2m])) > 2
+            for: 30s
+            labels:
+              severity: warning
+            annotations:
+              summary: Container {{ $labels.container }} of pod {{ $labels.namespace }}/{{ $labels.pod }} keeps restarting
+              description: The container is in CrashLoopBackOff or restarted more than twice in the last two minutes.
