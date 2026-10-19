@@ -25,6 +25,7 @@ import httpx
 import pytest
 
 from bianque.config import get_settings
+from bianque.llm import CallContext, build_gateway
 from bianque.llm.providers import build_provider
 from bianque.llm.providers.openai_compat import OpenAICompatProvider
 from bianque.llm.redacted import redact_for_llm, redact_prompt_for_llm
@@ -128,19 +129,27 @@ def test_timeout_config_reaches_provider_client(monkeypatch: pytest.MonkeyPatch)
 def _assert_key_hidden_and_sent(key: str) -> None:
     settings = get_settings()
     recorder = _Recorder()
-    provider = build_provider(settings, http_client=_make_client(recorder))
+    # The provider as the live mode builds it, and the gateway that wraps it.
+    provider = OpenAICompatProvider(settings, http_client=_make_client(recorder))
+    gateway = build_gateway(settings, http_client=_make_client(recorder))
 
+    assert repr(provider) == "OpenAICompatProvider(endpoint_host='llm.example.com')"
     for label, text in (
         ("repr(settings)", repr(settings)),
         ("str(settings)", str(settings)),
         ("settings.model_dump_json()", settings.model_dump_json()),
         ("repr(provider)", repr(provider)),
         ("str(provider)", str(provider)),
+        ("repr(gateway)", repr(gateway)),
+        ("str(gateway)", str(gateway)),
     ):
         assert key not in text, f"credential plaintext appears in {label}"
 
     async def main() -> None:
-        await provider.complete(redact_prompt_for_llm([("user", "ping")]))
+        await gateway.complete(
+            redact_prompt_for_llm([("user", "ping")]),
+            context=CallContext(agent="investigation", operation="plan"),
+        )
 
     _run(main)
 

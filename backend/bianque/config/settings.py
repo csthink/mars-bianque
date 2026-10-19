@@ -11,10 +11,12 @@ Conventions (checked by ``tools/check_env_prefix.py``):
 
 from __future__ import annotations
 
-from typing import Literal
+import json
+from pathlib import Path
+from typing import Annotated, Any, Literal
 
-from pydantic import SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import SecretStr, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 #: The one environment variable prefix in the repository. ``check_env_prefix.py``
 #: asserts this value statically.
@@ -53,8 +55,8 @@ class Settings(BaseSettings):
     #: Tool backend (``BIANQUE_TOOL_BACKEND``).
     tool_backend: ToolBackend = "pack"
 
-    #: Model gateway mode (``BIANQUE_LLM_MODE``).
-    llm_mode: LLMMode = "scripted"
+    #: Model gateway mode (``BIANQUE_LLM_MODE``). ``scripted`` must be set explicitly.
+    llm_mode: LLMMode = "recorded"
 
     #: Embedding mode (``BIANQUE_EMBEDDING_MODE``).
     embedding_mode: EmbeddingMode = "fixture"
@@ -77,6 +79,23 @@ class Settings(BaseSettings):
     #: Timeout in seconds for one model call (``BIANQUE_LLM_TIMEOUT_SECONDS``).
     llm_timeout_seconds: int = 60
 
+    #: Retries after a timeout, connection failure, HTTP 429 or 5xx
+    #: (``BIANQUE_LLM_MAX_RETRIES``).
+    llm_max_retries: int = 2
+
+    #: Provider-specific request body fields as a JSON object
+    #: (``BIANQUE_LLM_EXTRA_BODY``), for example ``{"thinking": {"type": "disabled"}}``
+    #: for a provider whose default thinking mode rejects a forced tool choice.
+    llm_extra_body: Annotated[dict[str, Any], NoDecode] = {}
+
+    #: Directory searched for recorded responses in ``recorded`` mode
+    #: (``BIANQUE_LLM_RECORDINGS_DIR``).
+    llm_recordings_dir: Path = Path("eval/recordings")
+
+    #: When set in ``live`` mode, every successful call is recorded into this directory
+    #: (``BIANQUE_LLM_RECORD_DIR``).
+    llm_record_dir: Path | None = None
+
     #: Token budget of one investigation (``BIANQUE_INVESTIGATION_TOKEN_BUDGET``).
     investigation_token_budget: int = 120000
 
@@ -84,6 +103,14 @@ class Settings(BaseSettings):
     #: The redaction engine generalizes host names under these suffixes; when empty,
     #: the engine has no internal domain rule.
     redact_internal_domains: str = ""
+
+    @field_validator("llm_extra_body", mode="before")
+    @classmethod
+    def _parse_extra_body(cls, value: Any) -> Any:
+        """Accept the JSON text of an environment variable; an empty value means none."""
+        if isinstance(value, str):
+            return json.loads(value) if value.strip() else {}
+        return value
 
 
 def get_settings() -> Settings:

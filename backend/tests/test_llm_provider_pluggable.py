@@ -16,16 +16,22 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Coroutine
 from dataclasses import fields
-from typing import Any
+from typing import Any, get_args
 
 import httpx
 import pytest
 
 from bianque.config import get_settings
-from bianque.llm.gateway import LLMCompletion, LLMGateway, LLMUsage, build_gateway
-from bianque.llm.providers import build_provider
-from bianque.llm.providers.stub import StubProvider
+from bianque.config.settings import LLMMode
+from bianque.llm import CallContext, LLMCompletion, LLMGateway, LLMUsage, build_gateway
+from bianque.llm.providers import (
+    PROVIDER_REGISTRY,
+    ProviderOptions,
+    ScriptedProvider,
+    build_provider,
+)
 from bianque.llm.redacted import redact_prompt_for_llm
+from bianque.llm.request import ModelRequest
 
 
 class _Recorder:
@@ -68,7 +74,10 @@ def _run[T](main: Callable[[], Coroutine[Any, Any, T]]) -> T:
 #: The calling code: it depends only on LLMGateway and has no branch on the mode.
 #: Switching configuration does not change a single byte of this function.
 async def _call_sequence(gateway: LLMGateway) -> LLMCompletion:
-    return await gateway.complete(redact_prompt_for_llm([("user", "why did pod restart")]))
+    return await gateway.complete(
+        redact_prompt_for_llm([("user", "why did pod restart")]),
+        context=CallContext(agent="investigation", operation="plan"),
+    )
 
 
 def _hosted_api_config(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -96,7 +105,7 @@ def test_provider_switch_by_config_only(monkeypatch: pytest.MonkeyPatch) -> None
         # Observed through the gateway's two read-only scalars. The provider object is
         # not public (with it a caller could bypass the gates), so the evidence of the
         # switch is the provider name and the endpoint host.
-        assert gateway.provider_name == "stub"
+        assert gateway.provider_name == "scripted"
         assert gateway.endpoint_host is None
         return await _call_sequence(gateway)
 
@@ -140,7 +149,7 @@ def test_two_provider_configs_same_call_sequence(monkeypatch: pytest.MonkeyPatch
     first, second = results
     assert {f.name for f in fields(first)} == {f.name for f in fields(second)}
     usage_fields = {f.name for f in fields(LLMUsage)}
-    assert usage_fields == {"prompt_tokens", "completion_tokens"}
+    assert usage_fields == {"prompt_tokens", "completion_tokens", "estimated"}
     for completion in results:
         assert {f.name for f in fields(completion.usage)} == usage_fields
     # Each configuration sends one request, to its own configured host.
@@ -150,27 +159,40 @@ def test_two_provider_configs_same_call_sequence(monkeypatch: pytest.MonkeyPatch
 
 
 # Scripted mode goes through the same interface, deterministically and offline.
-def test_stub_provider_deterministic_and_offline(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_scripted_provider_deterministic_and_offline(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BIANQUE_LLM_MODE", "scripted")
     monkeypatch.delenv("BIANQUE_LLM_BASE_URL", raising=False)
     recorder = _Recorder()
 
     async def main() -> tuple[LLMCompletion, LLMCompletion]:
-        provider = build_provider(get_settings(), http_client=_make_client(recorder))
-        assert isinstance(provider, StubProvider)
-        prompt = redact_prompt_for_llm([("user", "why did pod restart")])
-        return await provider.complete(prompt), await provider.complete(prompt)
+        provider = build_provider(
+            get_settings(), ProviderOptions(http_client=_make_client(recorder))
+        )
+        assert isinstance(provider, ScriptedProvider)
+        request = ModelRequest(
+            agent="investigation",
+            operation="plan",
+            prompt=redact_prompt_for_llm([("user", "why did pod restart")]),
+            model="",
+        )
+        return await provider.complete(request), await provider.complete(request)
 
     first_completion, second_completion = _run(main)
 
-    assert first_completion == second_completion, "the stub completion is not deterministic"
-    assert recorder.count == 0, "the stub sent a request"
+    assert first_completion == second_completion, "the scripted completion is not deterministic"
+    assert recorder.count == 0, "the scripted provider sent a request"
+
+
+# Every mode the settings accept has a registered provider.
+def test_every_configurable_mode_has_a_provider() -> None:
+    assert set(PROVIDER_REGISTRY) == set(get_args(LLMMode))
 
 
 # A mode without a registered provider fails when the gateway is built, naming the
-# available modes.
+# available modes. Settings reject unknown modes, so the registry entry is removed here.
 def test_unregistered_mode_fails_with_available_modes(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BIANQUE_LLM_MODE", "recorded")
+    monkeypatch.delitem(PROVIDER_REGISTRY, "recorded")
     with pytest.raises(ValueError, match="recorded") as excinfo:
         build_gateway(get_settings())
     message = str(excinfo.value)

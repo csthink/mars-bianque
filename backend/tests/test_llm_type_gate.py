@@ -84,11 +84,13 @@ _NEGATIVE_COMPLETE = """
 
     from bianque.config import get_settings
     from bianque.llm.gateway import build_gateway
+    from bianque.llm.types import CallContext
 
 
     async def main() -> None:
         gateway = build_gateway(get_settings())
-        await gateway.complete("plain str")
+        context = CallContext(agent="investigation", operation="plan")
+        await gateway.complete("plain str", context=context)
 
 
     asyncio.run(main())
@@ -100,11 +102,15 @@ _POSITIVE_COMPLETE = """
     from bianque.config import get_settings
     from bianque.llm.gateway import build_gateway
     from bianque.llm.redacted import redact_prompt_for_llm
+    from bianque.llm.types import CallContext
 
 
     async def main() -> None:
         gateway = build_gateway(get_settings())
-        await gateway.complete(redact_prompt_for_llm([("user", "why did pod restart")]))
+        context = CallContext(agent="investigation", operation="plan")
+        await gateway.complete(
+            redact_prompt_for_llm([("user", "why did pod restart")]), context=context
+        )
 
 
     asyncio.run(main())
@@ -115,6 +121,8 @@ def test_plain_str_rejected_by_mypy(tmp_path: Path) -> None:
     negative, negative_code = _run_mypy(tmp_path / "neg", "probe", _NEGATIVE_COMPLETE)
     assert negative_code != 0, "mypy accepted a plain str passed to complete()"
     assert "arg-type" in negative, f"mypy failed, but not with a type mismatch: {negative}"
+    # The probe passes every required argument, so the only error is the plain str.
+    assert "call-arg" not in negative, f"the probe no longer matches complete(): {negative}"
 
     positive, positive_code = _run_mypy(tmp_path / "pos", "probe", _POSITIVE_COMPLETE)
     assert positive_code == 0, f"mypy rejected legitimate use: {positive}"

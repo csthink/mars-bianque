@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
+from pydantic_settings.exceptions import SettingsError
 
 from bianque.config import ENV_PREFIX, Settings, get_settings
 from bianque.llm.gateway import build_gateway
@@ -31,17 +33,60 @@ def test_every_field_maps_to_a_prefixed_env_var() -> None:
         )
 
 
-def test_default_modes_need_no_credential_or_network(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_default_modes_need_no_credential_or_network(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     _clear_bianque_env(monkeypatch)
+    # Run from an empty directory: the default recordings directory does not exist there,
+    # so building the gateway proves that construction reads no recording files.
+    monkeypatch.chdir(tmp_path)
     settings = get_settings()
     assert settings.tool_backend == "pack"
-    assert settings.llm_mode == "scripted"
+    assert settings.llm_mode == "recorded"
     assert settings.embedding_mode == "fixture"
     assert settings.llm_api_key is None
 
-    # The default set builds a working gateway without any key and without an endpoint.
+    # The default set builds a working gateway without any key, without an endpoint
+    # and without touching the recordings directory.
     gateway = build_gateway(settings)
+    assert gateway.provider_name == "recorded"
     assert gateway.endpoint_host is None
+    assert not (tmp_path / "eval").exists()
+
+
+def test_model_gateway_setting_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_bianque_env(monkeypatch)
+    settings = get_settings()
+    assert settings.llm_max_retries == 2
+    assert settings.llm_extra_body == {}
+    assert settings.llm_recordings_dir == Path("eval/recordings")
+    assert settings.llm_record_dir is None
+
+
+def test_model_gateway_settings_read_from_env(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("BIANQUE_LLM_MAX_RETRIES", "5")
+    monkeypatch.setenv("BIANQUE_LLM_EXTRA_BODY", '{"thinking": {"type": "disabled"}}')
+    monkeypatch.setenv("BIANQUE_LLM_RECORDINGS_DIR", str(tmp_path / "replay"))
+    monkeypatch.setenv("BIANQUE_LLM_RECORD_DIR", str(tmp_path / "record"))
+    settings = get_settings()
+    assert settings.llm_max_retries == 5
+    assert settings.llm_extra_body == {"thinking": {"type": "disabled"}}
+    assert settings.llm_recordings_dir == tmp_path / "replay"
+    assert settings.llm_record_dir == tmp_path / "record"
+
+
+@pytest.mark.parametrize("raw", ["not json", "[1, 2]"])
+def test_extra_body_must_be_a_json_object(monkeypatch: pytest.MonkeyPatch, raw: str) -> None:
+    monkeypatch.setenv("BIANQUE_LLM_EXTRA_BODY", raw)
+    with pytest.raises((ValidationError, SettingsError)):
+        get_settings()
+
+
+def test_empty_extra_body_env_means_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BIANQUE_LLM_EXTRA_BODY", "")
+    assert get_settings().llm_extra_body == {}
 
 
 def test_env_var_read_with_prefix(monkeypatch: pytest.MonkeyPatch) -> None:

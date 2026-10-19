@@ -9,7 +9,8 @@ module provides the types that carry that constraint:
   check time (mypy strict), and there is no ordinary runtime path that builds one.
 - ``RedactedPrompt`` and ``RedactedMessage``: a chat message sequence whose contents are
   always ``RedactedText``, validated element by element at construction time against
-  dynamic construction and deserialization.
+  dynamic construction and deserialization. Tool call arguments in assistant messages
+  are ``RedactedText`` as well: they are sent back to the model with the next request.
 - ``redact_for_llm()``: the only factory. It rewrites text with the ``bianque.redaction``
   engine and attaches the sentinel.
 
@@ -23,11 +24,12 @@ This module does not import the provider layer; only ``bianque.llm.gateway`` doe
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Final, Literal
 
 from bianque.config import Settings, get_settings
+from bianque.llm.types import ToolCall
 from bianque.redaction import RedactionEngine, build_engine
 
 #: Construction sentinel: the only valid credential for building a ``RedactedText``,
@@ -35,8 +37,8 @@ from bianque.redaction import RedactionEngine, build_engine
 #: with it is caught by the gateway's ``detect()`` recheck.
 _CONSTRUCTION_SENTINEL: Final = object()
 
-#: Chat roles (the three basic roles of the OpenAI-compatible protocol).
-MessageRole = Literal["system", "user", "assistant"]
+#: Chat roles of the OpenAI-compatible protocol.
+MessageRole = Literal["system", "user", "assistant", "tool"]
 
 
 @dataclass(frozen=True, init=False)
@@ -68,11 +70,26 @@ class RedactedText:
 
 
 @dataclass(frozen=True)
+class RedactedToolCall:
+    """A tool call made by the model, as it is sent back in a later request."""
+
+    id: str
+    name: str
+    arguments: RedactedText
+
+
+@dataclass(frozen=True)
 class RedactedMessage:
-    """One redacted chat message: a role and ``RedactedText`` content."""
+    """One redacted chat message.
+
+    An assistant message may carry the tool calls the model made; a ``tool`` message
+    carries the result of one call and names it in ``tool_call_id``.
+    """
 
     role: MessageRole
     content: RedactedText
+    tool_calls: tuple[RedactedToolCall, ...] = ()
+    tool_call_id: str | None = None
 
 
 @dataclass(frozen=True, init=False)
@@ -106,7 +123,19 @@ class RedactedPrompt:
                     f"content of message {index} of RedactedPrompt did not go through "
                     f"the redaction pipeline: {type(message.content)!r}"
                 )
+            for call in message.tool_calls:
+                if not isinstance(call, RedactedToolCall) or not isinstance(
+                    call.arguments, RedactedText
+                ):
+                    raise TypeError(
+                        f"a tool call of message {index} of RedactedPrompt did not go "
+                        "through the redaction pipeline"
+                    )
         object.__setattr__(self, "messages", items)
+
+    def __add__(self, other: Iterable[RedactedMessage]) -> RedactedPrompt:
+        """Return a new prompt with ``other`` appended."""
+        return RedactedPrompt((*self.messages, *other))
 
 
 def parse_internal_domain_suffixes(raw: str) -> tuple[str, ...]:
@@ -168,4 +197,61 @@ def redact_prompt_for_llm(
     active = engine if engine is not None else build_redaction_engine(get_settings())
     return RedactedPrompt(
         RedactedMessage(role, redact_for_llm(raw, engine=active)) for role, raw in messages
+    )
+
+
+def redact_tool_call(
+    call_id: str, name: str, arguments: str, *, engine: RedactionEngine | None = None
+) -> RedactedToolCall:
+    """Run the arguments of a model tool call through the redaction pipeline.
+
+    Args:
+        call_id: The call ID the model gave.
+        name: The function name.
+        arguments: The raw JSON arguments.
+        engine: The redaction engine; built as in ``redact_for_llm()`` when omitted.
+
+    Returns:
+        The tool call with redacted arguments.
+    """
+    return RedactedToolCall(call_id, name, redact_for_llm(arguments, engine=engine))
+
+
+def tool_result_message(
+    call_id: str, result: str, *, engine: RedactionEngine | None = None
+) -> RedactedMessage:
+    """Build the ``tool`` message that returns a result for the call ``call_id``.
+
+    Args:
+        call_id: The ID of the tool call being answered.
+        result: The raw result text.
+        engine: The redaction engine; built as in ``redact_for_llm()`` when omitted.
+
+    Returns:
+        The redacted tool message.
+    """
+    return RedactedMessage("tool", redact_for_llm(result, engine=engine), tool_call_id=call_id)
+
+
+def assistant_message(
+    text: str, tool_calls: Sequence[ToolCall] = (), *, engine: RedactionEngine | None = None
+) -> RedactedMessage:
+    """Build the assistant message that records a model reply in the conversation.
+
+    Args:
+        text: The text the model returned.
+        tool_calls: The tool calls the model made.
+        engine: The redaction engine; built as in ``redact_for_llm()`` when omitted.
+
+    Returns:
+        The redacted assistant message, ready to be sent back with the next request.
+    """
+    active = engine if engine is not None else build_redaction_engine(get_settings())
+    return RedactedMessage(
+        "assistant",
+        redact_for_llm(text, engine=active),
+        tool_calls=tuple(
+            redact_tool_call(call.id, call.name, call.arguments, engine=active)
+            for call in tool_calls
+        ),
     )

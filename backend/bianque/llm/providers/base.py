@@ -1,40 +1,22 @@
-"""Provider interface and return types.
+"""Provider interface.
 
 The interface is deliberately thin and narrow:
 
-- Inputs are only ``RedactedPrompt``; the redaction type gate extends down to the
-  provider layer, and no provider has an overload that accepts a plain ``str``.
+- The input is a ``ModelRequest`` whose prompt is a ``RedactedPrompt``; the redaction
+  type gate extends down to the provider layer, and no provider accepts a plain ``str``.
 - ``endpoint_host`` reports where requests go; ``None`` means the provider has no
   network endpoint.
+- Providers do not retry. They raise ``RetryableProviderError`` for failures worth
+  retrying and leave the retry policy to the gateway.
 - All calls are ``async``.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Protocol
 
-from bianque.llm.redacted import RedactedPrompt
-
-
-@dataclass(frozen=True)
-class LLMUsage:
-    """Token usage of one model call, as reported by the provider.
-
-    Fields are ``0`` when the provider does not report usage.
-    """
-
-    prompt_tokens: int
-    completion_tokens: int
-
-
-@dataclass(frozen=True)
-class LLMCompletion:
-    """The result of one chat completion: text, actual model name and token usage."""
-
-    text: str
-    model: str
-    usage: LLMUsage
+from bianque.llm.request import ModelRequest
+from bianque.llm.types import LLMCompletion
 
 
 class LLMProvider(Protocol):
@@ -50,11 +32,11 @@ class LLMProvider(Protocol):
         """The host requests are sent to; ``None`` for an implementation with no network."""
         ...
 
-    async def complete(self, prompt: RedactedPrompt) -> LLMCompletion:
-        """Request one completion for a redacted chat message sequence.
+    async def complete(self, request: ModelRequest) -> LLMCompletion:
+        """Answer one model request.
 
         Args:
-            prompt: The redacted chat messages.
+            request: The request, with a redacted prompt.
 
         Returns:
             The completion.

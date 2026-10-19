@@ -33,8 +33,18 @@ import openai
 from pydantic import SecretStr
 
 from bianque.config import Settings
-from bianque.llm.providers.base import LLMCompletion, LLMUsage
-from bianque.llm.redacted import RedactedPrompt
+from bianque.llm.errors import LLMRequestError, RetryableProviderError
+from bianque.llm.redacted import RedactedMessage
+from bianque.llm.request import ModelRequest
+from bianque.llm.types import (
+    TOOL_CHOICE_MODES,
+    LLMCompletion,
+    LLMUsage,
+    ToolCall,
+    ToolChoice,
+    ToolSpec,
+    estimate_tokens,
+)
 
 #: Prefix that marks the credential setting as a reference to a file holding the key.
 API_KEY_FILE_PREFIX = "file:"
@@ -78,6 +88,39 @@ def resolve_api_key(api_key: SecretStr | None) -> SecretStr | None:
     return SecretStr(key)
 
 
+def _message_payload(message: RedactedMessage) -> dict[str, Any]:
+    payload: dict[str, Any] = {"role": message.role, "content": message.content.text}
+    if message.tool_calls:
+        payload["tool_calls"] = [
+            {
+                "id": call.id,
+                "type": "function",
+                "function": {"name": call.name, "arguments": call.arguments.text},
+            }
+            for call in message.tool_calls
+        ]
+    if message.tool_call_id is not None:
+        payload["tool_call_id"] = message.tool_call_id
+    return payload
+
+
+def _tool_payload(tool: ToolSpec) -> dict[str, Any]:
+    return {
+        "type": "function",
+        "function": {
+            "name": tool.name,
+            "description": tool.description,
+            "parameters": tool.parameters,
+        },
+    }
+
+
+def _tool_choice_payload(choice: ToolChoice) -> Any:
+    if choice in TOOL_CHOICE_MODES:
+        return choice
+    return {"type": "function", "function": {"name": choice}}
+
+
 class OpenAICompatProvider:
     """Provider that sends requests to an OpenAI-compatible endpoint."""
 
@@ -90,7 +133,6 @@ class OpenAICompatProvider:
                 ``MockTransport``. Production code passes ``None`` and the SDK builds
                 its own client.
         """
-        self._model = settings.llm_model
         api_key = resolve_api_key(settings.llm_api_key)
 
         options: dict[str, Any] = {
@@ -98,7 +140,7 @@ class OpenAICompatProvider:
             # The timeout comes only from settings, never from the SDK default, so that
             # timeouts are deterministic.
             "timeout": float(settings.llm_timeout_seconds),
-            # Retries are decided by the caller's degradation policy, not by the adapter.
+            # The gateway owns the retry policy; the adapter never retries.
             "max_retries": 0,
         }
         if settings.llm_base_url is not None:
@@ -136,35 +178,78 @@ class OpenAICompatProvider:
         """The host requests are sent to, from the SDK client's ``base_url``."""
         return urlsplit(str(self._client.base_url)).hostname
 
-    async def complete(self, prompt: RedactedPrompt) -> LLMCompletion:
-        """Send the redacted chat messages to the endpoint and return the completion.
+    async def complete(self, request: ModelRequest) -> LLMCompletion:
+        """Send one request to the endpoint and return the completion.
 
         Args:
-            prompt: The redacted chat messages.
+            request: The request; ``request.model`` names the model.
 
         Returns:
-            The completion.
+            The completion. Usage is estimated when the endpoint reports none.
 
         Raises:
             ValueError: No chat model name is configured.
+            RetryableProviderError: Timeout, connection failure, HTTP 429 or 5xx.
+            LLMRequestError: Any other rejected request, or a response without choices.
         """
-        if not self._model:
+        if not request.model:
             raise ValueError("the openai-compat provider requires BIANQUE_LLM_MODEL to be set")
-        payload: list[Any] = [
-            {"role": message.role, "content": message.content.text} for message in prompt.messages
-        ]
-        response = await self._client.chat.completions.create(model=self._model, messages=payload)
-        choice_text = response.choices[0].message.content if response.choices else None
+        options: dict[str, Any] = {
+            "model": request.model,
+            "messages": [_message_payload(message) for message in request.prompt.messages],
+            "temperature": request.temperature,
+        }
+        if request.tools:
+            options["tools"] = [_tool_payload(tool) for tool in request.tools]
+            options["tool_choice"] = _tool_choice_payload(request.tool_choice)
+        if request.extra_body:
+            options["extra_body"] = request.extra_body
+        try:
+            response = await self._client.chat.completions.create(**options)
+        except openai.APITimeoutError as exc:
+            raise RetryableProviderError("timeout", "model call timed out") from exc
+        except openai.APIConnectionError as exc:
+            raise RetryableProviderError("connection", "cannot reach the model service") from exc
+        except openai.RateLimitError as exc:
+            raise RetryableProviderError("rate_limited", "model service rate limit") from exc
+        except openai.InternalServerError as exc:
+            raise RetryableProviderError(
+                "server_error", f"model service error {exc.status_code}"
+            ) from exc
+        except openai.APIStatusError as exc:
+            raise LLMRequestError(
+                f"model service rejected the request ({exc.status_code}): {exc.message}"
+            ) from exc
+        except (openai.APIResponseValidationError, ValueError) as exc:
+            # A 200 response whose body is not JSON, or not the expected shape.
+            raise LLMRequestError(f"model service returned an unreadable response: {exc}") from exc
+        try:
+            choice = response.choices[0]
+            text = choice.message.content or ""
+            tool_calls = tuple(
+                ToolCall(id=call.id, name=call.function.name, arguments=call.function.arguments)
+                for call in (choice.message.tool_calls or [])
+                if call.type == "function"
+            )
+        except (AttributeError, IndexError, TypeError) as exc:
+            raise LLMRequestError(f"model service returned an unexpected response: {exc}") from exc
         usage = response.usage
+        if usage is not None:
+            llm_usage = LLMUsage(usage.prompt_tokens, usage.completion_tokens)
+        else:
+            prompt_text = "".join(message.content.text for message in request.prompt.messages)
+            output_text = text + "".join(call.arguments for call in tool_calls)
+            llm_usage = LLMUsage(
+                estimate_tokens(prompt_text), estimate_tokens(output_text), estimated=True
+            )
         return LLMCompletion(
-            text=choice_text or "",
-            model=response.model or self._model,
-            usage=LLMUsage(
-                prompt_tokens=usage.prompt_tokens if usage else 0,
-                completion_tokens=usage.completion_tokens if usage else 0,
-            ),
+            text=text,
+            model=response.model or request.model,
+            usage=llm_usage,
+            tool_calls=tool_calls,
+            finish_reason=choice.finish_reason or "stop",
         )
 
     def __repr__(self) -> str:
-        """Show only the model name and endpoint host; the credential never appears."""
-        return f"OpenAICompatProvider(model={self._model!r}, endpoint_host={self.endpoint_host!r})"
+        """Show only the endpoint host; the credential never appears."""
+        return f"OpenAICompatProvider(endpoint_host={self.endpoint_host!r})"
