@@ -44,6 +44,9 @@ from bianque.gate.forbidden import _COMMANDS, find_write_commands
         ("git commit -am fix", ["git commit"]),
         ("git revert 3f9a1c2b7d4e", ["git revert"]),
         ("git commit -m 3f9a1c2b", ["git commit"]),
+        ("kubectl\u3000delete pod x", ["kubectl delete"]),
+        ("kubectl\u00a0delete pod x", ["kubectl delete"]),
+        ("kubectl -n demo-s1 \\\n  delete pod x", ["kubectl delete"]),
         ("git commit -am deadbeef1", ["git commit"]),
     ],
 )
@@ -78,6 +81,7 @@ def test_write_commands_are_found(text: str, expected: list[str]) -> None:
         "Check the state with kubectl. Delete nothing.",
         "The change came through Helm. Upgrade notes are in the runbook.",
         "kubectl, then delete",
+        "kubectl\ndelete pod x",
     ],
 )
 def test_read_commands_and_prose_are_not_write_commands(text: str) -> None:

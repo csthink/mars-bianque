@@ -3,14 +3,14 @@
 A command is a command word (``kubectl``, ``oc``, ``helm``, ``git``) followed by its
 verb. A command word is found wherever it is not part of a longer ASCII word, so text,
 Markdown emphasis or full-width punctuation around it do not hide it (``执行kubectl``,
-``**kubectl delete**``). After it, only ASCII words separated by spaces or tabs belong
-to the command; a quoted value stays inside its word (``--context="kind"``). Any other
-character ends the command, and so does a word that ends a clause with ``.``, ``,`` or
-``:``; prose that goes on after the command word (``git 仓库最近一次 commit``,
-``kubectl. Delete nothing``) therefore has no verb. Options are skipped, with their
-value for the options that take one, and the first other word is the verb. Words that
-are not a write verb, such as ``kubectl get`` or the prose in "use kubectl to delete",
-are not write commands.
+``**kubectl delete**``). After it, only ASCII words separated by whitespace other than a
+line break, or by a shell line continuation, belong to the command; a quoted value
+stays inside its word (``--context="kind"``). Any other character ends the command, and
+so does a word that ends a clause with ``.``, ``,`` or ``:``; prose that goes on after
+the command word (``git 仓库最近一次 commit``, ``kubectl. Delete nothing``) therefore
+has no verb. Options are skipped, with their value for the options that take one, and
+the first other word is the verb. Words that are not a write verb, such as ``kubectl
+get`` or the prose in "use kubectl to delete", are not write commands.
 
 These patterns are domain knowledge: a new domain changes this table.
 """
@@ -109,8 +109,9 @@ _COMMAND_WORD = re.compile(
     re.IGNORECASE,
 )
 
-#: An ASCII word preceded by spaces or tabs; quoted parts belong to the word.
-_NEXT_WORD = re.compile(r"""[ \t]+((?:[A-Za-z0-9_./=:@+%,~-]|"[^"\n]*"|'[^'\n]*')+)""")
+#: An ASCII word preceded by whitespace other than a line break (a full-width or no-break
+#: space counts) or by a shell line continuation; quoted parts belong to the word.
+_NEXT_WORD = re.compile(r"""(?:[^\S\n]|\\\n)+((?:[A-Za-z0-9_./=:@+%,~-]|"[^"\n]*"|'[^'\n]*')+)""")
 
 #: Punctuation that ends a clause when it ends a word.
 _TRAILING = ".,:"
