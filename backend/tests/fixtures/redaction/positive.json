@@ -1,0 +1,86 @@
+{
+  "_doc": "Positive regression corpus: each case contains sensitive content that must be masked. After redact(), the secret must not remain and a redaction marker must be present. Covers secret / token / password / API key / Authorization / cookie / DSN / private IP / internal domain / high entropy. Synthetic secrets are stored as fragments: the test loader joins secret_parts into the secret and substitutes it for {secret} in input, so no complete secret literal appears in this file. Used by tests/test_redaction_corpus.py.",
+  "cases": [
+    {
+      "class": "secret",
+      "input": "config: db_secret={secret} and rest of line",
+      "secret_parts": ["Sup3rSecret", "V@lue"]
+    },
+    {
+      "class": "token",
+      "input": "issued token={secret} for CI",
+      "secret_parts": ["ghp_", "ABCDEFabcdef0123456789", "ABCDEFabcd"]
+    },
+    {
+      "class": "password",
+      "input": "log line: password: '{secret}' accepted",
+      "secret_parts": ["hunter2", "Passw0rd!"]
+    },
+    {
+      "class": "api-key",
+      "input": "env AWS key {secret} loaded",
+      "secret_parts": ["AKIA", "IOSFODNN7EXAMPLE"]
+    },
+    {
+      "class": "authorization",
+      "input": "request header Authorization: Bearer {secret} sent",
+      "secret_parts": ["eyJ", "hbGciOi.", "JzdWIiOiIxMjM0.", "SflKxwRJSMeKKF2QT4"]
+    },
+    {
+      "class": "cookie",
+      "input": "Set-Cookie: session={secret}; Path=/",
+      "secret_parts": ["aVeryLongOpaque", "SessionValue1234"]
+    },
+    {
+      "class": "dsn",
+      "input": "DATABASE_URL points at postgres://appuser:{secret}@db-internal:5432/prod",
+      "secret_parts": ["pgP4ss", "w0rd"]
+    },
+    {
+      "class": "dsn",
+      "input": "conn postgres://user:{secret}@db.internal:5432/app opened",
+      "secret_parts": ["pa", "@ss"],
+      "_why": "The password contains a bare @: credentials must be masked up to the last @ (the userinfo boundary), otherwise the tail ss@ leaks."
+    },
+    {
+      "class": "private-ip",
+      "input": "pod bound to node {secret} in cluster",
+      "secret_parts": ["10.12", ".34.56"]
+    },
+    {
+      "class": "internal-domain",
+      "input": "upstream call to {secret} timed out",
+      "secret_parts": ["payments.svc.corp.internal"],
+      "internal_domain_suffixes": ["corp.internal"]
+    },
+    {
+      "class": "high-entropy",
+      "input": "raw blob {secret} appeared in logs",
+      "secret_parts": ["9f8e7d6c5b4a3021", "ffeeddccbbaa9988"]
+    },
+    {
+      "class": "high-entropy",
+      "input": "artifact sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_{secret} tail",
+      "secret_parts": ["9f8e7d6c5b4a3021", "ffeeddccbbaa9988", "abcdef0123456789"],
+      "_why": "A low-entropy digest (sha256: followed by 64 a characters) glued with _ to a high-entropy key: the merged candidate is below the entropy threshold as a whole, so an entropy pre-filter applied before subtracting the digest span would miss the key."
+    },
+    {
+      "class": "high-entropy",
+      "input": "artifact sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-{secret} tail",
+      "secret_parts": ["9f8e7d6c5b4a3021", "ffeeddccbbaa9988", "abcdef0123456789"],
+      "_why": "Same as above, glued with - (low-entropy digest + high-entropy key)."
+    },
+    {
+      "class": "high-entropy",
+      "input": "hdr traceparent: 00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01_{secret} end",
+      "secret_parts": ["9f8e7d6c5b4a3021", "ffeeddccbbaa9988", "abcdef0123456789"],
+      "_why": "A low-entropy traceparent (repeated hex) glued with _ to a high-entropy key: the trace context variant of the same pre-filter miss."
+    },
+    {
+      "class": "high-entropy",
+      "input": "hdr traceparent: 00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01-{secret} end",
+      "secret_parts": ["9f8e7d6c5b4a3021", "ffeeddccbbaa9988", "abcdef0123456789"],
+      "_why": "Same traceparent case, glued with -."
+    }
+  ]
+}

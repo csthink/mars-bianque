@@ -1,0 +1,32 @@
+# import-linter negative configuration: proves that each contract in pyproject.toml
+# actually fails when it is violated, instead of passing vacuously.
+#
+# Each contract here mirrors one forbidden contract in pyproject.toml (same forbidden
+# modules, name prefixed with "Negative: "), but the root package is the fixture
+# package under tests/contracts_negative/, which violates every contract on purpose.
+# The expected result of
+#
+#   PYTHONPATH=tests/contracts_negative lint-imports --config contracts-negative.toml
+#
+# is that every contract is BROKEN and the exit code is non-zero.
+# tests/contracts_negative/test_contracts_negative.py asserts this.
+#
+# The fixture package lives outside the bianque package, so it is not part of the
+# graph checked by the positive configuration.
+
+# import-linter reads the [tool.importlinter] table even from a standalone file.
+[tool.importlinter]
+root_packages = ["bianque_negative_fixture"]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Negative: The model SDK is imported only by the provider layer"
+type = "forbidden"
+source_modules = ["bianque_negative_fixture"]
+forbidden_modules = ["openai"]
+
+[[tool.importlinter.contracts]]
+name = "Negative: Only the API package imports FastAPI"
+type = "forbidden"
+source_modules = ["bianque_negative_fixture"]
+forbidden_modules = ["fastapi"]

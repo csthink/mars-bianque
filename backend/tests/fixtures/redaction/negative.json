@@ -1,0 +1,78 @@
+{
+  "_doc": "Negative regression corpus: each case is diagnosable structure that redact() must leave unchanged. At least one case per class, mirroring positive.json: forms that look sensitive but are not, or whose structure must be kept. Used by tests/test_redaction_corpus.py.",
+  "cases": [
+    {
+      "class": "secret",
+      "input": "note: the secret sauce is in service X",
+      "must_equal": "note: the secret sauce is in service X",
+      "_why": "'secret' as an ordinary English word, not in key=value form: not masked."
+    },
+    {
+      "class": "token",
+      "input": "trace token id column is opaque but structural here",
+      "must_equal": "trace token id column is opaque but structural here",
+      "_why": "'token' as a descriptive word with no = or : assignment: not masked."
+    },
+    {
+      "class": "password",
+      "input": "user forgot password and clicked reset link",
+      "must_equal": "user forgot password and clicked reset link",
+      "_why": "'password' in a natural sentence with no assignment: not masked."
+    },
+    {
+      "class": "api-key",
+      "input": "image digest sha256:5d0da3dc9764b3e5c and layer count",
+      "must_equal": "image digest sha256:5d0da3dc9764b3e5c and layer count",
+      "_why": "An image digest is diagnosable structure (it identifies the image) and must be kept; it is shorter than the high-entropy minimum length."
+    },
+    {
+      "class": "api-key",
+      "input": "image digest sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 pulled",
+      "must_equal": "image digest sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 pulled",
+      "_why": "A full 64-hex sha256 digest exceeds the entropy threshold, but the sha256: prefix marks it as diagnosable structure (it identifies the image), so the entropy fallback must not mask it."
+    },
+    {
+      "class": "authorization",
+      "input": "Authorization scheme discussion in the design doc",
+      "must_equal": "Authorization scheme discussion in the design doc",
+      "_why": "'Authorization' not followed by Bearer/Basic/Token and a credential is an ordinary word: not masked."
+    },
+    {
+      "class": "cookie",
+      "input": "cookie policy banner shown on first visit",
+      "must_equal": "cookie policy banner shown on first visit",
+      "_why": "'cookie' as a noun with no = or : assigned value: not masked."
+    },
+    {
+      "class": "dsn",
+      "input": "healthcheck hits http://svc:8080/healthz with no creds",
+      "must_equal": "healthcheck hits http://svc:8080/healthz with no creds",
+      "_why": "A URI without a user:pass@ credential part is a diagnosable endpoint: not masked."
+    },
+    {
+      "class": "private-ip",
+      "input": "external LB at 203.0.113.7 returned 502",
+      "must_equal": "external LB at 203.0.113.7 returned 502",
+      "_why": "A public (non RFC 1918) IP is useful for diagnosis and must be kept, not generalized."
+    },
+    {
+      "class": "internal-domain",
+      "input": "public site www.example.com resolved fine",
+      "must_equal": "public site www.example.com resolved fine",
+      "internal_domain_suffixes": ["corp.internal"],
+      "_why": "A public domain outside the suffix list does not match and is not generalized."
+    },
+    {
+      "class": "high-entropy",
+      "input": "k8s uid short-abc123 and event ns=prod deploy=web-7f",
+      "must_equal": "k8s uid short-abc123 and event ns=prod deploy=web-7f",
+      "_why": "Readable identifiers shorter than 20 characters or with low entropy are not checked for entropy and not masked."
+    },
+    {
+      "class": "high-entropy",
+      "input": "req trace_id=4bf92f3577b34da6a3ce929d0e0e4736 handled",
+      "must_equal": "req trace_id=4bf92f3577b34da6a3ce929d0e0e4736 handled",
+      "_why": "A 32-hex trace id exceeds the entropy threshold, but the trace_id= label marks it as diagnosable structure (it links traces), so the entropy fallback must not mask it."
+    }
+  ]
+}
