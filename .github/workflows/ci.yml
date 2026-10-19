@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.2.0
+      - name: Install dependencies
+        working-directory: backend
+        run: uv sync --locked
+      - name: Lint, type check and static checks
+        run: make lint
+      - name: Tests
+        run: make test
+
+  public-safety:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Scan for public content violations
+        run: make public-safety

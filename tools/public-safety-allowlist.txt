@@ -1,0 +1,17 @@
+# Allowlist for tools/check-public-safety.sh (read by default).
+#
+# Format: one extended regular expression per line (bash [[ =~ ]] semantics),
+# matched against "<relative path>:<line content>"; a match lets that line through.
+# Lines starting with # and blank lines are ignored. The path gate ignores this file.
+#
+# Rules for adding an entry:
+#   - Only synthetic test values, UI text and pattern false positives. A real
+#     credential is never allowlisted: revoke it and remove it from history.
+#   - Prefer assembling synthetic values at runtime so no entry is needed.
+#   - Anchor each rule from ^ to $ on the full path and the full line, so it lets
+#     through exactly one line; when that line changes, the rule stops matching
+#     and has to be reviewed again.
+#   - Write the separator after a credential name as [:] or [=], so this file does
+#     not match itself.
+#   - Put the reason on the line above each rule, and check the "Allowlisted: N"
+#     count in the scanner output whenever a rule is added or removed.
