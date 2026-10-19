@@ -1,0 +1,240 @@
+[
+  {
+    "metadata": {
+      "annotations": {
+        "deployment.kubernetes.io/desired-replicas": "1",
+        "deployment.kubernetes.io/max-replicas": "2",
+        "deployment.kubernetes.io/revision": "1"
+      },
+      "creationTimestamp": "2026-10-19T22:34:48+00:00",
+      "generation": 1,
+      "labels": {
+        "app.kubernetes.io/name": "s1-app",
+        "pod-template-hash": "666f75b99"
+      },
+      "name": "s1-app-666f75b99",
+      "namespace": "demo-s1",
+      "ownerReferences": [
+        {
+          "apiVersion": "apps/v1",
+          "blockOwnerDeletion": true,
+          "controller": true,
+          "kind": "Deployment",
+          "name": "s1-app",
+          "uid": "e42ee267-6ff4-46d9-92b9-40a63de6b0ac"
+        }
+      ],
+      "resourceVersion": "2199",
+      "uid": "3dcb7195-bf0d-4f11-ac47-5f621d969bdc"
+    },
+    "spec": {
+      "replicas": 1,
+      "selector": {
+        "matchLabels": {
+          "app.kubernetes.io/name": "s1-app",
+          "pod-template-hash": "666f75b99"
+        }
+      },
+      "template": {
+        "metadata": {
+          "labels": {
+            "app.kubernetes.io/name": "s1-app",
+            "pod-template-hash": "666f75b99"
+          }
+        },
+        "spec": {
+          "containers": [
+            {
+              "env": [
+                {
+                  "name": "APP_MODE",
+                  "value": "standard"
+                },
+                {
+                  "name": "ALLOC_MB",
+                  "value": "48"
+                }
+              ],
+              "image": "bianque-s1-app:dev",
+              "imagePullPolicy": "Never",
+              "livenessProbe": {
+                "failureThreshold": 2,
+                "httpGet": {
+                  "path": "/healthz",
+                  "port": "http",
+                  "scheme": "HTTP"
+                },
+                "initialDelaySeconds": 3,
+                "periodSeconds": 5,
+                "successThreshold": 1,
+                "timeoutSeconds": 1
+              },
+              "name": "app",
+              "ports": [
+                {
+                  "containerPort": 8080,
+                  "name": "http",
+                  "protocol": "TCP"
+                }
+              ],
+              "readinessProbe": {
+                "failureThreshold": 3,
+                "httpGet": {
+                  "path": "/healthz",
+                  "port": "http",
+                  "scheme": "HTTP"
+                },
+                "periodSeconds": 5,
+                "successThreshold": 1,
+                "timeoutSeconds": 1
+              },
+              "resources": {
+                "limits": {
+                  "cpu": "200m",
+                  "memory": "128Mi"
+                },
+                "requests": {
+                  "cpu": "50m",
+                  "memory": "64Mi"
+                }
+              },
+              "terminationMessagePath": "/dev/termination-log",
+              "terminationMessagePolicy": "File"
+            }
+          ],
+          "dnsPolicy": "ClusterFirst",
+          "restartPolicy": "Always",
+          "schedulerName": "default-scheduler",
+          "securityContext": {},
+          "terminationGracePeriodSeconds": 30
+        }
+      }
+    },
+    "status": {
+      "availableReplicas": 1,
+      "fullyLabeledReplicas": 1,
+      "observedGeneration": 1,
+      "readyReplicas": 1,
+      "replicas": 1,
+      "terminatingReplicas": 0
+    }
+  },
+  {
+    "metadata": {
+      "annotations": {
+        "deployment.kubernetes.io/desired-replicas": "1",
+        "deployment.kubernetes.io/max-replicas": "2",
+        "deployment.kubernetes.io/revision": "2"
+      },
+      "creationTimestamp": "2026-10-19T22:34:55+00:00",
+      "generation": 1,
+      "labels": {
+        "app.kubernetes.io/name": "s1-app",
+        "pod-template-hash": "6867fdfbd4"
+      },
+      "name": "s1-app-6867fdfbd4",
+      "namespace": "demo-s1",
+      "ownerReferences": [
+        {
+          "apiVersion": "apps/v1",
+          "blockOwnerDeletion": true,
+          "controller": true,
+          "kind": "Deployment",
+          "name": "s1-app",
+          "uid": "e42ee267-6ff4-46d9-92b9-40a63de6b0ac"
+        }
+      ],
+      "resourceVersion": "2246",
+      "uid": "b380a326-2158-4f31-863e-02f7b33b7c10"
+    },
+    "spec": {
+      "replicas": 1,
+      "selector": {
+        "matchLabels": {
+          "app.kubernetes.io/name": "s1-app",
+          "pod-template-hash": "6867fdfbd4"
+        }
+      },
+      "template": {
+        "metadata": {
+          "labels": {
+            "app.kubernetes.io/name": "s1-app",
+            "pod-template-hash": "6867fdfbd4"
+          }
+        },
+        "spec": {
+          "containers": [
+            {
+              "env": [
+                {
+                  "name": "APP_MODE",
+                  "value": "standard"
+                },
+                {
+                  "name": "ALLOC_MB",
+                  "value": "48"
+                }
+              ],
+              "image": "bianque-s1-app:dev",
+              "imagePullPolicy": "Never",
+              "livenessProbe": {
+                "failureThreshold": 2,
+                "httpGet": {
+                  "path": "/healthz",
+                  "port": "http",
+                  "scheme": "HTTP"
+                },
+                "initialDelaySeconds": 3,
+                "periodSeconds": 5,
+                "successThreshold": 1,
+                "timeoutSeconds": 1
+              },
+              "name": "app",
+              "ports": [
+                {
+                  "containerPort": 8080,
+                  "name": "http",
+                  "protocol": "TCP"
+                }
+              ],
+              "readinessProbe": {
+                "failureThreshold": 3,
+                "httpGet": {
+                  "path": "/healthz",
+                  "port": "http",
+                  "scheme": "HTTP"
+                },
+                "periodSeconds": 5,
+                "successThreshold": 1,
+                "timeoutSeconds": 1
+              },
+              "resources": {
+                "limits": {
+                  "cpu": "200m",
+                  "memory": "32Mi"
+                },
+                "requests": {
+                  "cpu": "50m",
+                  "memory": "32Mi"
+                }
+              },
+              "terminationMessagePath": "/dev/termination-log",
+              "terminationMessagePolicy": "File"
+            }
+          ],
+          "dnsPolicy": "ClusterFirst",
+          "restartPolicy": "Always",
+          "schedulerName": "default-scheduler",
+          "securityContext": {},
+          "terminationGracePeriodSeconds": 30
+        }
+      }
+    },
+    "status": {
+      "fullyLabeledReplicas": 1,
+      "observedGeneration": 1,
+      "replicas": 1,
+      "terminatingReplicas": 0
+    }
+  }
+]

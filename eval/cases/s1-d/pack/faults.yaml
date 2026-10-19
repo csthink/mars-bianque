@@ -1,0 +1,2 @@
+- mode: timeout
+  tool: logs_get_container_logs

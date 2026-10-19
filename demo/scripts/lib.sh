@@ -123,3 +123,19 @@ apply_manifests() {
 wait_rollout() {
   kube -n "$DEMO_NAMESPACE" rollout status "deployment/$DEMO_DEPLOYMENT" --timeout="$ROLLOUT_TIMEOUT"
 }
+
+# Put demo-s1 back to a clean baseline: delete the namespace, recreate the manifest
+# repository with only the baseline commit, apply and wait. The repository is emptied
+# and re-initialized in place: the kind node mounts this directory, and replacing it
+# would leave the mount pointing at a deleted directory.
+reset_demo() {
+  info "deleting namespace $DEMO_NAMESPACE"
+  kube delete namespace "$DEMO_NAMESPACE" --ignore-not-found --wait=true --timeout="$ROLLOUT_TIMEOUT"
+  if [ -d "$MANIFESTS_DIR" ]; then
+    find "$MANIFESTS_DIR" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+  fi
+  rm -f "$STATE_FILE"
+  init_manifests
+  apply_manifests
+  wait_rollout
+}

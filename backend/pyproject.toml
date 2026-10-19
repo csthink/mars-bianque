@@ -6,13 +6,18 @@ license = "Apache-2.0"
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.13",
+    "kubernetes-asyncio>=36",
     "openai>=1.40",
     "pgvector>=0.3",
     "psycopg[binary]>=3.2",
     "pydantic-settings>=2.0",
     "python-ulid>=3",
+    "pyyaml>=6",
     "sqlalchemy[asyncio]>=2.0",
 ]
+
+[project.scripts]
+bianque = "bianque.cli:main"
 
 [dependency-groups]
 dev = [
@@ -22,6 +27,7 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
     "ruff>=0.6",
+    "types-pyyaml>=6",
 ]
 [build-system]
 requires = ["hatchling"]
@@ -70,6 +76,17 @@ unmatched_ignore_imports_alerting = "none"
 ignore_imports = [
     "bianque.llm.providers.* -> openai",
     "bianque.llm.providers.* -> openai.*",
+]
+
+[[tool.importlinter.contracts]]
+name = "Only the real Kubernetes backend imports the Kubernetes client"
+type = "forbidden"
+source_modules = ["bianque"]
+forbidden_modules = ["kubernetes_asyncio"]
+unmatched_ignore_imports_alerting = "none"
+ignore_imports = [
+    "bianque.tools.backends.kubernetes_live -> kubernetes_asyncio",
+    "bianque.tools.backends.kubernetes_live -> kubernetes_asyncio.*",
 ]
 
 [[tool.importlinter.contracts]]

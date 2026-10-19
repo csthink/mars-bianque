@@ -26,6 +26,12 @@ source_modules = ["bianque_negative_fixture"]
 forbidden_modules = ["openai"]
 
 [[tool.importlinter.contracts]]
+name = "Negative: Only the real Kubernetes backend imports the Kubernetes client"
+type = "forbidden"
+source_modules = ["bianque_negative_fixture"]
+forbidden_modules = ["kubernetes_asyncio"]
+
+[[tool.importlinter.contracts]]
 name = "Negative: Only the API package imports FastAPI"
 type = "forbidden"
 source_modules = ["bianque_negative_fixture"]

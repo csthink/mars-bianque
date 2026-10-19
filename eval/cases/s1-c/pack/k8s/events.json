@@ -1,0 +1,616 @@
+[
+  {
+    "count": 1,
+    "firstTimestamp": "2026-10-19T22:36:48+00:00",
+    "involvedObject": {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "name": "s1-app-666f75b99-4zc7k",
+      "namespace": "demo-s1",
+      "resourceVersion": "2608",
+      "uid": "e03512a2-0ab0-4bfe-915f-23a0e4581d6d"
+    },
+    "lastTimestamp": "2026-10-19T22:36:48+00:00",
+    "message": "Successfully assigned demo-s1/s1-app-666f75b99-4zc7k to bianque-demo-control-plane",
+    "metadata": {
+      "creationTimestamp": "2026-10-19T22:36:48+00:00",
+      "name": "s1-app-666f75b99-4zc7k.18e00f3d6d9f79ef",
+      "namespace": "demo-s1",
+      "resourceVersion": "2618",
+      "uid": "6e88bdce-993d-44b5-b63e-8a8df71375b3"
+    },
+    "reason": "Scheduled",
+    "reportingComponent": "default-scheduler",
+    "reportingInstance": "",
+    "source": {
+      "component": "default-scheduler"
+    },
+    "type": "Normal"
+  },
+  {
+    "count": 1,
+    "firstTimestamp": "2026-10-19T22:36:48+00:00",
+    "involvedObject": {
+      "apiVersion": "v1",
+      "fieldPath": "spec.containers{app}",
+      "kind": "Pod",
+      "name": "s1-app-666f75b99-4zc7k",
+      "namespace": "demo-s1",
+      "resourceVersion": "2613",
+      "uid": "e03512a2-0ab0-4bfe-915f-23a0e4581d6d"
+    },
+    "lastTimestamp": "2026-10-19T22:36:48+00:00",
+    "message": "Container image \"bianque-s1-app:dev\" already present on machine and can be accessed by the pod",
+    "metadata": {
+      "creationTimestamp": "2026-10-19T22:36:48+00:00",
+      "name": "s1-app-666f75b99-4zc7k.18e00f3d82cf6abe",
+      "namespace": "demo-s1",
+      "resourceVersion": "2620",
+      "uid": "676fe010-3ed8-470a-9428-383be8f7088e"
+    },
+    "reason": "Pulled",
+    "reportingComponent": "kubelet",
+    "reportingInstance": "bianque-demo-control-plane",
+    "source": {
+      "component": "kubelet",
+      "host": "bianque-demo-control-plane"
+    },
+    "type": "Normal"
+  },
+  {
+    "count": 1,
+    "firstTimestamp": "2026-10-19T22:36:48+00:00",
+    "involvedObject": {
+      "apiVersion": "v1",
+      "fieldPath": "spec.containers{app}",
+      "kind": "Pod",
+      "name": "s1-app-666f75b99-4zc7k",
+      "namespace": "demo-s1",
+      "resourceVersion": "2613",
+      "uid": "e03512a2-0ab0-4bfe-915f-23a0e4581d6d"
+    },
+    "lastTimestamp": "2026-10-19T22:36:48+00:00",
+    "message": "Container created",
+    "metadata": {
+      "creationTimestamp": "2026-10-19T22:36:48+00:00",
+      "name": "s1-app-666f75b99-4zc7k.18e00f3d8346e291",
+      "namespace": "demo-s1",
+      "resourceVersion": "2622",
+      "uid": "d0dda06f-d345-4798-824d-22d68d3b3ed5"
+    },
+    "reason": "Created",
+    "reportingComponent": "kubelet",
+    "reportingInstance": "bianque-demo-control-plane",
+    "source": {
+      "component": "kubelet",
+      "host": "bianque-demo-control-plane"
+    },
+    "type": "Normal"
+  },
+  {
+    "count": 1,
+    "firstTimestamp": "2026-10-19T22:36:48+00:00",
+    "involvedObject": {
+      "apiVersion": "v1",
+      "fieldPath": "spec.containers{app}",
+      "kind": "Pod",
+      "name": "s1-app-666f75b99-4zc7k",
+      "namespace": "demo-s1",
+      "resourceVersion": "2613",
+      "uid": "e03512a2-0ab0-4bfe-915f-23a0e4581d6d"
+    },
+    "lastTimestamp": "2026-10-19T22:36:48+00:00",
+    "message": "Container started",
+    "metadata": {
+      "creationTimestamp": "2026-10-19T22:36:48+00:00",
+      "name": "s1-app-666f75b99-4zc7k.18e00f3d850ab006",
+      "namespace": "demo-s1",
+      "resourceVersion": "2623",
+      "uid": "bff0b99d-b0f0-44b0-a62b-2abc09ae34f4"
+    },
+    "reason": "Started",
+    "reportingComponent": "kubelet",
+    "reportingInstance": "bianque-demo-control-plane",
+    "source": {
+      "component": "kubelet",
+      "host": "bianque-demo-control-plane"
+    },
+    "type": "Normal"
+  },
+  {
+    "count": 1,
+    "firstTimestamp": "2026-10-19T22:36:48+00:00",
+    "involvedObject": {
+      "apiVersion": "v1",
+      "fieldPath": "spec.containers{app}",
+      "kind": "Pod",
+      "name": "s1-app-666f75b99-4zc7k",
+      "namespace": "demo-s1",
+      "resourceVersion": "2613",
+      "uid": "e03512a2-0ab0-4bfe-915f-23a0e4581d6d"
+    },
+    "lastTimestamp": "2026-10-19T22:36:48+00:00",
+    "message": "Readiness probe failed: Get \"http://10.244.x.x:8080/healthz\": dial tcp 10.244.x.x:8080: connect: connection refused",
+    "metadata": {
+      "creationTimestamp": "2026-10-19T22:36:48+00:00",
+      "name": "s1-app-666f75b99-4zc7k.18e00f3d85271e58",
+      "namespace": "demo-s1",
+      "resourceVersion": "2625",
+      "uid": "53173fc0-6692-4471-b953-0558aa3efb7b"
+    },
+    "reason": "Unhealthy",
+    "reportingComponent": "kubelet",
+    "reportingInstance": "bianque-demo-control-plane",
+    "source": {
+      "component": "kubelet",
+      "host": "bianque-demo-control-plane"
+    },
+    "type": "Warning"
+  },
+  {
+    "count": 1,
+    "firstTimestamp": "2026-10-19T22:36:56+00:00",
+    "involvedObject": {
+      "apiVersion": "v1",
+      "fieldPath": "spec.containers{app}",
+      "kind": "Pod",
+      "name": "s1-app-666f75b99-4zc7k",
+      "namespace": "demo-s1",
+      "resourceVersion": "2613",
+      "uid": "e03512a2-0ab0-4bfe-915f-23a0e4581d6d"
+    },
+    "lastTimestamp": "2026-10-19T22:36:56+00:00",
+    "message": "Stopping container app",
+    "metadata": {
+      "creationTimestamp": "2026-10-19T22:36:56+00:00",
+      "name": "s1-app-666f75b99-4zc7k.18e00f3f594c233a",
+      "namespace": "demo-s1",
+      "resourceVersion": "2714",
+      "uid": "de2e7536-f4bb-48e7-8b31-911f0d9ea3c1"
+    },
+    "reason": "Killing",
+    "reportingComponent": "kubelet",
+    "reportingInstance": "bianque-demo-control-plane",
+    "source": {
+      "component": "kubelet",
+      "host": "bianque-demo-control-plane"
+    },
+    "type": "Normal"
+  },
+  {
+    "count": 1,
+    "firstTimestamp": "2026-10-19T22:36:48+00:00",
+    "involvedObject": {
+      "apiVersion": "apps/v1",
+      "kind": "ReplicaSet",
+      "name": "s1-app-666f75b99",
+      "namespace": "demo-s1",
+      "resourceVersion": "2604",
+      "uid": "34684d19-586f-4f1a-9ced-dc3b9dbd8c52"
+    },
+    "lastTimestamp": "2026-10-19T22:36:48+00:00",
+    "message": "Created pod: s1-app-666f75b99-4zc7k",
+    "metadata": {
+      "creationTimestamp": "2026-10-19T22:36:48+00:00",
+      "name": "s1-app-666f75b99.18e00f3d6d36350a",
+      "namespace": "demo-s1",
+      "resourceVersion": "2612",
+      "uid": "18b3f0c5-6980-49ea-ba27-36c6a3ee406e"
+    },
+    "reason": "SuccessfulCreate",
+    "reportingComponent": "replicaset-controller",
+    "reportingInstance": "",
+    "source": {
+      "component": "replicaset-controller"
+    },
+    "type": "Normal"
+  },
+  {
+    "count": 1,
+    "firstTimestamp": "2026-10-19T22:36:56+00:00",
+    "involvedObject": {
+      "apiVersion": "apps/v1",
+      "kind": "ReplicaSet",
+      "name": "s1-app-666f75b99",
+      "namespace": "demo-s1",
+      "resourceVersion": "2706",
+      "uid": "34684d19-586f-4f1a-9ced-dc3b9dbd8c52"
+    },
+    "lastTimestamp": "2026-10-19T22:36:56+00:00",
+    "message": "Deleted pod: s1-app-666f75b99-4zc7k",
+    "metadata": {
+      "creationTimestamp": "2026-10-19T22:36:56+00:00",
+      "name": "s1-app-666f75b99.18e00f3f59425e6a",
+      "namespace": "demo-s1",
+      "resourceVersion": "2713",
+      "uid": "f53a109d-b2a7-47a8-a540-b48c1e5bf7d2"
+    },
+    "reason": "SuccessfulDelete",
+    "reportingComponent": "replicaset-controller",
+    "reportingInstance": "",
+    "source": {
+      "component": "replicaset-controller"
+    },
+    "type": "Normal"
+  },
+  {
+    "count": 1,
+    "firstTimestamp": "2026-10-19T22:36:50+00:00",
+    "involvedObject": {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "name": "s1-app-7fb788b78f-7xq95",
+      "namespace": "demo-s1",
+      "resourceVersion": "2674",
+      "uid": "e23c97ac-1ddb-4cc7-84e7-8790d269b083"
+    },
+    "lastTimestamp": "2026-10-19T22:36:50+00:00",
+    "message": "Successfully assigned demo-s1/s1-app-7fb788b78f-7xq95 to bianque-demo-control-plane",
+    "metadata": {
+      "creationTimestamp": "2026-10-19T22:36:50+00:00",
+      "name": "s1-app-7fb788b78f-7xq95.18e00f3e037d4678",
+      "namespace": "demo-s1",
+      "resourceVersion": "2680",
+      "uid": "39ba7318-bed0-4408-8bae-934bad70aceb"
+    },
+    "reason": "Scheduled",
+    "reportingComponent": "default-scheduler",
+    "reportingInstance": "",
+    "source": {
+      "component": "default-scheduler"
+    },
+    "type": "Normal"
+  },
+  {
+    "count": 5,
+    "firstTimestamp": "2026-10-19T22:36:51+00:00",
+    "involvedObject": {
+      "apiVersion": "v1",
+      "fieldPath": "spec.containers{app}",
+      "kind": "Pod",
+      "name": "s1-app-7fb788b78f-7xq95",
+      "namespace": "demo-s1",
+      "resourceVersion": "2676",
+      "uid": "e23c97ac-1ddb-4cc7-84e7-8790d269b083"
+    },
+    "lastTimestamp": "2026-10-19T22:37:53+00:00",
+    "message": "Container image \"bianque-s1-app:dev\" already present on machine and can be accessed by the pod",
+    "metadata": {
+      "creationTimestamp": "2026-10-19T22:36:51+00:00",
+      "name": "s1-app-7fb788b78f-7xq95.18e00f3e19380934",
+      "namespace": "demo-s1",
+      "resourceVersion": "2867",
+      "uid": "af043729-b88d-4c17-b199-b7296a4e1859"
+    },
+    "reason": "Pulled",
+    "reportingComponent": "kubelet",
+    "reportingInstance": "bianque-demo-control-plane",
+    "source": {
+      "component": "kubelet",
+      "host": "bianque-demo-control-plane"
+    },
+    "type": "Normal"
+  },
+  {
+    "count": 5,
+    "firstTimestamp": "2026-10-19T22:36:51+00:00",
+    "involvedObject": {
+      "apiVersion": "v1",
+      "fieldPath": "spec.containers{app}",
+      "kind": "Pod",
+      "name": "s1-app-7fb788b78f-7xq95",
+      "namespace": "demo-s1",
+      "resourceVersion": "2676",
+      "uid": "e23c97ac-1ddb-4cc7-84e7-8790d269b083"
+    },
+    "lastTimestamp": "2026-10-19T22:37:53+00:00",
+    "message": "Container created",
+    "metadata": {
+      "creationTimestamp": "2026-10-19T22:36:51+00:00",
+      "name": "s1-app-7fb788b78f-7xq95.18e00f3e19b02034",
+      "namespace": "demo-s1",
+      "resourceVersion": "2868",
+      "uid": "b1b1ca9f-e1a1-41ad-8b18-32ecb7aac604"
+    },
+    "reason": "Created",
+    "reportingComponent": "kubelet",
+    "reportingInstance": "bianque-demo-control-plane",
+    "source": {
+      "component": "kubelet",
+      "host": "bianque-demo-control-plane"
+    },
+    "type": "Normal"
+  },
+  {
+    "count": 5,
+    "firstTimestamp": "2026-10-19T22:36:51+00:00",
+    "involvedObject": {
+      "apiVersion": "v1",
+      "fieldPath": "spec.containers{app}",
+      "kind": "Pod",
+      "name": "s1-app-7fb788b78f-7xq95",
+      "namespace": "demo-s1",
+      "resourceVersion": "2676",
+      "uid": "e23c97ac-1ddb-4cc7-84e7-8790d269b083"
+    },
+    "lastTimestamp": "2026-10-19T22:37:53+00:00",
+    "message": "Container started",
+    "metadata": {
+      "creationTimestamp": "2026-10-19T22:36:51+00:00",
+      "name": "s1-app-7fb788b78f-7xq95.18e00f3e1bc787ae",
+      "namespace": "demo-s1",
+      "resourceVersion": "2869",
+      "uid": "b8035263-1d03-421f-a637-11e0650d289a"
+    },
+    "reason": "Started",
+    "reportingComponent": "kubelet",
+    "reportingInstance": "bianque-demo-control-plane",
+    "source": {
+      "component": "kubelet",
+      "host": "bianque-demo-control-plane"
+    },
+    "type": "Normal"
+  },
+  {
+    "count": 8,
+    "firstTimestamp": "2026-10-19T22:36:51+00:00",
+    "involvedObject": {
+      "apiVersion": "v1",
+      "fieldPath": "spec.containers{app}",
+      "kind": "Pod",
+      "name": "s1-app-7fb788b78f-7xq95",
+      "namespace": "demo-s1",
+      "resourceVersion": "2676",
+      "uid": "e23c97ac-1ddb-4cc7-84e7-8790d269b083"
+    },
+    "lastTimestamp": "2026-10-19T22:37:53+00:00",
+    "message": "Readiness probe failed: Get \"http://10.244.x.x:8080/healthz\": dial tcp 10.244.x.x:8080: connect: connection refused",
+    "metadata": {
+      "creationTimestamp": "2026-10-19T22:36:51+00:00",
+      "name": "s1-app-7fb788b78f-7xq95.18e00f3e1be20db8",
+      "namespace": "demo-s1",
+      "resourceVersion": "2873",
+      "uid": "3405402e-1672-4e21-bd71-419b9fef1f8d"
+    },
+    "reason": "Unhealthy",
+    "reportingComponent": "kubelet",
+    "reportingInstance": "bianque-demo-control-plane",
+    "source": {
+      "component": "kubelet",
+      "host": "bianque-demo-control-plane"
+    },
+    "type": "Warning"
+  },
+  {
+    "count": 10,
+    "firstTimestamp": "2026-10-19T22:36:56+00:00",
+    "involvedObject": {
+      "apiVersion": "v1",
+      "fieldPath": "spec.containers{app}",
+      "kind": "Pod",
+      "name": "s1-app-7fb788b78f-7xq95",
+      "namespace": "demo-s1",
+      "resourceVersion": "2676",
+      "uid": "e23c97ac-1ddb-4cc7-84e7-8790d269b083"
+    },
+    "lastTimestamp": "2026-10-19T22:38:01+00:00",
+    "message": "Liveness probe failed: HTTP probe failed with statuscode: 404",
+    "metadata": {
+      "creationTimestamp": "2026-10-19T22:36:56+00:00",
+      "name": "s1-app-7fb788b78f-7xq95.18e00f3f4002caf5",
+      "namespace": "demo-s1",
+      "resourceVersion": "2890",
+      "uid": "7d4ff701-f380-40a0-9ca9-7d6571b8425a"
+    },
+    "reason": "Unhealthy",
+    "reportingComponent": "kubelet",
+    "reportingInstance": "bianque-demo-control-plane",
+    "source": {
+      "component": "kubelet",
+      "host": "bianque-demo-control-plane"
+    },
+    "type": "Warning"
+  },
+  {
+    "count": 5,
+    "firstTimestamp": "2026-10-19T22:37:01+00:00",
+    "involvedObject": {
+      "apiVersion": "v1",
+      "fieldPath": "spec.containers{app}",
+      "kind": "Pod",
+      "name": "s1-app-7fb788b78f-7xq95",
+      "namespace": "demo-s1",
+      "resourceVersion": "2676",
+      "uid": "e23c97ac-1ddb-4cc7-84e7-8790d269b083"
+    },
+    "lastTimestamp": "2026-10-19T22:38:01+00:00",
+    "message": "Container app failed liveness probe, will be restarted",
+    "metadata": {
+      "creationTimestamp": "2026-10-19T22:37:01+00:00",
+      "name": "s1-app-7fb788b78f-7xq95.18e00f406a19cbd4",
+      "namespace": "demo-s1",
+      "resourceVersion": "2891",
+      "uid": "1651e858-7952-4bd4-933c-62fa90f36861"
+    },
+    "reason": "Killing",
+    "reportingComponent": "kubelet",
+    "reportingInstance": "bianque-demo-control-plane",
+    "source": {
+      "component": "kubelet",
+      "host": "bianque-demo-control-plane"
+    },
+    "type": "Normal"
+  },
+  {
+    "count": 1,
+    "firstTimestamp": "2026-10-19T22:37:01+00:00",
+    "involvedObject": {
+      "apiVersion": "v1",
+      "fieldPath": "spec.containers{app}",
+      "kind": "Pod",
+      "name": "s1-app-7fb788b78f-7xq95",
+      "namespace": "demo-s1",
+      "resourceVersion": "2676",
+      "uid": "e23c97ac-1ddb-4cc7-84e7-8790d269b083"
+    },
+    "lastTimestamp": "2026-10-19T22:37:01+00:00",
+    "message": "Readiness probe failed: Get \"http://10.244.x.x:8080/healthz\": read tcp 10.244.x.x:40624->10.244.x.x:8080: read: connection reset by peer",
+    "metadata": {
+      "creationTimestamp": "2026-10-19T22:37:01+00:00",
+      "name": "s1-app-7fb788b78f-7xq95.18e00f408267f0cf",
+      "namespace": "demo-s1",
+      "resourceVersion": "2735",
+      "uid": "4643d76b-9b11-41de-858e-f311a90007e9"
+    },
+    "reason": "Unhealthy",
+    "reportingComponent": "kubelet",
+    "reportingInstance": "bianque-demo-control-plane",
+    "source": {
+      "component": "kubelet",
+      "host": "bianque-demo-control-plane"
+    },
+    "type": "Warning"
+  },
+  {
+    "count": 6,
+    "firstTimestamp": "2026-10-19T22:37:31+00:00",
+    "involvedObject": {
+      "apiVersion": "v1",
+      "fieldPath": "spec.containers{app}",
+      "kind": "Pod",
+      "name": "s1-app-7fb788b78f-7xq95",
+      "namespace": "demo-s1",
+      "resourceVersion": "2676",
+      "uid": "e23c97ac-1ddb-4cc7-84e7-8790d269b083"
+    },
+    "lastTimestamp": "2026-10-19T22:38:03+00:00",
+    "message": "Back-off restarting failed container app in pod s1-app-7fb788b78f-7xq95_demo-s1(e23c97ac-1ddb-4cc7-84e7-8790d269b083)",
+    "metadata": {
+      "creationTimestamp": "2026-10-19T22:37:31+00:00",
+      "name": "s1-app-7fb788b78f-7xq95.18e00f4785fc6458",
+      "namespace": "demo-s1",
+      "resourceVersion": "2903",
+      "uid": "9a0e5d3d-b26d-4457-85d7-f7bd1c90963c"
+    },
+    "reason": "BackOff",
+    "reportingComponent": "kubelet",
+    "reportingInstance": "bianque-demo-control-plane",
+    "source": {
+      "component": "kubelet",
+      "host": "bianque-demo-control-plane"
+    },
+    "type": "Warning"
+  },
+  {
+    "count": 1,
+    "firstTimestamp": "2026-10-19T22:36:50+00:00",
+    "involvedObject": {
+      "apiVersion": "apps/v1",
+      "kind": "ReplicaSet",
+      "name": "s1-app-7fb788b78f",
+      "namespace": "demo-s1",
+      "resourceVersion": "2671",
+      "uid": "b1253d5d-e7a4-467a-a64d-3f173f78c398"
+    },
+    "lastTimestamp": "2026-10-19T22:36:50+00:00",
+    "message": "Created pod: s1-app-7fb788b78f-7xq95",
+    "metadata": {
+      "creationTimestamp": "2026-10-19T22:36:50+00:00",
+      "name": "s1-app-7fb788b78f.18e00f3e0348132b",
+      "namespace": "demo-s1",
+      "resourceVersion": "2677",
+      "uid": "561f25cf-3a40-42a4-9887-3e39e5fc5956"
+    },
+    "reason": "SuccessfulCreate",
+    "reportingComponent": "replicaset-controller",
+    "reportingInstance": "",
+    "source": {
+      "component": "replicaset-controller"
+    },
+    "type": "Normal"
+  },
+  {
+    "count": 1,
+    "firstTimestamp": "2026-10-19T22:36:48+00:00",
+    "involvedObject": {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "name": "s1-app",
+      "namespace": "demo-s1",
+      "resourceVersion": "2603",
+      "uid": "ad9ab917-2adb-4f3c-b93f-8f4392db3dac"
+    },
+    "lastTimestamp": "2026-10-19T22:36:48+00:00",
+    "message": "Scaled up replica set s1-app-666f75b99 from 0 to 1",
+    "metadata": {
+      "creationTimestamp": "2026-10-19T22:36:48+00:00",
+      "name": "s1-app.18e00f3d6cf29da8",
+      "namespace": "demo-s1",
+      "resourceVersion": "2606",
+      "uid": "ad11a38a-fc94-4c5e-aa35-7d1fee86d01a"
+    },
+    "reason": "ScalingReplicaSet",
+    "reportingComponent": "deployment-controller",
+    "reportingInstance": "",
+    "source": {
+      "component": "deployment-controller"
+    },
+    "type": "Normal"
+  },
+  {
+    "count": 1,
+    "firstTimestamp": "2026-10-19T22:36:50+00:00",
+    "involvedObject": {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "name": "s1-app",
+      "namespace": "demo-s1",
+      "resourceVersion": "2670",
+      "uid": "ad9ab917-2adb-4f3c-b93f-8f4392db3dac"
+    },
+    "lastTimestamp": "2026-10-19T22:36:50+00:00",
+    "message": "Scaled up replica set s1-app-7fb788b78f from 0 to 1",
+    "metadata": {
+      "creationTimestamp": "2026-10-19T22:36:50+00:00",
+      "name": "s1-app.18e00f3e0310b9bc",
+      "namespace": "demo-s1",
+      "resourceVersion": "2673",
+      "uid": "d720e008-94ee-4a1f-83db-4992519ed455"
+    },
+    "reason": "ScalingReplicaSet",
+    "reportingComponent": "deployment-controller",
+    "reportingInstance": "",
+    "source": {
+      "component": "deployment-controller"
+    },
+    "type": "Normal"
+  },
+  {
+    "count": 1,
+    "firstTimestamp": "2026-10-19T22:36:56+00:00",
+    "involvedObject": {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "name": "s1-app",
+      "namespace": "demo-s1",
+      "resourceVersion": "2681",
+      "uid": "ad9ab917-2adb-4f3c-b93f-8f4392db3dac"
+    },
+    "lastTimestamp": "2026-10-19T22:36:56+00:00",
+    "message": "Scaled down replica set s1-app-666f75b99 from 1 to 0",
+    "metadata": {
+      "creationTimestamp": "2026-10-19T22:36:56+00:00",
+      "name": "s1-app.18e00f3f591a4a29",
+      "namespace": "demo-s1",
+      "resourceVersion": "2709",
+      "uid": "8df842ac-6057-477a-bc88-6aab5ffcd03d"
+    },
+    "reason": "ScalingReplicaSet",
+    "reportingComponent": "deployment-controller",
+    "reportingInstance": "",
+    "source": {
+      "component": "deployment-controller"
+    },
+    "type": "Normal"
+  }
+]

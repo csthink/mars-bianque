@@ -1,0 +1,12 @@
+{
+  "case": "s1-e",
+  "namespace": "demo-s1",
+  "recorded_at": "2026-10-19T22:41:55+00:00",
+  "repo_head": "refs/heads/main",
+  "schema_version": 1,
+  "versions": {
+    "kind": "v0.33.0",
+    "kubernetes": "v1.37.0",
+    "prometheus_chart": "29.37.0"
+  }
+}

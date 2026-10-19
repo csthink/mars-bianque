@@ -1,0 +1,285 @@
+[
+  {
+    "metadata": {
+      "creationTimestamp": "2026-10-19T22:36:50+00:00",
+      "generateName": "s1-app-7fb788b78f-",
+      "generation": 1,
+      "labels": {
+        "app.kubernetes.io/name": "s1-app",
+        "pod-template-hash": "7fb788b78f"
+      },
+      "name": "s1-app-7fb788b78f-7xq95",
+      "namespace": "demo-s1",
+      "ownerReferences": [
+        {
+          "apiVersion": "apps/v1",
+          "blockOwnerDeletion": true,
+          "controller": true,
+          "kind": "ReplicaSet",
+          "name": "s1-app-7fb788b78f",
+          "uid": "b1253d5d-e7a4-467a-a64d-3f173f78c398"
+        }
+      ],
+      "resourceVersion": "2896",
+      "uid": "e23c97ac-1ddb-4cc7-84e7-8790d269b083"
+    },
+    "spec": {
+      "containers": [
+        {
+          "env": [
+            {
+              "name": "APP_MODE",
+              "value": "standard"
+            },
+            {
+              "name": "ALLOC_MB",
+              "value": "48"
+            }
+          ],
+          "image": "bianque-s1-app:dev",
+          "imagePullPolicy": "Never",
+          "livenessProbe": {
+            "failureThreshold": 2,
+            "httpGet": {
+              "path": "/status",
+              "port": "http",
+              "scheme": "HTTP"
+            },
+            "initialDelaySeconds": 3,
+            "periodSeconds": 5,
+            "successThreshold": 1,
+            "timeoutSeconds": 1
+          },
+          "name": "app",
+          "ports": [
+            {
+              "containerPort": 8080,
+              "name": "http",
+              "protocol": "TCP"
+            }
+          ],
+          "readinessProbe": {
+            "failureThreshold": 3,
+            "httpGet": {
+              "path": "/healthz",
+              "port": "http",
+              "scheme": "HTTP"
+            },
+            "periodSeconds": 5,
+            "successThreshold": 1,
+            "timeoutSeconds": 1
+          },
+          "resources": {
+            "limits": {
+              "cpu": "200m",
+              "memory": "128Mi"
+            },
+            "requests": {
+              "cpu": "50m",
+              "memory": "64Mi"
+            }
+          },
+          "terminationMessagePath": "/dev/termination-log",
+          "terminationMessagePolicy": "File",
+          "volumeMounts": [
+            {
+              "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+              "name": "kube-api-access-4sxx9",
+              "readOnly": true
+            }
+          ]
+        }
+      ],
+      "dnsPolicy": "ClusterFirst",
+      "enableServiceLinks": true,
+      "nodeName": "bianque-demo-control-plane",
+      "preemptionPolicy": "PreemptLowerPriority",
+      "priority": 0,
+      "restartPolicy": "Always",
+      "schedulerName": "default-scheduler",
+      "securityContext": {},
+      "serviceAccount": "default",
+      "serviceAccountName": "default",
+      "terminationGracePeriodSeconds": 30,
+      "tolerations": [
+        {
+          "effect": "NoExecute",
+          "key": "node.kubernetes.io/not-ready",
+          "operator": "Exists",
+          "tolerationSeconds": 300
+        },
+        {
+          "effect": "NoExecute",
+          "key": "node.kubernetes.io/unreachable",
+          "operator": "Exists",
+          "tolerationSeconds": 300
+        }
+      ],
+      "volumes": [
+        {
+          "name": "kube-api-access-4sxx9",
+          "projected": {
+            "defaultMode": 420,
+            "sources": [
+              {
+                "serviceAccountToken": {
+                  "expirationSeconds": 3607,
+                  "path": "token"
+                }
+              },
+              {
+                "configMap": {
+                  "items": [
+                    {
+                      "key": "ca.crt",
+                      "path": "ca.crt"
+                    }
+                  ],
+                  "name": "kube-root-ca.crt"
+                }
+              },
+              {
+                "downwardAPI": {
+                  "items": [
+                    {
+                      "fieldRef": {
+                        "apiVersion": "v1",
+                        "fieldPath": "metadata.namespace"
+                      },
+                      "path": "namespace"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "status": {
+      "allocatedResources": {
+        "cpu": "50m",
+        "memory": "64Mi"
+      },
+      "conditions": [
+        {
+          "lastTransitionTime": "2026-10-19T22:36:51+00:00",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "PodReadyToStartContainers"
+        },
+        {
+          "lastTransitionTime": "2026-10-19T22:36:50+00:00",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "Initialized"
+        },
+        {
+          "lastTransitionTime": "2026-10-19T22:38:02+00:00",
+          "message": "containers with unready status: [app]",
+          "observedGeneration": 1,
+          "reason": "ContainersNotReady",
+          "status": "False",
+          "type": "Ready"
+        },
+        {
+          "lastTransitionTime": "2026-10-19T22:38:02+00:00",
+          "message": "containers with unready status: [app]",
+          "observedGeneration": 1,
+          "reason": "ContainersNotReady",
+          "status": "False",
+          "type": "ContainersReady"
+        },
+        {
+          "lastTransitionTime": "2026-10-19T22:36:50+00:00",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "PodScheduled"
+        }
+      ],
+      "containerStatuses": [
+        {
+          "allocatedResources": {
+            "cpu": "50m",
+            "memory": "64Mi"
+          },
+          "containerID": "containerd://8dd3b82160b22dc8f82de1f60a010f8330b2b0a9862b65c4d7fec17c950c59e7",
+          "image": "docker.io/library/bianque-s1-app:dev",
+          "imageID": "docker.io/library/import-2026-10-19@sha256:9ba75fb089bc188cd682033d252b20832533b16812aa2c4370ddc37e359778dd",
+          "lastState": {
+            "terminated": {
+              "containerID": "containerd://8dd3b82160b22dc8f82de1f60a010f8330b2b0a9862b65c4d7fec17c950c59e7",
+              "exitCode": 0,
+              "finishedAt": "2026-10-19T22:38:01+00:00",
+              "reason": "Completed",
+              "startedAt": "2026-10-19T22:37:53+00:00"
+            }
+          },
+          "name": "app",
+          "ready": false,
+          "resources": {
+            "limits": {
+              "cpu": "200m",
+              "memory": "128Mi"
+            },
+            "requests": {
+              "cpu": "50m",
+              "memory": "64Mi"
+            }
+          },
+          "restartCount": 4,
+          "started": false,
+          "state": {
+            "waiting": {
+              "message": "back-off 40s restarting failed container=app pod=s1-app-7fb788b78f-7xq95_demo-s1(e23c97ac-1ddb-4cc7-84e7-8790d269b083)",
+              "reason": "CrashLoopBackOff"
+            }
+          },
+          "user": {
+            "linux": {
+              "gid": 10001,
+              "supplementalGroups": [
+                10001
+              ],
+              "uid": 10001
+            }
+          },
+          "volumeMounts": [
+            {
+              "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+              "name": "kube-api-access-4sxx9",
+              "readOnly": true,
+              "recursiveReadOnly": "Disabled"
+            }
+          ]
+        }
+      ],
+      "hostIP": "172.20.x.x",
+      "hostIPs": [
+        {
+          "ip": "172.20.x.x"
+        }
+      ],
+      "observedGeneration": 1,
+      "phase": "Running",
+      "podIP": "10.244.x.x",
+      "podIPs": [
+        {
+          "ip": "10.244.x.x"
+        }
+      ],
+      "qosClass": "Burstable",
+      "resources": {
+        "limits": {
+          "cpu": "200m",
+          "memory": "128Mi"
+        },
+        "requests": {
+          "cpu": "28m",
+          "memory": "64Mi"
+        }
+      },
+      "startTime": "2026-10-19T22:36:50+00:00"
+    }
+  }
+]

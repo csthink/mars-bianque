@@ -99,6 +99,23 @@ class Settings(BaseSettings):
     #: Token budget of one investigation (``BIANQUE_INVESTIGATION_TOKEN_BUDGET``).
     investigation_token_budget: int = 120000
 
+    #: Kubeconfig context of the real tool backend (``BIANQUE_KUBE_CONTEXT``). Empty
+    #: inside a cluster, where the service account is used; on a workstation it names
+    #: the cluster explicitly, so the host's current context never decides what is read.
+    kube_context: str | None = None
+
+    #: Path of the manifest Git repository read by the real tool backend
+    #: (``BIANQUE_GIT_REPO_PATH``).
+    git_repo_path: Path | None = None
+
+    #: Directory holding the evaluation cases and their evidence packs
+    #: (``BIANQUE_CASES_DIR``); each case keeps its pack in ``<case>/pack``.
+    cases_dir: Path = Path("eval/cases")
+
+    #: The case whose evidence pack the replay backend reads when no case is given
+    #: (``BIANQUE_PACK_CASE``).
+    pack_case: str = "s1-a"
+
     #: Comma-separated internal domain suffixes (``BIANQUE_REDACT_INTERNAL_DOMAINS``).
     #: The redaction engine generalizes host names under these suffixes; when empty,
     #: the engine has no internal domain rule.

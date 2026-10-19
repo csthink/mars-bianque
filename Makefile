@@ -1,4 +1,5 @@
-.PHONY: check lint test public-safety hooks demo demo-down demo-alerts inject-s1 restore-s1
+.PHONY: check lint test public-safety hooks demo demo-down demo-alerts inject-s1 restore-s1 \
+	record-pack derive-packs
 
 UV := cd backend && uv run --locked
 
@@ -14,6 +15,7 @@ lint:
 	$(UV) mypy
 	$(UV) lint-imports
 	$(UV) python tools/check_env_prefix.py
+	$(UV) python tools/check_k8s_readonly.py
 	shellcheck demo/scripts/*.sh
 
 test:
@@ -41,3 +43,14 @@ inject-s1:
 
 restore-s1:
 	demo/scripts/restore-s1.sh
+
+record-pack:
+	PROMETHEUS_CHART_VERSION='$(PROMETHEUS_CHART_VERSION)' demo/scripts/record-pack.sh '$(CASE)'
+
+# S1-d and S1-f are derived from the S1-a pack: a log tool timeout during replay, and a
+# pack that keeps only the alert and the pods.
+derive-packs:
+	$(UV) bianque pack derive --from ../eval/cases/s1-a/pack --out ../eval/cases/s1-d/pack \
+		--case s1-d --fault logs_get_container_logs:timeout
+	$(UV) bianque pack derive --from ../eval/cases/s1-a/pack --out ../eval/cases/s1-f/pack \
+		--case s1-f --only alert,pods

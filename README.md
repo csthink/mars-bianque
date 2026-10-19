@@ -26,9 +26,27 @@ Bianque is an alert-driven root cause analysis agent for Kubernetes: when an ale
 | `make inject-s1 CASE=a` | 注入故障：`a` 把 `APP_MODE` 改成非法值；`b` 把内存限制改小；`c` 把存活检查指向不存在的路径；`e` 先做 `a`，再提交一次无关的改动 |
 | `make restore-s1` | 回退注入的提交，等待演示应用恢复 |
 | `make demo-alerts` | 列出 Alertmanager 当前的告警 |
+| `make record-pack CASE=a` | 录制一个用例的证据包（`a`、`b`、`c`、`e`）：把 `demo-s1` 重置到干净的基线，注入故障，取 Alertmanager 发出的第一条告警，把命名空间与清单仓的快照写到 `eval/cases/s1-<用例>/pack/`，跑一遍真实集群上的集成测试，最后恢复 |
+| `make derive-packs` | 从 S1-a 的证据包派生 S1-d（回放时日志工具超时）与 S1-f（只留告警与 Pod） |
 | `make demo-down` | 删除 kind 集群；`.demo/` 保留，要从头开始就另外删除 `.demo/` |
 
 注入后 Pod 反复重启，约 1 分钟内（实测 48 至 76 秒）Alertmanager 出现一条 `BianquePodRestarting` 告警；恢复后 1 至 2 分钟内告警解除。所有命令都指定 `kind-bianque-demo` 这个 kubectl context，建集群后会切回原来的当前 context，不会改动其他集群。
+
+## 证据包
+
+证据包是故障发生时整个演示命名空间（Pod、事件、Deployment、ReplicaSet、全部容器日志）与清单 Git 仓的快照，外加触发调查的那条告警。扁鹊的每个取证工具都有两种后端：读真实集群与清单仓的真实后端，和读证据包的回放后端；两者接口相同，同一查询返回相同的内容。所以没有 kind 集群也能用证据包重跑调查与评测，回放时把录制时间当作当前时间。
+
+录制时去掉对象的 `managedFields` 与 `last-applied-configuration` 注解，私有地址泛化为 `10.244.x.x` 的形式，写完再用脱敏规则检查全部文件；清单仓用 `git fast-export` 文本保存。目录结构：
+
+```text
+eval/cases/s1-a/pack/
+├── meta.json          格式版本、用例、命名空间、录制时间、组件版本
+├── alert.json         Alertmanager 的 webhook 请求体
+├── k8s/               pods.json、events.json、deployments.json、replicasets.json
+├── logs/              <pod>/<container>.log 与 <pod>/<container>.previous.log
+├── repo.fast-export   清单仓
+└── faults.yaml        可选：回放时注入的故障，例如日志工具超时
+```
 
 ## 许可证
 

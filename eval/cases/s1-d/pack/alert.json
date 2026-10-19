@@ -1,0 +1,47 @@
+{
+  "alerts": [
+    {
+      "annotations": {
+        "description": "The container is in CrashLoopBackOff or restarted more than twice in the last two minutes.",
+        "summary": "Container app of pod demo-s1/s1-app-5468546b65-dvgq5 keeps restarting"
+      },
+      "endsAt": "0001-01-01T00:00:00Z",
+      "fingerprint": "a2b4e6e9dd73d436",
+      "generatorURL": "http://prometheus-server-6fb9768697-w5nrm:9090/graph?g0.expr=max+by+%28namespace%2C+pod%2C+container%29+%28max_over_time%28kube_pod_container_status_waiting_reason%7Breason%3D%22CrashLoopBackOff%22%7D%5B1m%5D%29%29+%3E+0+or+max+by+%28namespace%2C+pod%2C+container%29+%28increase%28kube_pod_container_status_restarts_total%5B2m%5D%29%29+%3E+2&g0.tab=1",
+      "labels": {
+        "alertname": "BianquePodRestarting",
+        "container": "app",
+        "namespace": "demo-s1",
+        "pod": "s1-app-5468546b65-dvgq5",
+        "severity": "warning"
+      },
+      "startsAt": "2026-10-19T22:33:27.664Z",
+      "status": "firing"
+    }
+  ],
+  "commonAnnotations": {
+    "description": "The container is in CrashLoopBackOff or restarted more than twice in the last two minutes.",
+    "summary": "Container app of pod demo-s1/s1-app-5468546b65-dvgq5 keeps restarting"
+  },
+  "commonLabels": {
+    "alertname": "BianquePodRestarting",
+    "container": "app",
+    "namespace": "demo-s1",
+    "pod": "s1-app-5468546b65-dvgq5",
+    "severity": "warning"
+  },
+  "externalURL": "http://prometheus-alertmanager-0:9093",
+  "groupKey": "{}:{alertname=\"BianquePodRestarting\", container=\"app\", namespace=\"demo-s1\", pod=\"s1-app-5468546b65-dvgq5\"}",
+  "groupLabels": {
+    "alertname": "BianquePodRestarting",
+    "container": "app",
+    "namespace": "demo-s1",
+    "pod": "s1-app-5468546b65-dvgq5"
+  },
+  "notification_reason": "first notification",
+  "receiver": "bianque",
+  "routeLabels": {},
+  "status": "firing",
+  "truncatedAlerts": 0,
+  "version": "4"
+}
