@@ -33,11 +33,14 @@ character, so words joined by it form one candidate) are long and varied enough 
 the entropy threshold. A piece made only of words is not high entropy (see
 ``is_word_shaped``): split at ``/ _ - + =`` and at camel-case boundaries, every word
 must be a capitalized or lowercase word of at least three letters, or an acronym of two
-to five capitals, every non-acronym word must contain a vowel, and the mean word length
+to five capitals, every non-acronym word must contain a vowel (or be one of a few
+protocol words such as ``http``), and the mean word length
 must be at least four. A digit is allowed only in a resource quantity that is the value
-of a ``key=`` word (``cpu=200m/memory=128Mi``). Of random tokens over the base64
-alphabets, at most about 5 in 100,000 of length 20 or 24 pass as words, none of length
-32; real base64 has ``=`` only as trailing padding, which makes them rarer still.
+of a ``key=`` word (``cpu=200m/memory=128Mi``) and in an array index of a path
+(``containers/0/livenessProbe``). Of random tokens over the base64
+alphabets, about 5 in 100,000 of length 20 or 24 pass as words and about 1 in 200,000
+of length 32, that one with ``=`` inside; real base64 has ``=`` only as trailing
+padding.
 
 Detection and rewriting are separate: this module only exposes detection primitives
 (is this high-entropy, and where are the tokens). Rewriting into placeholders is done
@@ -110,8 +113,12 @@ _CAMEL_BOUNDARY_RE = re.compile(r"(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 #: One word: capitalized or lowercase with at least three letters, or a short acronym.
 _WORD_RE = re.compile(r"[A-Z]?[a-z]{2,}|(?P<acronym>[A-Z]{2,5})")
 _VOWEL_RE = re.compile(r"[aeiouyAEIOUY]")
+#: Protocol words without a vowel that field names contain (``httpGet``, ``tcpSocket``).
+_VOWELLESS_WORDS = frozenset({"http", "https", "tcp", "grpc", "dns", "tls"})
 #: A Kubernetes resource quantity: ``200m``, ``128Mi``, ``1.5``.
 _QUANTITY_RE = re.compile(r"[0-9]+(?:\.[0-9]+)?(?:m|k|Ki|Mi|Gi|Ti|Pi|Ei|M|G|T|P|E)?")
+#: An array index in a path: ``containers/0/livenessProbe``.
+_INDEX_RE = re.compile(r"[0-9]{1,3}")
 #: Minimum mean length of the words of a word-shaped piece.
 _MIN_MEAN_WORD_LEN = 4
 
@@ -121,7 +128,8 @@ def is_word_shaped(token: str) -> bool:
 
     ``ProgressDeadlineExceeded``, ``maxUnavailable/maxSurge`` and
     ``Running/CrashLoopBackOff/Error`` are word-shaped, and so is ``cpu=200m/memory=128Mi``:
-    a resource quantity counts when it is the value of a ``key=`` word. Anything else
+    a resource quantity counts when it is the value of a ``key=`` word, and an array index
+    when it follows a word and a ``/`` (``containers/0/livenessProbe``). Anything else
     with a digit, a word without a vowel or mostly short words is not.
     """
     words: list[str] = []
@@ -130,8 +138,10 @@ def is_word_shaped(token: str) -> bool:
         part = parts[index]
         if not part:
             continue
-        after_equals = index > 0 and parts[index - 1].endswith("=")
-        if after_equals and words and _QUANTITY_RE.fullmatch(part):
+        separator = parts[index - 1] if index > 0 else ""
+        if words and separator.endswith("=") and _QUANTITY_RE.fullmatch(part):
+            continue
+        if words and separator == "/" and _INDEX_RE.fullmatch(part):
             continue
         if not (part.isascii() and part.isalpha()):
             return False
@@ -140,8 +150,11 @@ def is_word_shaped(token: str) -> bool:
         return False
     for word in words:
         match = _WORD_RE.fullmatch(word)
-        if match is None or (match.group("acronym") is None and not _VOWEL_RE.search(word)):
+        if match is None:
             return False
+        if match.group("acronym") is None and not _VOWEL_RE.search(word):
+            if word.lower() not in _VOWELLESS_WORDS:
+                return False
     return sum(map(len, words)) / len(words) >= _MIN_MEAN_WORD_LEN
 
 

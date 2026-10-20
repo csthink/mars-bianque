@@ -209,6 +209,8 @@ def test_short_or_low_entropy_not_high_entropy() -> None:
         "OOMKilled/CrashLoopBackOff",
         "cpu=200m/memory=128Mi",
         "requests/cpu=250m",
+        "/spec/template/spec/containers/0/livenessProbe/httpGet/path",
+        "readinessProbe/tcpSocket/port",
     ],
 )
 def test_word_shaped_tokens_are_not_high_entropy(token: str) -> None:
@@ -226,6 +228,8 @@ def test_word_shaped_tokens_are_not_high_entropy(token: str) -> None:
         "cpu/200m/memory/128Mi",  # a quantity that is not the value of a key=
         "=200m/memory=128Mi",  # a quantity with no key word
         "token=Zx9Qw7Rt2Lm4Np8V",  # a value that is not a quantity
+        "containers/0123/livenessProbe",  # an index of four digits
+        "0/containers/livenessProbe",  # an index after no word
         "",
     ],
 )
