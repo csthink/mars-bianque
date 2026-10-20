@@ -111,6 +111,19 @@ async def test_a_sub_agent_cannot_call_another_domain(
     assert sink.evidence == []
 
 
+async def test_a_tool_is_refused_before_its_arguments_are_read(
+    tools: ToolRegistry, behaviour: _Behaviour
+) -> None:
+    sink = MemorySink()
+    result = await _executor(tools, sink).call(
+        "k8s_probe", {"namespace": "demo-s1", "pod": POD, "bogus": 1}, scope=SUBAGENT
+    )
+    assert result.error == "rejected: k8s_probe is not a tool of the logs domain"
+    assert behaviour.calls == 0
+    # The names the caller passed stay readable in the record.
+    assert POD in sink.calls[0].input_summary
+
+
 async def test_a_sub_agent_cannot_call_an_auxiliary_tool(tools: ToolRegistry) -> None:
     result = await _executor(tools, MemorySink()).call(
         "aux_probe", {"namespace": "demo-s1"}, scope=SUBAGENT
@@ -137,6 +150,42 @@ async def test_invalid_arguments_are_rejected(
     assert result.error == "invalid_arguments: logs_probe"
     assert behaviour.calls == 0
     assert sink.calls[0].error is not None and sink.calls[0].error.startswith("invalid_arguments")
+
+
+async def test_an_argument_value_with_a_nul_character_is_invalid(
+    tools: ToolRegistry, behaviour: _Behaviour
+) -> None:
+    sink = MemorySink()
+    result = await _executor(tools, sink).call(
+        "logs_probe", {"namespace": "demo-s1", "pod": "a\x00b"}, scope=SUBAGENT
+    )
+    assert result.error == "invalid_arguments: logs_probe"
+    assert behaviour.calls == 0
+    [call] = sink.calls
+    assert "\x00" not in call.input_summary and "\x00" not in (call.error or "")
+
+
+async def test_nul_characters_in_output_and_errors_are_escaped(
+    tools: ToolRegistry, behaviour: _Behaviour
+) -> None:
+    # PostgreSQL text cannot store NUL; container logs, for one, may carry it.
+    behaviour.text = json.dumps({"pod": POD, "line": "start"}).replace("start", "a\x00b")
+    sink = MemorySink()
+    executor = _executor(tools, sink)
+    ok = await executor.call(
+        "logs_probe", {"namespace": "demo-s1"}, scope=SUBAGENT, investigation=INVESTIGATION
+    )
+    behaviour.errors = [RuntimeError("bad\x00byte")]
+    failed = await executor.call("logs_probe", {"namespace": "demo-s1"}, scope=SUBAGENT)
+    assert (ok.status, failed.status) == ("ok", "error")
+    assert "a\\x00b" in ok.model_view.text
+    [evidence] = sink.evidence
+    texts = [evidence.raw_content, evidence.redacted_content, ok.model_view.text]
+    texts += [c.output_summary or "" for c in sink.calls] + [c.error or "" for c in sink.calls]
+    assert all("\x00" not in item for item in texts)
+    assert sink.calls[1].error == "failed: logs_probe namespace=demo-s1 pod=" + POD + (
+        " (RuntimeError: bad\\x00byte)"
+    )
 
 
 async def test_an_mcp_client_is_limited_to_its_tools_and_namespaces(

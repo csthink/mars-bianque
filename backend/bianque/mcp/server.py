@@ -97,7 +97,8 @@ async def run_tool(
         result = await executor.call(name, arguments, scope=client.scope())
     except Exception:
         shown = storable(name)[:NAME_LIMIT]
-        logger.exception("MCP call of %s by client %s failed", shown, client.name)
+        # %r: the name is the client's text, and line breaks in it must not forge log lines.
+        logger.exception("MCP call of %r by client %s failed", shown, client.name)
         return _error("failed", f"failed: {shown}")
     return to_result(result)
 

@@ -60,6 +60,12 @@ def test_inconsistent_declarations_are_refused(overrides: dict[str, object], mes
         _declare(**overrides)
 
 
+@pytest.mark.parametrize("name", ["Probe", "k8s-probe", "1probe", "p" * 65, "a\x00b", ""])
+def test_a_malformed_name_is_refused(name: str) -> None:
+    with pytest.raises(ToolRegistrationError, match="does not match"):
+        _declare(name=name)
+
+
 def test_an_auxiliary_tool_has_no_domain() -> None:
     _declare(kind="auxiliary", domain=None, source=None, identity_args=())
 

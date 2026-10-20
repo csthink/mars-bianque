@@ -16,6 +16,7 @@ The registry does not check domain names: evidence domains are declared once in
 
 from __future__ import annotations
 
+import re
 from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
@@ -37,6 +38,10 @@ ToolKind = Literal["evidence", "auxiliary"]
 EvidenceSource = Literal["kubernetes", "git"]
 
 ToolFunction = Callable[[Any, "ToolBackends"], Awaitable[ToolOutput]]
+
+#: Tool names: lowercase letters, digits and underscores, at most 64 characters, which
+#: model function calling and MCP clients both accept.
+NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 
 
 @dataclass(frozen=True)
@@ -77,11 +82,13 @@ class ToolRegistry:
         """Add a tool after checking the registry rules.
 
         Raises:
-            ToolRegistrationError: The tool is not read-only, its kind and domain do not
-                match, an identity argument is not an argument, the timeout is not
-                positive, or the name is taken.
+            ToolRegistrationError: The name is malformed or taken, the tool is not
+                read-only, its kind and domain do not match, an identity argument is not
+                an argument, or the timeout is not positive.
         """
         name = definition.name
+        if not NAME_PATTERN.fullmatch(name):
+            raise ToolRegistrationError(f"tool name {name!r} does not match {NAME_PATTERN.pattern}")
         if definition.read_only is not True:
             raise ToolRegistrationError(f"tool {name} is not declared read-only")
         if definition.kind == "evidence":

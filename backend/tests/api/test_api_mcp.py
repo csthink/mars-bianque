@@ -35,6 +35,17 @@ from bianque.tools.store import EvidenceRecord, ToolCallRecord
 
 NAMESPACE = "demo-s1"
 
+#: A token-like name no rule knows; only the entropy fallback of the redaction masks it.
+OPAQUE = "Zq8" + "Lw2Xk9Vb7Nr4Tp6Ys3Md5"
+
+#: Refuses every call record of an MCP call, as a failing database would.
+REFUSE_RECORDS = (
+    "CREATE OR REPLACE FUNCTION refuse_mcp_record() RETURNS trigger LANGUAGE plpgsql"
+    " AS $$ BEGIN RAISE EXCEPTION 'call record refused'; END $$",
+    "CREATE TRIGGER refuse_mcp_record BEFORE INSERT ON call_records"
+    " FOR EACH ROW WHEN (NEW.agent = 'mcp') EXECUTE FUNCTION refuse_mcp_record()",
+)
+
 #: The client's protocol modes; Claude Code speaks the ``legacy`` handshake.
 MODES = pytest.mark.parametrize("mode", ["legacy", "auto"])
 
@@ -185,7 +196,8 @@ def test_a_client_sees_and_calls_only_its_tools(migrated: Engine, pg_url: str, m
 
         async def work(client: Client) -> tuple[list[str], CallToolResult]:
             names = [tool.name for tool in (await client.list_tools()).tools]
-            denied = await client.call_tool("change_list_commits", {})
+            # Arguments that would not validate: the tool is refused before they are read.
+            denied = await client.call_tool("change_list_commits", {"bogus": 1})
             return names, denied
 
         names, denied = with_mcp(server, token, work, mode)
@@ -350,3 +362,51 @@ def test_input_the_database_cannot_store_is_rejected_and_recorded(
         ("k8s_list_pods", "rejected", "claude-code"),
     ]
     assert all("\x00" not in (c["error"] or "") for c in calls)
+
+
+@MODES
+def test_error_messages_are_redacted_with_the_configured_engine(
+    migrated: Engine, pg_url: str, mode: str
+) -> None:
+    token, entry = client_config("claude-code", ["*"], [NAMESPACE])
+    settings = scripted(pg_url, mcp_clients=[entry], redact_internal_domains="corp.internal")
+    with serve(settings) as server:
+
+        async def work(client: Client) -> list[CallToolResult]:
+            return [
+                await client.call_tool(OPAQUE, {}),
+                await client.call_tool("api.corp.internal", {}),
+            ]
+
+        opaque, internal = with_mcp(server, token, work, mode)
+
+    for result, hidden in ((opaque, OPAQUE), (internal, "corp.internal")):
+        error = error_of(result)
+        assert error["code"] == "unknown_tool"
+        assert error["message"].startswith("unknown_tool: ")
+        assert hidden not in error["message"]
+
+
+@MODES
+def test_a_call_record_that_cannot_be_written_is_answered_without_its_cause(
+    migrated: Engine, pg_url: str, mode: str
+) -> None:
+    token, entry = client_config("claude-code", ["*"], [NAMESPACE])
+    with migrated.begin() as connection:
+        for statement in REFUSE_RECORDS:
+            connection.execute(text(statement))
+    try:
+        with serve(scripted(pg_url, mcp_clients=[entry])) as server:
+
+            async def work(client: Client) -> CallToolResult:
+                return await client.call_tool("k8s_list_pods", {"namespace": NAMESPACE})
+
+            result = with_mcp(server, token, work, mode)
+    finally:
+        with migrated.begin() as connection:
+            connection.execute(text("DROP TRIGGER refuse_mcp_record ON call_records"))
+            connection.execute(text("DROP FUNCTION refuse_mcp_record()"))
+
+    assert error_of(result) == {"code": "failed", "message": "failed: k8s_list_pods"}
+    assert "refused" not in result.content[0].text  # type: ignore[union-attr]
+    assert mcp_calls(migrated) == []

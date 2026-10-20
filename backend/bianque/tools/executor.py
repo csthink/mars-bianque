@@ -3,7 +3,8 @@
 Evidence sub-agents and the MCP service both call ``ToolExecutor.call``. Each call goes
 through the same steps:
 
-1. Look up the tool, check that the caller may use it, validate the arguments.
+1. Look up the tool, check that the caller may use it, validate the arguments, check
+   the namespace they name against the caller's.
 2. Run it under its timeout. Timeouts, connection errors, HTTP 5xx and 429 are retried
    twice, after 0.5 and 1 second; other failures are final.
 3. Redact the result. Identifiers in the structured result (object names, commit
@@ -15,9 +16,9 @@ through the same steps:
 6. Return a ``ToolResult`` whose ``model_view`` is the only text that may reach a model.
 
 Error texts carry the category and the object only, never timings or retry counts, so
-that a failure reads the same on every run. A caller's tool name and argument keys are
-its own text: NUL characters in them, which PostgreSQL text cannot store, are escaped,
-so that every call can be recorded.
+that a failure reads the same on every run. PostgreSQL text cannot store NUL characters:
+the executor escapes them in a caller's tool name and arguments, in tool output and in
+error texts, so that every call can be recorded; argument values with one are invalid.
 """
 
 from __future__ import annotations
@@ -108,6 +109,17 @@ def storable(text: str) -> str:
     return text.replace("\x00", "\\x00")
 
 
+def _strings(arguments: Mapping[str, Any] | str) -> list[str]:
+    # The string values a caller passed, as far as they can be read before validation.
+    try:
+        payload = json.loads(arguments) if isinstance(arguments, str) else dict(arguments)
+    except ValueError:
+        return []
+    if not isinstance(payload, dict):
+        return []
+    return [value for value in payload.values() if isinstance(value, str)]
+
+
 def _validation_summary(error: ValidationError) -> str:
     return storable(
         "; ".join(
@@ -176,6 +188,7 @@ class ToolExecutor:
         raw_input = storable(
             arguments if isinstance(arguments, str) else json.dumps(dict(arguments))
         )
+        definition = self._tools.get(name)
         name = storable(name)[:NAME_LIMIT]
 
         async def finish(
@@ -188,8 +201,9 @@ class ToolExecutor:
         ) -> ToolResult:
             # The error text names the object the call was about; keep its name intact.
             keep = {*preserve, *keep}
-            view = self._redact(error.model_text, keep)
-            detail = f" ({self._engine.redact(error.detail)})" if error.detail else ""
+            text = storable(error.model_text)
+            view = self._redact(text, keep)
+            detail = f" ({self._engine.redact(storable(error.detail))})" if error.detail else ""
             await self._sink.save(
                 ToolCallRecord(
                     agent=scope.agent,
@@ -199,23 +213,22 @@ class ToolExecutor:
                     input_summary=self._redact(input_text, keep).text,
                     output_summary=view.text,
                     status=status,
-                    error=error.model_text + detail,
+                    error=text + detail,
                     retries=retries,
                     started_at=started_at,
                     latency_ms=round((time.monotonic() - clock) * 1000),
                 ),
                 None,
             )
-            return ToolResult(status, (), view, error.model_text)
+            return ToolResult(status, (), view, text)
 
-        definition = self._tools.get(name)
         if definition is None:
             return await finish("rejected", ToolError("unknown_tool", name))
         # The tool itself first: a caller learns nothing of the arguments of a tool it
-        # may not call.
+        # may not call. The names it passed stay readable in the record.
         denial = self._check_tool(definition, scope)
         if denial is not None:
-            return await finish("rejected", denial)
+            return await finish("rejected", denial, keep=_strings(arguments))
         try:
             payload = json.loads(arguments) if isinstance(arguments, str) else dict(arguments)
             args = definition.args_model.model_validate(payload)
@@ -241,7 +254,8 @@ class ToolExecutor:
         assert output is not None
 
         identifiers = tuple(sorted({*output.identifiers, *preserve}))
-        view = self._redact(output.text, identifiers)
+        raw = storable(output.text)
+        view = self._redact(raw, identifiers)
         evidence: EvidenceRecord | None = None
         if investigation is not None and definition.kind == "evidence":
             assert definition.source is not None
@@ -251,7 +265,7 @@ class ToolExecutor:
                 source=definition.source,
                 tool=name,
                 collected_at=datetime.now(UTC),
-                raw_content=output.text,
+                raw_content=raw,
                 redacted_content=view.text,
                 identifiers=identifiers,
                 step_id=investigation.step_id,

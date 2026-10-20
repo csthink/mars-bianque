@@ -10,7 +10,7 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 Namespace = Annotated[
     str,
@@ -38,9 +38,20 @@ LabelSelector = Annotated[
 
 
 class ToolArgs(BaseModel):
-    """Base of tool argument models: unknown arguments are rejected."""
+    """Base of tool argument models: unknown arguments are rejected.
+
+    Text values must not contain NUL characters: arguments reach PostgreSQL as call
+    records and as query parameters, and its text cannot store them.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def _no_nul(self) -> ToolArgs:
+        for name, value in self:
+            if isinstance(value, str) and "\x00" in value:
+                raise ValueError(f"{name} must not contain NUL characters")
+        return self
 
 
 def parse_time(value: Any) -> datetime | None:
