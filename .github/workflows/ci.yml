@@ -31,10 +31,38 @@ jobs:
       - name: Install dependencies
         working-directory: backend
         run: uv sync --locked
+      # Tests compare the local embedding model with the committed fixture, so the model
+      # must be present; it is downloaded once and its hash checked by the command.
+      - name: Cache the embedding model
+        id: embedding-model
+        uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cache/bianque/models
+          key: embedding-model-bge-small-en-v1.5-onnx-q-51f1bd0a
+      - name: Download the embedding model
+        if: steps.embedding-model.outputs.cache-hit != 'true'
+        working-directory: backend
+        run: uv run --locked bianque knowledge download-model
       - name: Lint, type check and static checks
         run: make lint
       - name: Tests
         run: make test
+      - name: Retrieval evaluation with the embedding fixture
+        working-directory: backend
+        env:
+          BIANQUE_DATABASE_URL: postgresql+psycopg://postgres:ci-only@localhost:5432/postgres
+          BIANQUE_EMBEDDING_MODE: fixture
+          BIANQUE_EMBEDDING_FIXTURE: ../eval/embeddings/bge-small-en-v1.5.json
+        run: |
+          uv run --locked alembic upgrade head
+          uv run --locked bianque knowledge ingest ../knowledge/runbooks
+          uv run --locked bianque eval retrieval --queries ../eval/retrieval/queries.yaml \
+            --out ../eval-report
+      - name: Upload the retrieval evaluation report
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: retrieval-eval
+          path: eval-report
 
   public-safety:
     runs-on: ubuntu-24.04

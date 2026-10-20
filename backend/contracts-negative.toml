@@ -34,6 +34,12 @@ source_modules = ["bianque_negative_fixture"]
 forbidden_modules = ["kubernetes_asyncio"]
 
 [[tool.importlinter.contracts]]
+name = "Negative: Only the embedding module imports the embedding library"
+type = "forbidden"
+source_modules = ["bianque_negative_fixture"]
+forbidden_modules = ["fastembed", "tokenizers"]
+
+[[tool.importlinter.contracts]]
 name = "Negative: The evidence gate does not import the model gateway"
 type = "forbidden"
 source_modules = ["bianque_negative_fixture"]

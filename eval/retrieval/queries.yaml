@@ -1,0 +1,120 @@
+# Retrieval evaluation queries. Each query is rewritten from an S1 case's
+# alert, its required evidence or a follow-up question an on-call engineer would ask,
+# and annotated with the runbook chunks that answer it before retrieval was run. The
+# comment after each ID is the chunk's heading path. Regenerate the embedding fixture
+# after editing this file: make knowledge-fixtures.
+schema_version: 1
+queries:
+  - id: q01
+    query: "Bianque Pod Restarting: the container is in CrashLoopBackOff or restarted more than twice in the last two minutes"
+    expected:
+      - kn_b728d580f575  # CrashLoopBackOff > What CrashLoopBackOff means
+      - kn_627044d86ab8  # CrashLoopBackOff
+  - id: q02
+    query: "Why does the pod keep restarting with back-off restarting failed container?"
+    expected:
+      - kn_b728d580f575  # CrashLoopBackOff > What CrashLoopBackOff means
+      - kn_255795fa4d69  # CrashLoopBackOff > Restart backoff timing
+  - id: q03
+    query: "What does exit code 1 mean for a container that terminated with reason Error?"
+    expected:
+      - kn_a9dafa2d208d  # CrashLoopBackOff > Reading exit codes
+  - id: q04
+    query: "How do I read the log of the previous container instance that crashed?"
+    expected:
+      - kn_c73d8439117f  # CrashLoopBackOff > Reading the previous container log
+      - kn_67ddfff8429e  # Reading Events and Container Logs > Current versus previous container logs
+  - id: q05
+    query: "The application log says invalid APP_MODE and the process exits at startup"
+    expected:
+      - kn_675de0a3fc2e  # Configuration Errors at Start-up > Recognizing a configuration failure
+      - kn_8fcd7b075182  # Configuration Errors at Start-up > Comparing current values with the log message
+  - id: q06
+    query: "Compare the environment variable value in the Deployment with the value the application rejects"
+    expected:
+      - kn_8fcd7b075182  # Configuration Errors at Start-up > Comparing current values with the log message
+  - id: q07
+    query: "Which commit changed the environment variable that broke the deployment?"
+    expected:
+      - kn_3e184df28070  # Configuration Errors at Start-up > Finding the change that introduced the value
+      - kn_e81b1e71434a  # Attributing a Fault to a GitOps Commit > Reading the diff of a candidate commit
+  - id: q08
+    query: "Container last state terminated with reason OOMKilled and exit code 137"
+    expected:
+      - kn_9cf7cc4bee53  # OOMKilled and Exit Code 137 > Confirming the termination reason
+      - kn_3cac9b81d277  # OOMKilled and Exit Code 137 > How the out-of-memory kill happens
+  - id: q09
+    query: "Is the memory limit of the deployment too small for the application?"
+    expected:
+      - kn_63c62a0dc2ed  # OOMKilled and Exit Code 137 > Reading the Deployment resources
+      - kn_88da75651df2  # OOMKilled and Exit Code 137 > Memory requests versus limits
+  - id: q10
+    query: "A recent change lowered resources.limits.memory; find it in the revision history"
+    expected:
+      - kn_640c524a2ab0  # OOMKilled and Exit Code 137 > Finding a recent change to limits
+  - id: q11
+    query: "Events show Liveness probe failed with HTTP probe failed statuscode 404"
+    expected:
+      - kn_452d485346a6  # Liveness, Readiness, and Startup Probes > Recognizing probe failure events
+      - kn_2a1260ea6ec1  # Liveness, Readiness, and Startup Probes > Wrong path or port
+  - id: q12
+    query: "The liveness probe path is wrong so the kubelet kills a healthy container"
+    expected:
+      - kn_d86edfa4918e  # Liveness, Readiness, and Startup Probes > How a bad liveness probe causes restart loops
+      - kn_2a1260ea6ec1  # Liveness, Readiness, and Startup Probes > Wrong path or port
+  - id: q13
+    query: "Container exits with code 143 after SIGTERM and there is no application error in the log"
+    expected:
+      - kn_d86edfa4918e  # Liveness, Readiness, and Startup Probes > How a bad liveness probe causes restart loops
+      - kn_a9dafa2d208d  # CrashLoopBackOff > Reading exit codes
+  - id: q14
+    query: "What did the latest rollout change in the pod template compared with the previous revision?"
+    expected:
+      - kn_af6e9ef1490c  # Deployment Rollout History > Comparing two adjacent revisions
+  - id: q15
+    query: "List the revisions of the deployment and their ReplicaSets"
+    expected:
+      - kn_887e49dfc02e  # Deployment Rollout History > Listing the rollout history
+      - kn_93b2379527ed  # Deployment Rollout History > Revisions and ReplicaSets
+  - id: q16
+    query: "Did the new revision start failing right after it was rolled out?"
+    expected:
+      - kn_3284ccd24359  # Deployment Rollout History > Matching a revision to when the fault began
+  - id: q17
+    query: "Find the commit in the manifest Git repository that introduced the fault"
+    expected:
+      - kn_b874c93d4f84  # Attributing a Fault to a GitOps Commit > Narrowing the log to the manifest path
+      - kn_e81b1e71434a  # Attributing a Fault to a GitOps Commit > Reading the diff of a candidate commit
+  - id: q18
+    query: "Two commits landed before the restarts; the newer one only edited the README"
+    expected:
+      - kn_789cc8acfec7  # Attributing a Fault to a GitOps Commit > Ignoring commits that touch unrelated files
+  - id: q19
+    query: "Does the commit time line up with when the pod started restarting?"
+    expected:
+      - kn_90e8974eafba  # Attributing a Fault to a GitOps Commit > Matching commit time to when restarts began
+      - kn_3284ccd24359  # Deployment Rollout History > Matching a revision to when the fault began
+  - id: q20
+    query: "How should the faulty change be undone in a GitOps setup?"
+    expected:
+      - kn_1b9bd8f6621a  # Attributing a Fault to a GitOps Commit > Remediation: reverting the commit through Git
+  - id: q21
+    query: "What do the reason, count and last timestamp of a namespace event tell me?"
+    expected:
+      - kn_398b15151b48  # Reading Events and Container Logs > Interpreting count and timestamps
+      - kn_3dcfba03a93e  # Reading Events and Container Logs > What a Kubernetes event records
+  - id: q22
+    query: "The log tool timed out; what evidence is still available to diagnose the restarts?"
+    expected:
+      - kn_fa369be3768e  # CrashLoopBackOff > Collecting the termination state
+      - kn_85905f724e53  # CrashLoopBackOff > Narrowing down the cause
+  - id: q23
+    query: "Only the pod list and pod status are available; how far can the cause be narrowed?"
+    expected:
+      - kn_fa369be3768e  # CrashLoopBackOff > Collecting the termination state
+      - kn_85905f724e53  # CrashLoopBackOff > Narrowing down the cause
+  - id: q24
+    query: "Pod status shows ImagePullBackOff for the new image tag"
+    expected:
+      - kn_9b59e79f151b  # ImagePullBackOff and ErrImagePull > Wrong image name or tag
+      - kn_1721783d983e  # ImagePullBackOff and ErrImagePull > How the two statuses relate

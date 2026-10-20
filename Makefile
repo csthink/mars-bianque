@@ -1,5 +1,5 @@
 .PHONY: check lint test frontend-check public-safety hooks demo demo-down demo-alerts inject-s1 \
-	restore-s1 record-pack derive-packs replay replay-down e2e
+	restore-s1 record-pack derive-packs replay replay-down e2e knowledge-fixtures eval-retrieval
 
 UV := cd backend && uv run --locked
 
@@ -16,7 +16,7 @@ lint:
 	$(UV) lint-imports
 	$(UV) python tools/check_env_prefix.py
 	$(UV) python tools/check_k8s_readonly.py
-	shellcheck demo/scripts/*.sh
+	shellcheck demo/scripts/*.sh backend/tools/*.sh
 
 test:
 	$(UV) pytest
@@ -83,3 +83,17 @@ e2e: $(REPLAY_ENV)
 	. ./$(REPLAY_ENV) && cd backend && uv run --locked python tests/api/investigation_fixture.py \
 		--database-url "postgresql+psycopg://postgres:$$BIANQUE_DB_PASSWORD@127.0.0.1:$${BIANQUE_E2E_DB_PORT:-55432}/postgres"
 	cd frontend && BIANQUE_E2E_URL="$(REPLAY_URL)" npx playwright test
+
+# Embedding fixture: vectors of every runbook chunk and evaluation query, computed with the
+# local model. Rerun after editing knowledge/runbooks, eval/retrieval/queries.yaml or a
+# case's alert or follow-up questions.
+EMBEDDING_FIXTURE := ../eval/embeddings/bge-small-en-v1.5.json
+
+knowledge-fixtures:
+	$(UV) bianque knowledge download-model
+	$(UV) bianque knowledge embed-fixtures --runbooks ../knowledge/runbooks --cases ../eval/cases \
+		--queries ../eval/retrieval/queries.yaml --out $(EMBEDDING_FIXTURE)
+
+# Retrieval evaluation in a throwaway database; the report lands in .demo/eval.
+eval-retrieval:
+	backend/tools/eval_retrieval.sh .demo/eval

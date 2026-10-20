@@ -1,7 +1,8 @@
 """Run investigations of the S1 evidence packs in ``scripted`` mode, and read them back.
 
-Tests run the real graph, the real tools on an evidence pack, the real evidence gate and
-a real PostgreSQL; only the model is replaced by the scripted role rules. A test injects
+Tests run the real graph, the real tools on an evidence pack, the real evidence gate,
+the real runbooks with the committed embedding fixture and a real PostgreSQL; only the
+model is replaced by the scripted role rules. A test injects
 rules before the role rules to make one call site misbehave, and may wrap the tool
 backends to delay or synchronize calls.
 """
@@ -22,6 +23,8 @@ from sqlalchemy.pool import NullPool
 from bianque.agents.runner import InvestigationOutcome, run_investigation
 from bianque.api.alertmanager import AlertInput, parse_webhook
 from bianque.config import Settings
+from bianque.knowledge.embedding import FixtureEmbedder
+from bianque.knowledge.ingest import ingest
 from bianque.llm import ScriptedRule
 from bianque.storage.db import session_factory
 from bianque.storage.models import (
@@ -37,8 +40,14 @@ from bianque.storage.models import (
 from bianque.tools.backends.base import GitSource, KubernetesSource, ToolBackends
 from bianque.tools.backends.pack import open_pack
 
+REPO = Path(__file__).resolve().parents[3]
+
 #: Root of the evaluation cases, where the committed evidence packs live.
-CASES = Path(__file__).resolve().parents[3] / "eval" / "cases"
+CASES = REPO / "eval" / "cases"
+
+#: The runbooks and the embedding fixture the investigations retrieve from.
+RUNBOOKS = REPO / "knowledge" / "runbooks"
+EMBEDDING_FIXTURE = REPO / "eval" / "embeddings" / "bge-small-en-v1.5.json"
 
 
 async def no_wait(_: float) -> None:
@@ -57,6 +66,8 @@ def scripted_settings(pg_url: str, **overrides: Any) -> Settings:
         "llm_mode": "scripted",
         "tool_backend": "pack",
         "cases_dir": CASES,
+        "embedding_mode": "fixture",
+        "embedding_fixture": EMBEDDING_FIXTURE,
     }
     return Settings(**{**values, **overrides})
 
@@ -127,6 +138,7 @@ async def investigate(
     *,
     rules: Sequence[ScriptedRule] = (),
     wrap: Callable[[ToolBackends], ToolBackends] | None = None,
+    knowledge: bool = True,
     **overrides: Any,
 ) -> Investigated:
     """Investigate the alert of a case's evidence pack and read the result back.
@@ -136,10 +148,13 @@ async def investigate(
         case: The case whose evidence pack the tools read.
         rules: Scripted rules tried before the role rules.
         wrap: Replaces the backends, for example to delay calls.
+        knowledge: Import the runbooks first, so the investigation retrieves knowledge.
         overrides: Settings, such as ``subagent_max_steps``.
     """
     settings = scripted_settings(pg_url, **overrides)
     async with database(pg_url) as sessions, open_pack(CASES / case / "pack") as backends:
+        if knowledge:
+            await ingest(RUNBOOKS, sessions=sessions, embedder=FixtureEmbedder(EMBEDDING_FIXTURE))
         outcome = await run_investigation(
             settings,
             case_alert(case),

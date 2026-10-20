@@ -33,10 +33,11 @@ describe("Citation", () => {
 describe("CallTable", () => {
   it("shows every call and the totals", () => {
     render(withEvidence(["ev_0000000002"], <CallTable data={callList} startedAt="2026-10-19T22:34:00Z" />));
-    expect(screen.getAllByTestId("call-row")).toHaveLength(3);
+    expect(screen.getAllByTestId("call-row")).toHaveLength(4);
     expect(screen.getByTestId("call-totals")).toHaveTextContent(
-      "合计 3 次调用（模型 2 次、工具 1 次）· token 38.2k · 总耗时 1 分 24 秒",
+      "合计 4 次调用（模型 2 次、工具 1 次、知识检索 1 次）· token 38.2k · 总耗时 1 分 24 秒",
     );
+    expect(screen.getByText("知识检索", { selector: "td" })).toBeInTheDocument();
     expect(screen.getByText("拒绝：citation_integrity")).toBeInTheDocument();
   });
 });
@@ -55,5 +56,9 @@ describe("CallTimeline", () => {
     await userEvent.click(screen.getByRole("button", { name: /^report，/ }));
     expect(detail()).toHaveTextContent("证据门拒绝：citation_integrity");
     expect(detail()).toHaveTextContent("模型调用只显示耗时、token 与证据门结果");
+    await userEvent.click(screen.getByRole("button", { name: /^retrieve_knowledge，/ }));
+    expect(detail()).toHaveTextContent("检索查询Bianque Pod Restarting");
+    expect(detail()).toHaveTextContent("知识不是证据");
+    expect(detail()).toHaveTextContent("kn_c73d8439117f");
   });
 });

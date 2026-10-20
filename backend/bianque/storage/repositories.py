@@ -850,6 +850,15 @@ class KnowledgeRepository:
         """Return the number of stored chunks."""
         return await self._session.scalar(select(func.count()).select_from(KnowledgeChunk)) or 0
 
+    async def all_chunks(self) -> list[tuple[KnowledgeChunk, KnowledgeDocument]]:
+        """Return every chunk with its document, by path and ordinal."""
+        rows = await self._session.execute(
+            select(KnowledgeChunk, KnowledgeDocument)
+            .join(KnowledgeDocument, KnowledgeChunk.document_id == KnowledgeDocument.id)
+            .order_by(KnowledgeDocument.path, KnowledgeChunk.ordinal)
+        )
+        return [(chunk, document) for chunk, document in rows]
+
     async def get_chunks(
         self, knowledge_ids: Sequence[str]
     ) -> list[tuple[KnowledgeChunk, KnowledgeDocument]]:

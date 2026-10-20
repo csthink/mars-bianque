@@ -123,7 +123,10 @@ async def test_call_records_count_every_call_and_name_their_agent(
 
     model_calls = [c for c in result.calls if c.kind == "model"]
     tool_calls = [c for c in result.calls if c.kind == "tool"]
+    knowledge_calls = [c for c in result.calls if c.kind == "knowledge"]
     assert len(model_calls) == len(requests)
+    assert [(c.agent, c.name) for c in knowledge_calls] == [("investigation", "retrieve_knowledge")]
+    assert len(result.calls) == len(model_calls) + len(tool_calls) + 1
     requested_tools = [
         line
         for c in model_calls
@@ -137,6 +140,7 @@ async def test_call_records_count_every_call_and_name_their_agent(
         assert call.started_at is not None and call.latency_ms is not None
     for call in model_calls:
         assert call.tokens_in and call.tokens_out
+    assert knowledge_calls[0].tokens_in is None and knowledge_calls[0].output_summary
     structured = [c for c in model_calls if c.name != "evidence_agent"]
     assert all(c.gate_result and c.gate_result["passed"] for c in structured)
     assert result.investigation.tokens_used == sum(

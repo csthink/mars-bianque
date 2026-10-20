@@ -155,7 +155,7 @@ export interface InvestigationDetail {
 export interface CallView {
   id: number;
   agent: string;
-  kind: "model" | "tool";
+  kind: "model" | "tool" | "knowledge";
   name: string;
   caller: string | null;
   started_at: string;
@@ -175,6 +175,7 @@ export interface CallTotals {
   calls: number;
   model_calls: number;
   tool_calls: number;
+  knowledge_calls: number;
   tokens_in: number;
   tokens_out: number;
   latency_ms: number;

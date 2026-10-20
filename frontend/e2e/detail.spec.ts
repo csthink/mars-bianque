@@ -43,6 +43,9 @@ test("tool calls are grouped by agent and open their details", async ({ page }) 
   await expect(detail).toContainText("change_show_commit");
   await expect(detail).toContainText("重试 0 次");
   await expect(detail).toContainText('"short": "9b9a6ea8a72b"');
+  await page.getByRole("button", { name: /^retrieve_knowledge，/ }).click();
+  await expect(detail).toContainText("检索到的运维手册");
+  await expect(detail).toContainText("kn_c73d8439117f CrashLoopBackOff > Reading the previous container log");
 });
 
 test("a citation in the report jumps to its evidence", async ({ page }) => {
@@ -61,9 +64,11 @@ test("the call table lists every call with token and time totals", async ({ page
   await page.goto(detailPath);
   await expect(page.getByTestId("call-row")).toHaveCount(fixture.calls.length);
   const model = fixture.calls.filter((call) => call.kind === "model");
+  const knowledge = fixture.calls.filter((call) => call.kind === "knowledge");
+  const tools = fixture.calls.length - model.length - knowledge.length;
   const tokens = model.reduce((sum, call) => sum + (call.tokens_in ?? 0) + (call.tokens_out ?? 0), 0);
   await expect(page.getByTestId("call-totals")).toHaveText(
-    `合计 ${fixture.calls.length} 次调用（模型 ${model.length} 次、工具 ${fixture.calls.length - model.length} 次）· token ${(tokens / 1000).toFixed(1)}k · 总耗时 1 分 24 秒`,
+    `合计 ${fixture.calls.length} 次调用（模型 ${model.length} 次、工具 ${tools} 次、知识检索 ${knowledge.length} 次）· token ${(tokens / 1000).toFixed(1)}k · 总耗时 1 分 24 秒`,
   );
   await expect(page.getByTestId("investigation-stats")).toHaveText(`2 轮 · ${fixture.calls.length} 次调用 · ${(tokens / 1000).toFixed(1)}k token · 1 分 24 秒`);
 });

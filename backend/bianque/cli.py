@@ -6,6 +6,10 @@ Subcommands:
 - ``bianque pack derive``: derive an evidence pack from a recorded one.
 - ``bianque gate export-schemas``: write the JSON Schema of every model output type.
 - ``bianque investigate``: investigate the alert of an evidence pack, or an alert file.
+- ``bianque knowledge download-model``: download and check the local embedding model.
+- ``bianque knowledge ingest``: import a directory of runbooks.
+- ``bianque knowledge embed-fixtures``: write or check the embedding fixture.
+- ``bianque eval retrieval``: evaluate the fused retrieval on annotated queries.
 """
 
 from __future__ import annotations
@@ -168,6 +172,116 @@ async def _summary(sessions: Any, investigation_id: str) -> str:
     return "\n".join(lines)
 
 
+def _download_model(args: argparse.Namespace) -> int:
+    from bianque.knowledge.embedding import download_model
+
+    path = download_model(get_settings().embedding_model_dir)
+    print(f"embedding model ready: {path}")
+    return 0
+
+
+async def _ingest(args: argparse.Namespace) -> int:
+    from bianque.knowledge.embedding import build_embedder
+    from bianque.knowledge.ingest import ingest
+    from bianque.storage.db import create_engine, session_factory
+
+    settings = get_settings()
+    engine = create_engine(settings)
+    try:
+        summary = await ingest(
+            Path(args.directory),
+            sessions=session_factory(engine),
+            embedder=build_embedder(settings),
+        )
+    finally:
+        await engine.dispose()
+    print(
+        f"ingested {args.directory}: {summary.added} added, {summary.updated} updated, "
+        f"{summary.skipped} unchanged, {summary.deleted} deleted; {summary.chunks} chunks"
+    )
+    return 0
+
+
+async def _embed_fixtures(args: argparse.Namespace) -> int:
+    from bianque.evals.retrieval import load_queries
+    from bianque.knowledge.embedding import (
+        MODEL_NAME,
+        MODEL_SOURCE,
+        LocalEmbedder,
+        embedder_version,
+    )
+    from bianque.knowledge.fixtures import coverage, fixture_texts, load_fixture, write_fixture
+    from bianque.storage.models import EMBEDDING_DIMENSION
+
+    queries = [query.query for query in load_queries(Path(args.queries))]
+    texts = fixture_texts(Path(args.runbooks), Path(args.cases), queries)
+    out = Path(args.out)
+    if args.check:
+        fixture = load_fixture(out, model=MODEL_NAME, dimension=EMBEDDING_DIMENSION)
+        missing, extra = coverage(fixture, texts)
+        for text in missing:
+            print(f"missing: {text[:80]!r}", file=sys.stderr)
+        if extra:
+            print(f"{len(extra)} vectors no text needs", file=sys.stderr)
+        if missing or extra:
+            print(f"error: {out} is out of date; run make knowledge-fixtures", file=sys.stderr)
+            return 1
+        print(f"{out} covers all {len(texts)} texts")
+        return 0
+    embedder = LocalEmbedder(get_settings().embedding_model_dir)
+    keys = sorted(texts)
+    vectors = await embedder.embed([texts[key] for key in keys])
+    write_fixture(
+        out,
+        dict(zip(keys, vectors, strict=True)),
+        model=MODEL_NAME,
+        model_source=MODEL_SOURCE,
+        model_sha256=embedder.model_sha256(),
+        embedder=embedder_version(),
+        dimension=EMBEDDING_DIMENSION,
+    )
+    print(f"wrote {len(keys)} vectors to {out}")
+    return 0
+
+
+async def _eval_retrieval(args: argparse.Namespace) -> int:
+    from bianque.evals.retrieval import (
+        check_annotations,
+        evaluate,
+        load_queries,
+        write_report,
+    )
+    from bianque.knowledge import KnowledgeRetriever
+    from bianque.knowledge.embedding import MODEL_NAME, build_embedder, file_sha256
+    from bianque.storage.db import create_engine, session_factory
+    from bianque.storage.repositories import KnowledgeRepository
+
+    settings = get_settings()
+    path = Path(args.queries)
+    queries = load_queries(path)
+    engine = create_engine(settings)
+    try:
+        sessions = session_factory(engine)
+        async with sessions() as session:
+            known = {chunk.id for chunk, _ in await KnowledgeRepository(session).all_chunks()}
+        check_annotations(queries, known, path)
+        outcomes = await evaluate(queries, KnowledgeRetriever(sessions, build_embedder(settings)))
+    finally:
+        await engine.dispose()
+    context = {
+        "embedding_mode": settings.embedding_mode,
+        "embedding_model": MODEL_NAME,
+        "queries_file": path.name,
+        "queries_sha256": file_sha256(path),
+    }
+    if settings.embedding_mode == "fixture":
+        context["fixture_file"] = settings.embedding_fixture.name
+        context["fixture_sha256"] = file_sha256(settings.embedding_fixture)
+    report = write_report(Path(args.out), outcomes, context=context)
+    print(", ".join(f"{name} {value}" for name, value in report["metrics"].items()))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Return the argument parser of the ``bianque`` command."""
     parser = argparse.ArgumentParser(prog="bianque")
@@ -203,6 +317,32 @@ def build_parser() -> argparse.ArgumentParser:
     source = investigate.add_mutually_exclusive_group(required=True)
     source.add_argument("--case", help="replay the alert of this case's evidence pack")
     source.add_argument("--alert", help="file holding an Alertmanager webhook body")
+
+    knowledge = commands.add_parser("knowledge", help="runbook knowledge")
+    knowledge_commands = knowledge.add_subparsers(dest="knowledge_command", required=True)
+    knowledge_commands.add_parser(
+        "download-model", help="download the local embedding model and check its hash"
+    )
+    ingest = knowledge_commands.add_parser("ingest", help="import a directory of runbooks")
+    ingest.add_argument("directory")
+    fixtures = knowledge_commands.add_parser(
+        "embed-fixtures", help="write the embedding fixture with the local model"
+    )
+    fixtures.add_argument("--runbooks", required=True, help="the runbook directory")
+    fixtures.add_argument("--cases", required=True, help="the evaluation case directory")
+    fixtures.add_argument("--queries", required=True, help="the retrieval evaluation queries")
+    fixtures.add_argument("--out", required=True, help="the fixture file")
+    fixtures.add_argument(
+        "--check", action="store_true", help="only check that the fixture covers every text"
+    )
+
+    evals = commands.add_parser("eval", help="evaluation")
+    eval_commands = evals.add_subparsers(dest="eval_command", required=True)
+    retrieval = eval_commands.add_parser(
+        "retrieval", help="hit@k and MRR of the fused retrieval on imported runbooks"
+    )
+    retrieval.add_argument("--queries", required=True, help="the annotated queries")
+    retrieval.add_argument("--out", required=True, help="directory for retrieval.json and .md")
     return parser
 
 
@@ -214,6 +354,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "gate":
         _export_schemas(args)
         return 0
+    if args.command in ("knowledge", "eval"):
+        return _knowledge(args)
     try:
         if args.pack_command == "record":
             asyncio.run(_record(args))
@@ -223,6 +365,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     return 0
+
+
+def _knowledge(args: argparse.Namespace) -> int:
+    from bianque.evals.retrieval import RetrievalEvalError
+    from bianque.knowledge.chunking import ChunkingError
+    from bianque.knowledge.embedding import EmbeddingError
+    from bianque.knowledge.fixtures import EmbeddingFixtureError
+
+    try:
+        if args.command == "eval":
+            return asyncio.run(_eval_retrieval(args))
+        if args.knowledge_command == "download-model":
+            return _download_model(args)
+        if args.knowledge_command == "ingest":
+            return asyncio.run(_ingest(args))
+        return asyncio.run(_embed_fixtures(args))
+    except (RetrievalEvalError, ChunkingError, EmbeddingError, EmbeddingFixtureError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

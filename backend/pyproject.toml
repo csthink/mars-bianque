@@ -98,6 +98,17 @@ ignore_imports = [
 ]
 
 [[tool.importlinter.contracts]]
+name = "Only the embedding module imports the embedding library"
+type = "forbidden"
+source_modules = ["bianque"]
+forbidden_modules = ["fastembed", "tokenizers"]
+unmatched_ignore_imports_alerting = "none"
+ignore_imports = [
+    "bianque.knowledge.embedding -> fastembed",
+    "bianque.knowledge.embedding -> tokenizers",
+]
+
+[[tool.importlinter.contracts]]
 name = "The evidence gate does not import the model gateway"
 type = "forbidden"
 source_modules = ["bianque.gate"]

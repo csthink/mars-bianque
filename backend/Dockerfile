@@ -20,10 +20,13 @@ COPY migrations ./migrations
 COPY bianque ./bianque
 RUN uv sync --locked --no-dev
 
-# The local embedding model is downloaded on first use into a cache volume at /models.
+# The local embedding model's directory is a volume at /models for now. The model is
+# never downloaded at run time: `local` embedding mode needs
+# `bianque knowledge download-model` run into this directory first. The replay profile
+# uses the embedding fixture and needs no model.
 RUN useradd --create-home --uid 10001 bianque && mkdir /models && chown bianque /models
 ENV PATH="/app/.venv/bin:$PATH" \
-    HF_HOME=/models
+    BIANQUE_EMBEDDING_MODEL_DIR=/models
 USER bianque
 
 EXPOSE 8000

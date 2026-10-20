@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 const path = fileURLToPath(new URL("../../backend/tests/fixtures/investigation/s1a.json", import.meta.url));
 
 interface FixtureCall {
-  kind: "model" | "tool";
+  kind: "model" | "tool" | "knowledge";
   tokens_in: number | null;
   tokens_out: number | null;
 }

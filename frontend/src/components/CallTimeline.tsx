@@ -6,6 +6,9 @@ import { Citations } from "./Citation";
 import { agentColor } from "../lib/agents";
 import { Badge, Muted, Section } from "./ui";
 
+/** Knowledge retrieval is drawn in one color on the investigation agent's lane. */
+const KNOWLEDGE_BAR = "bg-violet-600 dark:bg-violet-400";
+
 export function CallTimeline({
   calls,
   startedAt,
@@ -67,8 +70,12 @@ export function CallTimeline({
                         aria-pressed={bar.call.id === selectedId}
                         onClick={() => setSelectedId(bar.call.id)}
                         className={`absolute top-1.5 h-4 rounded-sm ${
-                          bar.call.status === "ok" ? color.bar : "bg-rose-600 dark:bg-rose-400"
-                        } ${bar.call.kind === "tool" ? "z-10 min-w-[8px]" : "min-w-[6px] opacity-40 hover:opacity-60"} ${
+                          bar.call.status !== "ok"
+                            ? "bg-rose-600 dark:bg-rose-400"
+                            : bar.call.kind === "knowledge"
+                              ? KNOWLEDGE_BAR
+                              : color.bar
+                        } ${bar.call.kind === "model" ? "min-w-[6px] opacity-40 hover:opacity-60" : "z-10 min-w-[8px]"} ${
                           bar.call.id === selectedId
                             ? "z-20 opacity-100 ring-2 ring-slate-900 ring-offset-1 dark:ring-white dark:ring-offset-slate-900"
                             : ""
@@ -89,6 +96,10 @@ export function CallTimeline({
             <span className="inline-flex items-center gap-1.5">
               <span aria-hidden className="h-2.5 w-4 rounded-sm bg-slate-500 opacity-40 dark:bg-slate-300 dark:opacity-50" />
               模型调用
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span aria-hidden className={`h-2.5 w-4 rounded-sm ${KNOWLEDGE_BAR}`} />
+              知识检索
             </span>
             <span>点一次调用查看详情</span>
           </p>
@@ -127,14 +138,16 @@ function CallDetail({ call }: { call: CallView }) {
           </span>
         )}
       </p>
-      {call.kind === "tool" ? (
+      {call.kind !== "model" ? (
         <dl className="mt-2 space-y-2">
           <div>
-            <dt className="text-xs text-slate-500 dark:text-slate-400">参数</dt>
+            <dt className="text-xs text-slate-500 dark:text-slate-400">{call.kind === "knowledge" ? "检索查询" : "参数"}</dt>
             <dd className="font-mono text-xs [overflow-wrap:anywhere] text-slate-700 dark:text-slate-300">{call.input_summary}</dd>
           </div>
           <div>
-            <dt className="text-xs text-slate-500 dark:text-slate-400">{call.error ? "错误" : "结果摘要"}</dt>
+            <dt className="text-xs text-slate-500 dark:text-slate-400">
+              {call.error ? "错误" : call.kind === "knowledge" ? "检索到的运维手册（知识不是证据，只能列为参考资料）" : "结果摘要"}
+            </dt>
             <dd>
               <pre className="mt-1 max-h-48 overflow-auto rounded bg-white p-2 font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere] text-slate-700 dark:bg-slate-900 dark:text-slate-300">
                 {call.error ?? call.output_summary}

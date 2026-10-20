@@ -3,10 +3,16 @@ import { agentLabel, formatDuration, formatTokens } from "../lib/format";
 import { Citations } from "./Citation";
 import { Muted, Section } from "./ui";
 
+const KIND_LABELS: Record<CallList["calls"][number]["kind"], string> = {
+  model: "模型",
+  tool: "工具",
+  knowledge: "知识检索",
+};
+
 export function CallTable({ data, startedAt }: { data: CallList; startedAt: string }) {
   const { calls, totals } = data;
   const origin = new Date(startedAt).getTime();
-  const summary = `合计 ${totals.calls} 次调用（模型 ${totals.model_calls} 次、工具 ${totals.tool_calls} 次）· token ${formatTokens(
+  const summary = `合计 ${totals.calls} 次调用（模型 ${totals.model_calls} 次、工具 ${totals.tool_calls} 次、知识检索 ${totals.knowledge_calls} 次）· token ${formatTokens(
     totals.tokens_in + totals.tokens_out,
   )} · 总耗时 ${formatDuration(totals.elapsed_ms)}`;
   return (
@@ -35,7 +41,7 @@ export function CallTable({ data, startedAt }: { data: CallList; startedAt: stri
                     +{((new Date(call.started_at).getTime() - origin) / 1000).toFixed(1)} 秒
                   </td>
                   <td className="px-2 py-1.5 whitespace-nowrap">{agentLabel(call.agent)}</td>
-                  <td className="px-2 py-1.5 whitespace-nowrap">{call.kind === "model" ? "模型" : "工具"}</td>
+                  <td className="px-2 py-1.5 whitespace-nowrap">{KIND_LABELS[call.kind]}</td>
                   <td className="px-2 py-1.5 font-mono text-xs whitespace-nowrap">{call.name}</td>
                   <td className="px-2 py-1.5 whitespace-nowrap tabular-nums">{formatDuration(call.latency_ms ?? 0)}</td>
                   <td className="px-2 py-1.5 whitespace-nowrap tabular-nums">
