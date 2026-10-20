@@ -34,8 +34,10 @@ the entropy threshold. A piece made only of words is not high entropy (see
 ``is_word_shaped``): split at ``/ _ - + =`` and at camel-case boundaries, every word
 must be a capitalized or lowercase word of at least three letters, or an acronym of two
 to five capitals, every non-acronym word must contain a vowel, and the mean word length
-must be at least four. A piece with any digit is never word-shaped. Of random base64
-tokens, about 5 in 100,000 of length 20 and none of length 24 or more pass as words.
+must be at least four. A digit is allowed only in a resource quantity that is the value
+of a ``key=`` word (``cpu=200m/memory=128Mi``). Of random tokens over the base64
+alphabets, at most about 5 in 100,000 of length 20 or 24 pass as words, none of length
+32; real base64 has ``=`` only as trailing padding, which makes them rarer still.
 
 Detection and rewriting are separate: this module only exposes detection primitives
 (is this high-entropy, and where are the tokens). Rewriting into placeholders is done
@@ -101,13 +103,15 @@ _LABELED_TRACE_RE = re.compile(
 )
 
 
-#: Separators between the words of a word-shaped piece.
-_WORD_SEPARATOR_RE = re.compile(r"[/_+=-]+")
+#: Separators between the words of a word-shaped piece, kept by ``split``.
+_WORD_SEPARATOR_RE = re.compile(r"([/_+=-]+)")
 #: Camel-case word boundaries: ``maxSurge`` -> ``max|Surge``, ``OOMKilled`` -> ``OOM|Killed``.
 _CAMEL_BOUNDARY_RE = re.compile(r"(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 #: One word: capitalized or lowercase with at least three letters, or a short acronym.
 _WORD_RE = re.compile(r"[A-Z]?[a-z]{2,}|(?P<acronym>[A-Z]{2,5})")
 _VOWEL_RE = re.compile(r"[aeiouyAEIOUY]")
+#: A Kubernetes resource quantity: ``200m``, ``128Mi``, ``1.5``.
+_QUANTITY_RE = re.compile(r"[0-9]+(?:\.[0-9]+)?(?:m|k|Ki|Mi|Gi|Ti|Pi|Ei|M|G|T|P|E)?")
 #: Minimum mean length of the words of a word-shaped piece.
 _MIN_MEAN_WORD_LEN = 4
 
@@ -116,12 +120,18 @@ def is_word_shaped(token: str) -> bool:
     """Return whether a token is made only of words, like a field name or status reason.
 
     ``ProgressDeadlineExceeded``, ``maxUnavailable/maxSurge`` and
-    ``Running/CrashLoopBackOff/Error`` are word-shaped; anything with a digit, a word
-    without a vowel or mostly short words is not.
+    ``Running/CrashLoopBackOff/Error`` are word-shaped, and so is ``cpu=200m/memory=128Mi``:
+    a resource quantity counts when it is the value of a ``key=`` word. Anything else
+    with a digit, a word without a vowel or mostly short words is not.
     """
     words: list[str] = []
-    for part in _WORD_SEPARATOR_RE.split(token):
+    parts = _WORD_SEPARATOR_RE.split(token)
+    for index in range(0, len(parts), 2):
+        part = parts[index]
         if not part:
+            continue
+        after_equals = index > 0 and parts[index - 1].endswith("=")
+        if after_equals and words and _QUANTITY_RE.fullmatch(part):
             continue
         if not (part.isascii() and part.isalpha()):
             return False

@@ -207,6 +207,8 @@ def test_short_or_low_entropy_not_high_entropy() -> None:
         "terminationMessagePolicy",
         "FailedCreatePodSandBox",
         "OOMKilled/CrashLoopBackOff",
+        "cpu=200m/memory=128Mi",
+        "requests/cpu=250m",
     ],
 )
 def test_word_shaped_tokens_are_not_high_entropy(token: str) -> None:
@@ -221,6 +223,9 @@ def test_word_shaped_tokens_are_not_high_entropy(token: str) -> None:
         "xQzRtPlKmNbVcXzLkJhGfDsA",  # words without vowels
         "AbCdEfGhIjKlMnOpQrStUvWx",  # two-letter words
         "4bf92f3577b34da6a3ce929d0e0e4736",  # hex
+        "cpu/200m/memory/128Mi",  # a quantity that is not the value of a key=
+        "=200m/memory=128Mi",  # a quantity with no key word
+        "token=Zx9Qw7Rt2Lm4Np8V",  # a value that is not a quantity
         "",
     ],
 )
@@ -229,11 +234,11 @@ def test_tokens_that_are_not_word_shaped(token: str) -> None:
 
 
 def test_random_tokens_are_rarely_word_shaped() -> None:
-    # The exemption must not let random keys through: none of length 24 or more, and
-    # at most a few in ten thousand of length 20 (about 5 in 100,000 measured).
+    # The exemption must not let random keys through: at most a few in ten thousand
+    # of length 20 or 24 (about 5 in 100,000 measured), none of length 32.
     rng = random.Random(13)
-    alphabet = string.ascii_letters + string.digits + "+/-_"
-    for length, allowed in ((20, 10), (24, 0), (32, 0)):
+    alphabet = string.ascii_letters + string.digits + "+/-_="
+    for length, allowed in ((20, 10), (24, 10), (32, 0)):
         tokens = ("".join(rng.choices(alphabet, k=length)) for _ in range(20000))
         assert sum(is_word_shaped(token) for token in tokens) <= allowed
 
