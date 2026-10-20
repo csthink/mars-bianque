@@ -1,5 +1,6 @@
 .PHONY: check lint test frontend-check public-safety hooks demo demo-down demo-alerts inject-s1 \
-	restore-s1 record-pack derive-packs replay replay-down e2e knowledge-fixtures eval-retrieval
+	restore-s1 record-pack derive-packs replay-login replay replay-down e2e knowledge-fixtures \
+	eval-retrieval
 
 UV := cd backend && uv run --locked
 
@@ -59,9 +60,14 @@ derive-packs:
 		--case s1-f --only alert,pods
 
 # Replay profile: database, backend and nginx in Docker Compose, no cluster needed. The
-# database password is generated once into .demo/replay.env and never committed.
+# database password is generated once into .demo/replay.env, since the data volume keeps
+# it; the demo login is generated again on every run into .demo/replay-login.env and
+# .demo/demo-password. None of them is ever committed.
 REPLAY_ENV := .demo/replay.env
-COMPOSE_REPLAY := docker compose -f deploy/compose/replay.yaml --env-file $(REPLAY_ENV)
+REPLAY_LOGIN_ENV := .demo/replay-login.env
+DEMO_PASSWORD := .demo/demo-password
+COMPOSE_FILES := docker compose -f deploy/compose/replay.yaml --env-file $(REPLAY_ENV)
+COMPOSE_REPLAY := $(COMPOSE_FILES) --env-file $(REPLAY_LOGIN_ENV)
 COMPOSE_E2E := $(COMPOSE_REPLAY) -f deploy/compose/e2e.yaml
 REPLAY_URL := http://127.0.0.1:$${BIANQUE_REPLAY_PORT:-8080}
 
@@ -69,16 +75,28 @@ $(REPLAY_ENV):
 	mkdir -p .demo
 	umask 077 && printf 'BIANQUE_DB_PASSWORD=%s\n' "$$(openssl rand -hex 16)" > $@
 
-replay: $(REPLAY_ENV)
+# The password is hashed inside the backend image, so the host needs no Python.
+replay-login:
+	mkdir -p .demo
+	demo/scripts/demo-login.sh $(REPLAY_LOGIN_ENV) $(DEMO_PASSWORD) \
+		docker run --rm -i "$$(docker build -q backend)" bianque auth hash-password
+
+replay: $(REPLAY_ENV) replay-login
 	$(COMPOSE_REPLAY) up --detach --build --wait
 	@echo "Bianque (replay profile): $(REPLAY_URL)"
+	@echo "Demo login: demo / $$(cat $(DEMO_PASSWORD))"
 
+# Compose checks every variable of the file even to stop it; the login values are not
+# used by `down`, so placeholders stand in when no login was generated yet.
 replay-down:
-	$(COMPOSE_REPLAY) down --volumes
+	BIANQUE_DEMO_USERS=unused BIANQUE_SESSION_SECRET=unused $(COMPOSE_FILES) down --volumes
 
 # End-to-end tests: the replay stack with the database exposed to the host, the
 # investigation fixture loaded, then Playwright. Screenshots land in frontend/e2e/screenshots.
-e2e: $(REPLAY_ENV)
+# The stack starts from an empty database: decisions on suggestions are append-only, so
+# a fixture investigation that was decided on in an earlier run cannot be replaced.
+e2e: $(REPLAY_ENV) replay-login
+	$(COMPOSE_E2E) down --volumes
 	$(COMPOSE_E2E) up --detach --build --wait
 	. ./$(REPLAY_ENV) && cd backend && uv run --locked python tests/api/investigation_fixture.py \
 		--database-url "postgresql+psycopg://postgres:$$BIANQUE_DB_PASSWORD@127.0.0.1:$${BIANQUE_E2E_DB_PORT:-55432}/postgres"

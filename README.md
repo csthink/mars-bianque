@@ -38,9 +38,11 @@ Bianque is an alert-driven root cause analysis agent for Kubernetes: when an ale
 
 | 命令 | 作用 |
 | --- | --- |
-| `make replay` | 构建镜像并启动，健康检查通过后打印地址（默认 `http://127.0.0.1:8080`，`BIANQUE_REPLAY_PORT` 可改）。第一次运行时生成数据库口令，写进被忽略的 `.demo/replay.env` |
+| `make replay` | 构建镜像并启动，健康检查通过后打印地址（默认 `http://127.0.0.1:8080`，`BIANQUE_REPLAY_PORT` 可改）与演示账号的口令。第一次运行时生成数据库口令，写进被忽略的 `.demo/replay.env` |
 | `make replay-down` | 停止并删除容器与数据卷 |
-| `make e2e` | 在回放形态上加载一份 S1-a 调查夹具，跑 Playwright 端到端测试；宽屏与窄屏、浅色与深色的截图写到 `frontend/e2e/screenshots/` |
+| `make e2e` | 从空数据库起回放形态，加载一份 S1-a 调查夹具，跑 Playwright 端到端测试；宽屏与窄屏、浅色与深色的截图写到 `frontend/e2e/screenshots/` |
+
+演示账号是 `demo`，口令由 `make replay`（与 `make e2e`）每次随机生成，启动后打印，并保存在被忽略的 `.demo/demo-password`；仓里没有默认口令。每次启动也换会话签名密钥，上一次的登录随之失效。查看调查不需要登录；对修复建议确认或驳回需要登录，决定只记录，不执行任何操作，每条建议只能决定一次。
 
 前端开发：`cd frontend && npm ci && npm run dev`，开发服务器把 `/api` 代理到 `BIANQUE_BACKEND_URL`（默认 `http://127.0.0.1:8000`）；后端用 `uvicorn --factory bianque.api.app:create_app` 启动。`make check` 包含前端的 lint、类型检查、单元测试与构建。
 

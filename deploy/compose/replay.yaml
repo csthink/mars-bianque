@@ -1,5 +1,6 @@
 # Replay profile: Bianque without a cluster, reading evidence packs and recorded model
-# responses. Started by `make replay`; the database password comes from .demo/replay.env.
+# responses. Started by `make replay`; the database password comes from .demo/replay.env
+# and the demo login from .demo/replay-login.env.
 name: bianque-replay
 
 services:
@@ -22,6 +23,11 @@ services:
       BIANQUE_TOOL_BACKEND: pack
       BIANQUE_LLM_MODE: recorded
       BIANQUE_EMBEDDING_MODE: fixture
+      BIANQUE_DEMO_USERS: ${BIANQUE_DEMO_USERS:?run make replay, which generates it}
+      BIANQUE_SESSION_SECRET: ${BIANQUE_SESSION_SECRET:?run make replay, which generates it}
+      # Pages are served over plain http on the workstation, where a browser would not
+      # keep a Secure cookie.
+      BIANQUE_SESSION_COOKIE_SECURE: "false"
     volumes:
       - models:/models
     depends_on:
