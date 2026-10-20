@@ -1,17 +1,20 @@
-"""Response models of the read interface.
+"""Request and response models of the HTTP interface.
 
 A response model is the only statement of what an endpoint returns. The body of a
 rejected report, the input and output summaries of a model call and the raw content of
 evidence are not fields of any model here, so they cannot be returned: a rejected output
 is shown only by the names of the validators that rejected it.
+
+Request models forbid unknown fields: a decision has no field for who made it, and a
+request that tries to name one is rejected rather than ignored.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints
 
 
 class InvestigationSummary(BaseModel):
@@ -154,6 +157,7 @@ class SuggestionView(BaseModel):
     state: Literal["pending", "confirmed", "rejected"]
     decided_by: str | None
     decided_at: datetime | None
+    decision_comment: str | None
 
 
 class InvestigationDetail(BaseModel):
@@ -225,3 +229,49 @@ class CallList(BaseModel):
 
     calls: list[CallView]
     totals: CallTotals
+
+
+#: The longest decision comment, the same bound as call record summaries.
+MAX_COMMENT_CHARS = 2000
+
+
+def _blank_is_none(value: str) -> str | None:
+    return value or None
+
+
+class LoginRequest(BaseModel):
+    """A demo account login."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    username: str = Field(max_length=64)
+    password: str = Field(max_length=1024)
+
+
+class SessionView(BaseModel):
+    """Who is logged in."""
+
+    username: str
+
+
+class DecisionRequest(BaseModel):
+    """A decision on a suggestion. Who decides comes from the session, not the body."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Literal["confirmed", "rejected"]
+    comment: (
+        Annotated[
+            str,
+            StringConstraints(strip_whitespace=True, max_length=MAX_COMMENT_CHARS),
+            AfterValidator(_blank_is_none),
+        ]
+        | None
+    ) = None
+
+
+class AlreadyDecided(BaseModel):
+    """The 409 answer: the suggestion was decided before, and how."""
+
+    detail: Literal["suggestion already decided"] = "suggestion already decided"
+    state: Literal["confirmed", "rejected"]

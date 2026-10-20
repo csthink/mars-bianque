@@ -154,13 +154,15 @@ async def test_decided_suggestion_shows_its_state(
 ) -> None:
     with TestClient(create_app(Settings(database_url=pg_url))) as client:
         first = client.get(f"/api/investigations/{INV}").json()["suggestions"][0]
+    assert first["decided_by"] is None and first["decision_comment"] is None
     await ConfirmationRepository(session).decide(
-        INV, first["id"], decision="confirmed", actor="demo"
+        INV, first["id"], decision="confirmed", actor="demo", comment="Revert through Git."
     )
     await session.commit()
     with TestClient(create_app(Settings(database_url=pg_url))) as client:
         again = client.get(f"/api/investigations/{INV}").json()["suggestions"][0]
     assert again["state"] == "confirmed" and again["decided_by"] == "demo"
+    assert again["decision_comment"] == "Revert through Git."
 
 
 def test_unknown_investigation_is_404(client: TestClient) -> None:

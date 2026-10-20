@@ -139,6 +139,7 @@ export interface SuggestionView {
   state: "pending" | "confirmed" | "rejected";
   decided_by: string | null;
   decided_at: string | null;
+  decision_comment: string | null;
 }
 
 export interface InvestigationDetail {

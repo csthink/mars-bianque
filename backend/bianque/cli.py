@@ -10,6 +10,7 @@ Subcommands:
 - ``bianque knowledge ingest``: import a directory of runbooks.
 - ``bianque knowledge embed-fixtures``: write or check the embedding fixture.
 - ``bianque eval retrieval``: evaluate the fused retrieval on annotated queries.
+- ``bianque auth hash-password``: print the bcrypt hash of a password read from stdin.
 """
 
 from __future__ import annotations
@@ -336,6 +337,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--check", action="store_true", help="only check that the fixture covers every text"
     )
 
+    auth = commands.add_parser("auth", help="demo accounts")
+    auth_commands = auth.add_subparsers(dest="auth_command", required=True)
+    auth_commands.add_parser(
+        "hash-password",
+        help="print the bcrypt hash of the password on the first line of standard input",
+    )
+
     evals = commands.add_parser("eval", help="evaluation")
     eval_commands = evals.add_subparsers(dest="eval_command", required=True)
     retrieval = eval_commands.add_parser(
@@ -356,12 +364,31 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     if args.command in ("knowledge", "eval"):
         return _knowledge(args)
+    if args.command == "auth":
+        return _hash_password()
     try:
         if args.pack_command == "record":
             asyncio.run(_record(args))
         else:
             _derive(args)
     except PackError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def _hash_password() -> int:
+    # The password comes on standard input, never as an argument: arguments show up in
+    # the process list and in shell history.
+    from bianque.auth.passwords import hash_password
+
+    password = sys.stdin.readline().rstrip("\r\n")
+    if not password:
+        print("error: no password on standard input", file=sys.stderr)
+        return 1
+    try:
+        print(hash_password(password))
+    except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     return 0

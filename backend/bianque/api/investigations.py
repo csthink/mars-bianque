@@ -1,4 +1,4 @@
-"""The read interface of investigations: list, detail and calls."""
+"""Investigations: list, detail and calls (read, no login), and decisions on suggestions."""
 
 from __future__ import annotations
 
@@ -7,15 +7,19 @@ from datetime import timedelta
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bianque.api.auth import CurrentUser
 from bianque.api.schemas import (
     AlertView,
+    AlreadyDecided,
     AssessmentView,
     CallList,
     CallTotals,
     CallView,
+    DecisionRequest,
     EvidenceView,
     FindingView,
     GateView,
@@ -29,16 +33,18 @@ from bianque.api.schemas import (
     StepView,
     SuggestionView,
 )
-from bianque.storage.errors import NotFoundError
+from bianque.storage.errors import AlreadyDecidedError, NotFoundError
 from bianque.storage.models import Alert, CallRecord, Evidence, Investigation, Report
 from bianque.storage.repositories import (
     AssessmentRepository,
     CallRecordRepository,
+    ConfirmationRepository,
     EvidenceRepository,
     InvestigationRepository,
     PlanRepository,
     ReportRepository,
     SuggestionRepository,
+    SuggestionState,
 )
 
 router = APIRouter(prefix="/api/investigations", tags=["investigations"])
@@ -208,20 +214,69 @@ async def get_investigation(investigation_id: str, session: Session) -> Investig
             for report in attempts
             if report.status == "rejected"
         ],
-        suggestions=[
-            SuggestionView(
-                id=item.suggestion.id,
-                seq=item.suggestion.seq,
-                action=item.suggestion.action,
-                command=item.suggestion.command,
-                risk=item.suggestion.risk,
-                citations=[str(c) for c in item.suggestion.citations],
-                state=_state(item.state),
-                decided_by=None if item.confirmation is None else item.confirmation.actor,
-                decided_at=None if item.confirmation is None else item.confirmation.decided_at,
+        suggestions=[_suggestion_view(item) for item in suggestions],
+    )
+
+
+def _suggestion_view(item: SuggestionState) -> SuggestionView:
+    confirmation = item.confirmation
+    return SuggestionView(
+        id=item.suggestion.id,
+        seq=item.suggestion.seq,
+        action=item.suggestion.action,
+        command=item.suggestion.command,
+        risk=item.suggestion.risk,
+        citations=[str(c) for c in item.suggestion.citations],
+        state=_state(item.state),
+        decided_by=None if confirmation is None else confirmation.actor,
+        decided_at=None if confirmation is None else confirmation.decided_at,
+        decision_comment=None if confirmation is None else confirmation.comment,
+    )
+
+
+@router.post(
+    "/{investigation_id}/suggestions/{suggestion_id}/decision",
+    status_code=201,
+    response_model=SuggestionView,
+    responses={409: {"model": AlreadyDecided}},
+)
+async def decide(
+    investigation_id: str,
+    suggestion_id: str,
+    body: DecisionRequest,
+    actor: CurrentUser,
+    session: Session,
+) -> SuggestionView | JSONResponse:
+    """Confirm or reject a suggestion, once. The decision is only recorded.
+
+    Nothing else happens on a decision: no tool runs and nothing outside the database
+    is called. A decided suggestion answers 409; decisions are never changed or
+    removed, and the database rejects UPDATE and DELETE on them.
+    """
+    # The ID is read once: a rollback below expires the loaded investigation row.
+    inv_id = (await _investigation(session, investigation_id)).id
+    suggestions = SuggestionRepository(session)
+    item = await suggestions.get_with_decision(inv_id, suggestion_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="suggestion not found")
+    if item.confirmation is None:
+        try:
+            await ConfirmationRepository(session).decide(
+                inv_id, suggestion_id, decision=body.decision, actor=actor, comment=body.comment
             )
-            for item in suggestions
-        ],
+        except AlreadyDecidedError:
+            # Another request decided between the lookup and the insert.
+            await session.rollback()
+            item = await suggestions.get_with_decision(inv_id, suggestion_id)
+        else:
+            await session.commit()
+            decided = await suggestions.get_with_decision(inv_id, suggestion_id)
+            assert decided is not None
+            return _suggestion_view(decided)
+    assert item is not None and item.confirmation is not None
+    return JSONResponse(
+        status_code=409,
+        content=AlreadyDecided(state=_decided(item.confirmation.decision)).model_dump(),
     )
 
 
@@ -243,6 +298,10 @@ def _state(state: str) -> Literal["pending", "confirmed", "rejected"]:
     if state == "confirmed":
         return "confirmed"
     return "rejected" if state == "rejected" else "pending"
+
+
+def _decided(decision: str) -> Literal["confirmed", "rejected"]:
+    return "confirmed" if decision == "confirmed" else "rejected"
 
 
 def _validators(gate_result: dict[str, Any] | None) -> list[str]:

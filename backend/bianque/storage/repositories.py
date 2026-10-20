@@ -664,6 +664,26 @@ class SuggestionRepository:
         )
         return [SuggestionState(suggestion=s, confirmation=c) for s, c in rows]
 
+    async def get_with_decision(
+        self, investigation_id: str, suggestion_id: str
+    ) -> SuggestionState | None:
+        """Return one suggestion of an investigation with its decision, or ``None``."""
+        row = (
+            await self._session.execute(
+                select(Suggestion, Confirmation)
+                .outerjoin(
+                    Confirmation,
+                    (Confirmation.investigation_id == Suggestion.investigation_id)
+                    & (Confirmation.suggestion_id == Suggestion.id),
+                )
+                .where(
+                    Suggestion.investigation_id == investigation_id,
+                    Suggestion.id == suggestion_id,
+                )
+            )
+        ).first()
+        return None if row is None else SuggestionState(suggestion=row[0], confirmation=row[1])
+
 
 class ConfirmationRepository:
     """Human decisions on suggestions. Append-only: there is no update or delete."""
