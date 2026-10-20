@@ -142,7 +142,9 @@ function CallDetail({ call }: { call: CallView }) {
         <dl className="mt-2 space-y-2">
           <div>
             <dt className="text-xs text-slate-500 dark:text-slate-400">{call.kind === "knowledge" ? "检索查询" : "参数"}</dt>
-            <dd className="font-mono text-xs [overflow-wrap:anywhere] text-slate-700 dark:text-slate-300">{call.input_summary}</dd>
+            <dd className="font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere] text-slate-700 dark:text-slate-300">
+              {call.input_summary}
+            </dd>
           </div>
           <div>
             <dt className="text-xs text-slate-500 dark:text-slate-400">
