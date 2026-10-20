@@ -1,5 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { flushSync } from "react-dom";
 import {
   ConflictError,
   createSession,
@@ -102,7 +103,9 @@ export function FollowupPanel({
       await askQuestion(
         sessionId,
         question,
-        (event) => {
+        // Each event is committed on its own, so every stage shows even when the
+        // answer arrives within milliseconds of its last progress event.
+        (event) => flushSync(() => {
           if (event.event === "progress") {
             setTurn((current) => current && { ...current, stage: event.stage, elapsedMs: event.elapsed_ms });
           } else if (event.event === "content") {
@@ -116,7 +119,7 @@ export function FollowupPanel({
           } else {
             outcome = "done";
           }
-        },
+        }),
         controller.signal,
       );
       if (outcome === null) {

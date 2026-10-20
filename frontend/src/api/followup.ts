@@ -4,7 +4,7 @@ import type { FollowupEvent } from "./types";
 
 const FOLLOWUP_EVENTS = new Set(["progress", "content", "done", "failed"]);
 
-/** Gives the browser a turn between events, so that each one is painted on its own. */
+/** Gives the browser a turn between events, so that each one can be painted. */
 const nextTask = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 /**
