@@ -15,6 +15,9 @@ tools. They never read the database and never name an evaluation case.
   the evidence points to; unknown otherwise. Every failed call is listed as missing
   evidence, and a failed logs call lowers the confidence.
 
+Plans and reports refer to the knowledge chunk with the smallest ID when the request
+offers any, so replays cover knowledge in its one allowed place.
+
 The heuristics read Kubernetes and Git evidence; a new domain brings its own rules.
 """
 
@@ -30,6 +33,7 @@ from bianque.agents.domains import DOMAINS, POD_STATUS_TOOLS, domain
 from bianque.agents.prompting import (
     EVIDENCE,
     FAILED_CALLS,
+    KNOWLEDGE,
     STEP,
 )
 from bianque.gate import SCHEMA_VERSION
@@ -38,6 +42,9 @@ from bianque.llm.request import ModelRequest
 from bianque.tools import registry
 
 _HEADER = re.compile(r"^\[(ev_[0-9a-f]{10})\] source: (\S+); tool: (\S+)$")
+
+#: A knowledge entry: ``[kn_…] title`` in plans, ``- kn_…: title`` in reports.
+_KNOWLEDGE_ENTRY = re.compile(r"^(?:\[(kn_[0-9a-f]{12})\] |- (kn_[0-9a-f]{12}): )(.+)$")
 _FAILURE = re.compile(r"^- (.+?) \((\w+) domain\): (.+)$")
 _REPLICASET_POD = re.compile(r"^(?P<workload>.+)-[0-9a-f]{6,10}-[0-9a-z]{5}$")
 _EVIDENCE_ID = re.compile(r"^Evidence ID: (ev_[0-9a-f]{10}(?:, ev_[0-9a-f]{10})*)$", re.M)
@@ -83,6 +90,20 @@ def _sections(request: ModelRequest) -> dict[str, str]:
     if heading is not None:
         sections[heading] = "\n".join(lines).strip()
     return sections
+
+
+def _knowledge(sections: Mapping[str, str]) -> list[tuple[str, str]]:
+    """The knowledge entries of the request as ``(id, title)``, sorted by ID."""
+    entries = []
+    for line in sections.get(KNOWLEDGE, "").splitlines():
+        match = _KNOWLEDGE_ENTRY.match(line)
+        if match:
+            entries.append((match.group(1) or match.group(2), match.group(3)))
+    return sorted(entries)
+
+
+def _knowledge_refs(sections: Mapping[str, str]) -> list[str]:
+    return [knowledge_id for knowledge_id, _ in _knowledge(sections)[:1]]
 
 
 def _evidence(sections: Mapping[str, str]) -> list[_Evidence]:
@@ -227,14 +248,20 @@ def plan_rule(request: ModelRequest) -> ScriptedReply | None:
     """The first plan: the first-round default steps for the alerted pod."""
     if request.operation != "plan":
         return None
-    labels = _labels(_evidence(_sections(request)))
+    sections = _sections(request)
+    labels = _labels(_evidence(sections))
     names = [item.name for item in DOMAINS if item.first_round]
     rationale = (
         f"The alert names pod {labels.get('pod', 'unknown')} in namespace "
         f"{labels.get('namespace', 'unknown')}. Read its current state and its logs first."
     )
     return _call(
-        "submit_plan", {"rationale": rationale, "steps": _plan_steps(names), "knowledge_refs": []}
+        "submit_plan",
+        {
+            "rationale": rationale,
+            "steps": _plan_steps(names),
+            "knowledge_refs": _knowledge_refs(sections),
+        },
     )
 
 
@@ -242,13 +269,19 @@ def replan_rule(request: ModelRequest) -> ScriptedReply | None:
     """A supplementary plan: the default steps of the domains without evidence."""
     if request.operation != "replan":
         return None
-    covered = {_domain_of(item.tool) for item in _evidence(_sections(request))}
+    sections = _sections(request)
+    covered = {_domain_of(item.tool) for item in _evidence(sections)}
     names = [item.name for item in DOMAINS if item.name not in covered] or [
         item.name for item in DOMAINS if not item.first_round
     ]
     rationale = "Find the change that introduced the failure: " + ", ".join(names) + "."
     return _call(
-        "submit_plan", {"rationale": rationale, "steps": _plan_steps(names), "knowledge_refs": []}
+        "submit_plan",
+        {
+            "rationale": rationale,
+            "steps": _plan_steps(names),
+            "knowledge_refs": _knowledge_refs(sections),
+        },
     )
 
 
@@ -488,7 +521,10 @@ def report_rule(request: ModelRequest) -> ScriptedReply | None:
             for tool, domain_name, error in failures
         ],
         "suggestions": suggestions,
-        "references": [],
+        "references": [
+            {"knowledge_id": knowledge_id, "title": title}
+            for knowledge_id, title in _knowledge(sections)[:1]
+        ],
         "followup_questions": [f"What else changed in deployment {workload} recently?"],
     }
     return _call("submit_report", body)

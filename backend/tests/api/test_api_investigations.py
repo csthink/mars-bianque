@@ -114,10 +114,13 @@ def test_calls_and_totals(client: TestClient) -> None:
     body = client.get(f"/api/investigations/{INV}/calls").json()
     calls, totals = body["calls"], body["totals"]
     model = [c for c in DATA["calls"] if c["kind"] == "model"]
+    knowledge = [c for c in DATA["calls"] if c["kind"] == "knowledge"]
+    assert len(knowledge) == 1
     assert totals == {
         "calls": len(DATA["calls"]),
         "model_calls": len(model),
-        "tool_calls": len(DATA["calls"]) - len(model),
+        "tool_calls": len(DATA["calls"]) - len(model) - len(knowledge),
+        "knowledge_calls": 1,
         "tokens_in": sum(c["tokens_in"] for c in model),
         "tokens_out": sum(c["tokens_out"] for c in model),
         "latency_ms": sum(c["latency_ms"] for c in DATA["calls"]),
@@ -130,6 +133,13 @@ def test_calls_and_totals(client: TestClient) -> None:
         if call["kind"] == "model":
             assert call["input_summary"] is None and call["output_summary"] is None
             assert call["evidence_ids"] == []
+        elif call["kind"] == "knowledge":
+            # Knowledge is not model output: the query and the chunks found are shown,
+            # and it produces no evidence.
+            assert call["name"] == "retrieve_knowledge" and call["agent"] == "investigation"
+            assert call["input_summary"].startswith("Bianque Pod Restarting")
+            assert call["output_summary"].startswith("kn_c73d8439117f ")
+            assert call["evidence_ids"] == [] and call["gate"] is None
         else:
             assert call["input_summary"] and call["output_summary"]
             assert len(call["evidence_ids"]) == 1 and call["gate"] is None
@@ -187,8 +197,12 @@ async def test_elapsed_runs_to_the_last_call_while_running(
 def test_fixture_report_passes_the_gate() -> None:
     """The fixture stays close to what a real investigation stores."""
     evidence = DATA["evidence"]
+    knowledge = next(c for c in DATA["calls"] if c["kind"] == "knowledge")
     context = GateContext(
         evidence_ids=frozenset(e["id"] for e in evidence),
+        knowledge_ids=frozenset(
+            line.split(" ", 1)[0] for line in knowledge["output_summary"].splitlines()
+        ),
         preserved=frozenset(i for e in evidence for i in e["identifiers"])
         | {t.name for t in registry},
     )

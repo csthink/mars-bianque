@@ -15,9 +15,12 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from bianque.tools.errors import ToolError
+
+if TYPE_CHECKING:
+    from bianque.knowledge.search import KnowledgeSearch
 
 #: A Kubernetes object in the API's JSON form.
 KubeObject = dict[str, Any]
@@ -81,6 +84,8 @@ class ToolBackends:
         now: The current time for time windows: the wall clock for the real backend,
             the recording time for an evidence pack.
         faults: Tool name to fault mode, from an evidence pack's ``faults.yaml``.
+        knowledge: Runbook retrieval for the auxiliary tool ``knowledge_search``; the
+            caller that assembles the backends supplies it (the MCP service).
     """
 
     kind: Literal["live", "pack"]
@@ -88,6 +93,7 @@ class ToolBackends:
     git: GitSource
     now: Callable[[], datetime]
     faults: Mapping[str, FaultMode] = field(default_factory=dict)
+    knowledge: KnowledgeSearch | None = None
 
     def injected_fault(self, tool: str) -> ToolError | None:
         """Return the error an evidence pack injects for ``tool``, if any."""

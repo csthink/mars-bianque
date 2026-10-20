@@ -326,6 +326,22 @@
   ],
   "calls": [
     {
+      "key": "knowledge-1",
+      "agent": "investigation",
+      "kind": "knowledge",
+      "name": "retrieve_knowledge",
+      "input_summary": "Bianque Pod Restarting\n\nThe container is in CrashLoopBackOff or restarted more than twice in the last two minutes.\n\nContainer app of pod demo-s1/s1-app-5468546b65-dvgq5 keeps restarting",
+      "output_summary": "kn_c73d8439117f CrashLoopBackOff > Reading the previous container log (vector rank 1, text rank 2, score 0.032522)\nkn_b728d580f575 CrashLoopBackOff > What CrashLoopBackOff means (vector rank 3, text rank 1, score 0.032266)\nkn_675de0a3fc2e Configuration Errors at Start-up > Recognizing a configuration failure (vector rank 2, text rank 4, score 0.031754)\nkn_fa369be3768e CrashLoopBackOff > Collecting the termination state (vector rank 5, text rank 3, score 0.031258)\nkn_85905f724e53 CrashLoopBackOff > Narrowing down the cause (vector rank 4, text rank 6, score 0.030777)",
+      "gate_result": null,
+      "status": "ok",
+      "error": null,
+      "retries": 0,
+      "started_at": "2026-10-19T22:33:58.120000Z",
+      "latency_ms": 180,
+      "tokens_in": null,
+      "tokens_out": null
+    },
+    {
       "key": "plan-1",
       "agent": "investigation",
       "kind": "model",
@@ -1184,7 +1200,12 @@
             ]
           }
         ],
-        "references": [],
+        "references": [
+          {
+            "knowledge_id": "kn_c73d8439117f",
+            "title": "CrashLoopBackOff > Reading the previous container log"
+          }
+        ],
         "followup_questions": [
           "Why this commit and not an earlier change?",
           "What values does APP_MODE accept?"

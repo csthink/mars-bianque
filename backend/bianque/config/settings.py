@@ -61,6 +61,14 @@ class Settings(BaseSettings):
     #: Embedding mode (``BIANQUE_EMBEDDING_MODE``).
     embedding_mode: EmbeddingMode = "fixture"
 
+    #: Directory of the local embedding model's files (``BIANQUE_EMBEDDING_MODEL_DIR``),
+    #: filled by ``bianque knowledge download-model``; the model never downloads at run
+    #: time.
+    embedding_model_dir: Path = Path.home() / ".cache" / "bianque" / "models"
+
+    #: The embedding fixture read in ``fixture`` mode (``BIANQUE_EMBEDDING_FIXTURE``).
+    embedding_fixture: Path = Path("eval/embeddings/bge-small-en-v1.5.json")
+
     #: PostgreSQL connection URL (``BIANQUE_DATABASE_URL``).
     database_url: str | None = None
 

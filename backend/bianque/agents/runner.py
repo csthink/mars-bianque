@@ -28,6 +28,8 @@ from bianque.agents.scripted_rules import ROLE_RULES
 from bianque.agents.state import Runtime
 from bianque.api.alertmanager import AlertInput
 from bianque.config import Settings
+from bianque.knowledge import KnowledgeRetriever
+from bianque.knowledge.embedding import build_embedder
 from bianque.llm import ScriptedRule, build_gateway, build_redaction_engine
 from bianque.storage.db import database_url
 from bianque.storage.repositories import (
@@ -144,6 +146,7 @@ async def run_investigation(
         tools=registry,
         engine=engine,
         events=events,
+        knowledge=KnowledgeRetriever(sessions, build_embedder(settings)),
         alert=alert,
         subagent_max_steps=settings.subagent_max_steps,
         max_replan_rounds=settings.max_replan_rounds,

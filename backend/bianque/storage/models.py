@@ -199,11 +199,11 @@ class Assessment(Base):
 
 
 class CallRecord(Base):
-    """One model or tool call, for the call timeline and cost totals."""
+    """One model, tool or knowledge call, for the call timeline and cost totals."""
 
     __tablename__ = "call_records"
     __table_args__ = (
-        CheckConstraint(_in("kind", ("model", "tool")), name="kind"),
+        CheckConstraint(_in("kind", ("model", "tool", "knowledge")), name="kind"),
         Index(None, "investigation_id", "started_at"),
         Index(None, "session_id"),
     )

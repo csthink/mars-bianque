@@ -12,8 +12,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, select, update
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import Text, cast, delete, func, select, update
+from sqlalchemy.dialects.postgresql import TSQUERY, insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -832,3 +832,61 @@ class KnowledgeRepository:
         self._session.add_all(stored)
         await self._session.flush()
         return stored
+
+    async def list_documents(self) -> Sequence[KnowledgeDocument]:
+        """Return all imported documents in path order."""
+        result = await self._session.scalars(
+            select(KnowledgeDocument).order_by(KnowledgeDocument.path)
+        )
+        return result.all()
+
+    async def delete_document(self, document: KnowledgeDocument) -> None:
+        """Delete a document; its chunks go with it (``ON DELETE CASCADE``)."""
+        await self._session.execute(
+            delete(KnowledgeDocument).where(KnowledgeDocument.id == document.id)
+        )
+
+    async def count_chunks(self) -> int:
+        """Return the number of stored chunks."""
+        return await self._session.scalar(select(func.count()).select_from(KnowledgeChunk)) or 0
+
+    async def get_chunks(
+        self, knowledge_ids: Sequence[str]
+    ) -> list[tuple[KnowledgeChunk, KnowledgeDocument]]:
+        """Return the given chunks with their documents, in the order of ``knowledge_ids``.
+
+        IDs that no longer exist are left out.
+        """
+        rows = await self._session.execute(
+            select(KnowledgeChunk, KnowledgeDocument)
+            .join(KnowledgeDocument, KnowledgeChunk.document_id == KnowledgeDocument.id)
+            .where(KnowledgeChunk.id.in_(knowledge_ids))
+        )
+        found = {chunk.id: (chunk, document) for chunk, document in rows}
+        return [found[item] for item in knowledge_ids if item in found]
+
+    async def vector_ranking(self, embedding: Sequence[float], limit: int) -> list[str]:
+        """Return chunk IDs by exact cosine distance to ``embedding``, ties by ID."""
+        result = await self._session.scalars(
+            select(KnowledgeChunk.id)
+            .order_by(KnowledgeChunk.embedding.cosine_distance(list(embedding)), KnowledgeChunk.id)
+            .limit(limit)
+        )
+        return list(result.all())
+
+    async def text_ranking(self, query: str, limit: int) -> list[str]:
+        """Return the IDs of chunks matching any word of ``query``, best ``ts_rank_cd`` first.
+
+        ``plainto_tsquery`` joins the words with AND, which almost never matches a sentence
+        of natural language, so its operators are turned into OR. Ties are ordered by ID.
+        """
+        tsquery = cast(
+            func.replace(cast(func.plainto_tsquery("english", query), Text), "&", "|"), TSQUERY
+        )
+        result = await self._session.scalars(
+            select(KnowledgeChunk.id)
+            .where(KnowledgeChunk.tsv.op("@@")(tsquery))
+            .order_by(func.ts_rank_cd(KnowledgeChunk.tsv, tsquery).desc(), KnowledgeChunk.id)
+            .limit(limit)
+        )
+        return list(result.all())

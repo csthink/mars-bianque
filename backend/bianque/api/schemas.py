@@ -180,12 +180,14 @@ class CallView(BaseModel):
     """One call record.
 
     A tool call shows its redacted input and output summaries, its error and the
-    evidence it produced. A model call shows its tokens and gate result only.
+    evidence it produced. A knowledge call (the investigation's runbook retrieval) shows
+    its query and the chunks found; knowledge is not model output. A model call shows
+    its tokens and gate result only.
     """
 
     id: int
     agent: str
-    kind: Literal["model", "tool"]
+    kind: Literal["model", "tool", "knowledge"]
     name: str
     caller: str | None
     started_at: datetime
@@ -211,6 +213,7 @@ class CallTotals(BaseModel):
     calls: int
     model_calls: int
     tool_calls: int
+    knowledge_calls: int
     tokens_in: int
     tokens_out: int
     latency_ms: int

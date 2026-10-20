@@ -7,4 +7,5 @@ Your task: the last assessment found the evidence insufficient. Write a suppleme
 - Each step has one goal, one evidence domain, the tools of that domain you suggest for it, and the evidence you expect it to deliver. Every evidence domain below may be used.
 - Plan only new steps. Do not repeat a step whose evidence is already collected, and do not repeat a call that failed.
 - When the hypothesis is a configuration or specification problem, find the change that introduced it: the rollout history of the workload and the commits of the manifest repository.
+- The Knowledge section holds runbook excerpts retrieved for this alert. Use them to decide what to check; put the IDs of the excerpts you used in knowledge_refs. They are not evidence about this cluster.
 - In the rationale, say in one or two sentences what the new steps look for.

@@ -106,11 +106,17 @@ def test_every_registered_tool_is_read_only() -> None:
             "k8s_get_pod_status",
             "k8s_list_events",
             "k8s_list_pods",
+            "knowledge_search",
             "logs_get_container_logs",
         ]
     )
     assert all(item.read_only is True for item in tools)
-    assert {item.domain for item in tools} == {"kubernetes", "logs", "change"}
+    evidence = [item for item in tools if item.kind == "evidence"]
+    assert {item.domain for item in evidence} == {"kubernetes", "logs", "change"}
+    auxiliary = [item for item in tools if item.kind == "auxiliary"]
+    assert [(item.name, item.domain, item.source) for item in auxiliary] == [
+        ("knowledge_search", None, None)
+    ]
 
 
 def test_specs_of_one_domain_list_only_its_evidence_tools() -> None:

@@ -278,6 +278,7 @@ async def list_calls(investigation_id: str, session: Session) -> CallList:
             calls=len(calls),
             model_calls=sum(1 for c in calls if c.kind == "model"),
             tool_calls=sum(1 for c in calls if c.kind == "tool"),
+            knowledge_calls=sum(1 for c in calls if c.kind == "knowledge"),
             tokens_in=sum(c.tokens_in or 0 for c in calls),
             tokens_out=sum(c.tokens_out or 0 for c in calls),
             latency_ms=sum(c.latency_ms or 0 for c in calls),
@@ -287,25 +288,29 @@ async def list_calls(investigation_id: str, session: Session) -> CallList:
 
 
 def _call_view(record: CallRecord, evidence_ids: list[str]) -> CallView:
-    tool = record.kind == "tool"
+    kind: Literal["model", "tool", "knowledge"] = (
+        "tool" if record.kind == "tool" else "knowledge" if record.kind == "knowledge" else "model"
+    )
+    # Only a model call's output is model text, which the API never returns.
+    shown = kind != "model"
     return CallView(
         id=record.id,
         agent=record.agent,
-        kind="tool" if tool else "model",
+        kind=kind,
         name=record.name,
         caller=record.caller,
         started_at=record.started_at,
         latency_ms=record.latency_ms,
         status=record.status,
         retries=record.retries,
-        input_summary=record.input_summary if tool else None,
-        output_summary=record.output_summary if tool else None,
-        error=record.error if tool else None,
+        input_summary=record.input_summary if shown else None,
+        output_summary=record.output_summary if shown else None,
+        error=record.error if shown else None,
         evidence_ids=evidence_ids,
         tokens_in=record.tokens_in,
         tokens_out=record.tokens_out,
         gate=None
-        if tool or record.gate_result is None
+        if shown or record.gate_result is None
         else GateView(
             passed=bool(record.gate_result.get("passed")),
             validators=_validators(record.gate_result),

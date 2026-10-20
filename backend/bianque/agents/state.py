@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bianque.agents.records import DatabaseCallRecorder, EventWriter
 from bianque.api.alertmanager import AlertInput
+from bianque.knowledge.search import KnowledgeSearch
 from bianque.llm import LLMGateway
 from bianque.redaction import RedactionEngine
 from bianque.tools import ToolExecutor, ToolRegistry
@@ -44,7 +45,8 @@ class InvestigationState(TypedDict, total=False):
         round: The current round of evidence collection, from 1.
         pending: The steps of the current round.
         failures: Failed calls of every round; sub-agents append to it in parallel.
-        knowledge: The knowledge given to the model, as ``{id, title}``.
+        knowledge: The knowledge given to the model, as ``{id, title}``; the chunk texts
+            stay in the database.
         sufficient: The latest assessment found the evidence sufficient.
         budget_exhausted: The token budget was exceeded at the latest assessment.
         report_attempt: The number of reports generated so far.
@@ -90,6 +92,7 @@ class Runtime:
         tools: The tool registry.
         engine: The redaction engine shared with the gateway and the executor.
         events: Progress event writer.
+        knowledge: Runbook retrieval.
         alert: The alert under investigation.
         subagent_max_steps: Model turns of one step of a sub-agent.
         max_replan_rounds: Supplementary plans of the investigation.
@@ -105,6 +108,7 @@ class Runtime:
     tools: ToolRegistry
     engine: RedactionEngine
     events: EventWriter
+    knowledge: KnowledgeSearch
     alert: AlertInput
     subagent_max_steps: int
     max_replan_rounds: int

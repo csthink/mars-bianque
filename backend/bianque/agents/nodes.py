@@ -8,6 +8,8 @@ never reaches a business table or an event.
 
 from __future__ import annotations
 
+import logging
+import time
 from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime
 from typing import Any
@@ -56,12 +58,16 @@ from bianque.gate import (
     build_degraded_report,
     validate,
 )
+from bianque.knowledge.query import alert_query
+from bianque.knowledge.search import SearchResult
 from bianque.llm import CallContext, LLMUnavailableError, StructuredOutputError, redact_for_llm
 from bianque.storage.ids import alert_evidence_id
 from bianque.storage.repositories import (
     AssessmentRepository,
+    CallRecordRepository,
     EvidenceRepository,
     InvestigationRepository,
+    KnowledgeRepository,
     PlanRepository,
     ReportRepository,
     StepSpec,
@@ -69,8 +75,13 @@ from bianque.storage.repositories import (
     SuggestionSpec,
 )
 
+logger = logging.getLogger(__name__)
+
 #: The agent name of the investigation agent in call records.
 INVESTIGATION = "investigation"
+
+#: The name of the knowledge retrieval in call records.
+RETRIEVE_KNOWLEDGE = "retrieve_knowledge"
 
 #: Appended to the reason of the assessment after which the budget stopped the rounds.
 BUDGET_EXHAUSTED = "Token budget exhausted."
@@ -115,8 +126,32 @@ def check_range(plan: Plan, *, first_round: bool) -> tuple[list[PlanStep], list[
 
 
 def render_knowledge(knowledge: Iterable[dict[str, str]]) -> str:
-    """Render the knowledge given to the model, sorted by ID."""
+    """Render the knowledge given to the model by ID and title, sorted by ID."""
     return "\n".join(f"- {k['id']}: {k['title']}" for k in sorted(knowledge, key=lambda k: k["id"]))
+
+
+def render_knowledge_texts(chunks: Iterable[tuple[str, str, str]]) -> str:
+    """Render runbook chunks as ``[id] title`` followed by the text indented by two spaces.
+
+    The indentation keeps every line of a chunk from reading as a section heading of
+    the prompt. Chunks are sorted by ID.
+    """
+    blocks = []
+    for knowledge_id, title, content in sorted(chunks):
+        body = "\n".join(f"  {line}" if line.strip() else "" for line in content.splitlines())
+        blocks.append(f"[{knowledge_id}] {title}\n{body}")
+    return "\n\n".join(blocks)
+
+
+def summarize_retrieval(result: SearchResult) -> str:
+    """The call record's output summary of a retrieval: IDs, titles, ranks and scores."""
+    lines = [f"degraded: {result.degraded}"] if result.degraded else []
+    lines += [
+        f"{hit.knowledge_id} {hit.heading_path} (vector rank {hit.vector_rank or '-'}, "
+        f"text rank {hit.text_rank or '-'}, score {hit.score:.6f})"
+        for hit in result.hits
+    ]
+    return "\n".join(lines) or "(no knowledge found)"
 
 
 class InvestigationNodes:
@@ -184,8 +219,54 @@ class InvestigationNodes:
         }
 
     async def retrieve_knowledge(self, state: InvestigationState) -> dict[str, Any]:
-        """Retrieve runbook knowledge for the alert; none until retrieval is added."""
-        return {"knowledge": []}
+        """Retrieve runbook knowledge for the alert and record the retrieval as a call.
+
+        Knowledge is a reference, not a precondition: when retrieval fails, the
+        investigation continues without knowledge and the call record says why.
+        """
+        rt = self._rt
+        investigation_id = state["investigation_id"]
+        query = alert_query(rt.alert.labels, rt.alert.annotations)
+        started_at, clock = _now(), time.monotonic()
+        result: SearchResult | None = None
+        error: str | None = None
+        try:
+            result = await rt.knowledge.search(query)
+        except Exception as exc:
+            logger.exception("knowledge retrieval failed for investigation %s", investigation_id)
+            error = type(exc).__name__
+        latency_ms = round((time.monotonic() - clock) * 1000)
+        preserve = rt.alert_identifiers
+        async with rt.sessions() as session, session.begin():
+            await CallRecordRepository(session).add(
+                agent=INVESTIGATION,
+                kind="knowledge",
+                name=RETRIEVE_KNOWLEDGE,
+                input_summary=redact_for_llm(query, engine=rt.engine, preserve=preserve).text,
+                output_summary=None
+                if result is None
+                else redact_for_llm(
+                    summarize_retrieval(result), engine=rt.engine, preserve=preserve
+                ).text,
+                status="ok" if result is not None else "error",
+                error=error,
+                started_at=started_at,
+                latency_ms=latency_ms,
+                investigation_id=investigation_id,
+            )
+        hits = result.hits if result is not None else []
+        return {"knowledge": [{"id": hit.knowledge_id, "title": hit.heading_path} for hit in hits]}
+
+    async def _knowledge_texts(self, state: InvestigationState) -> str:
+        """Render the investigation's knowledge with the chunk texts, read by ID."""
+        ids = [k["id"] for k in state.get("knowledge", [])]
+        if not ids:
+            return ""
+        async with self._rt.sessions() as session:
+            chunks = await KnowledgeRepository(session).get_chunks(ids)
+        return render_knowledge_texts(
+            (chunk.id, chunk.heading_path, chunk.content) for chunk, _ in chunks
+        )
 
     async def plan(self, state: InvestigationState) -> dict[str, Any]:
         """Generate the first plan: steps of the first-round domains only."""
@@ -194,7 +275,7 @@ class InvestigationNodes:
         sections = [
             section(EVIDENCE, render_evidence(snapshot.evidence)),
             section(DOMAINS_HEADING, render_domains(rt.tools, first_round=True)),
-            section(KNOWLEDGE, render_knowledge(state.get("knowledge", []))),
+            section(KNOWLEDGE, await self._knowledge_texts(state)),
         ]
         pending = await self._make_plan(state, snapshot, sections, "plan", first_round=True)
         return {"pending": pending}
@@ -215,7 +296,7 @@ class InvestigationNodes:
             *self._common_sections(snapshot, state),
             section(ASSESSMENT, render_json(assessment)),
             section(DOMAINS_HEADING, render_domains(rt.tools, first_round=False)),
-            section(KNOWLEDGE, render_knowledge(state.get("knowledge", []))),
+            section(KNOWLEDGE, await self._knowledge_texts(state)),
         ]
         pending = await self._make_plan(state, snapshot, sections, "replan", first_round=False)
         return {"pending": pending, "round": state["round"] + 1}
