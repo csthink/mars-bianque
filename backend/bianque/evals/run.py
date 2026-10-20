@@ -28,7 +28,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
 import jsonschema
 from sqlalchemy import func, select
@@ -66,7 +65,7 @@ from bianque.gate.schemas import json_schema
 from bianque.knowledge import KnowledgeRetriever
 from bianque.knowledge.embedding import MODEL_NAME, build_embedder, file_sha256
 from bianque.knowledge.ingest import ingest
-from bianque.llm import build_redaction_engine
+from bianque.llm import build_gateway, build_redaction_engine
 from bianque.storage.db import create_engine, session_factory
 from bianque.storage.models import CallRecord, FollowupMessage, Investigation
 from bianque.storage.repositories import (
@@ -480,9 +479,7 @@ async def evaluate(
                 schema_version=1,
                 model=settings.llm_model,
                 extra_body=settings.llm_extra_body,
-                endpoint_host=urlparse(settings.llm_base_url).hostname
-                if settings.llm_base_url
-                else None,
+                endpoint_host=build_gateway(settings).endpoint_host,
                 recorded_at=report.generated_at,
                 cases=tuple(item.case.case for item in cases),
                 prompts=report.prompts,
