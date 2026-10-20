@@ -1,8 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
 
-// Runs against the replay stack started by `make e2e` (nginx in front of the backend).
+// Runs against the replay stack started by `make e2e` (nginx in front of the backend), in
+// scripted model mode.
 export default defineConfig({
   testDir: "e2e",
+  globalSetup: "./e2e/global-setup.ts",
   outputDir: "test-results",
   fullyParallel: false,
   forbidOnly: !!process.env.CI,

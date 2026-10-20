@@ -48,7 +48,7 @@ Bianque is an alert-driven root cause analysis agent for Kubernetes: when an ale
 | `make replay LLM_MODE=scripted` | 同上，规则响应器代替模型 |
 | `make replay LLM_MODE=live LLM_API_KEY_FILE=<密钥文件>` | 同上，调用真实模型 |
 | `make replay-down` | 停止并删除容器与数据卷 |
-| `make e2e` | 从空数据库起回放形态，加载一份 S1-a 调查夹具，跑 Playwright 端到端测试；宽屏与窄屏、浅色与深色的截图写到 `frontend/e2e/screenshots/` |
+| `make e2e` | 从空数据库以 `scripted` 模式起回放形态，对启动时现跑的调查与测试中新触发的调查跑 Playwright 端到端测试；宽屏与窄屏、浅色与深色的截图写到 `frontend/e2e/screenshots/` |
 
 演示账号是 `demo`，口令由 `make replay`（与 `make e2e`）每次随机生成，启动后打印，并保存在被忽略的 `.demo/demo-password`；仓里没有默认口令。每次启动也换会话签名密钥，上一次的登录随之失效。查看调查不需要登录；手动触发调查、追问、对修复建议确认或驳回需要登录，决定只记录，不执行任何操作，每条建议只能决定一次。
 

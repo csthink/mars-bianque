@@ -4,28 +4,20 @@ The fixture (``tests/fixtures/investigation/s1a.json``) is one complete investig
 evidence collected by the real tools from the S1-a evidence pack, and a handwritten
 plan, assessments, call records and report. Rows are written with fixed IDs and times,
 so pages and screenshots are the same on every run. Loading again replaces the earlier
-copy.
-
-The API tests import ``load``; the end-to-end tests run this file:
-
-    uv run python tests/api/investigation_fixture.py --database-url <url>
+copy. The API tests import ``load``.
 """
 
 from __future__ import annotations
 
-import argparse
-import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy import delete, select
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.pool import NullPool
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from bianque.storage import ids
-from bianque.storage.db import session_factory
 from bianque.storage.models import (
     Alert,
     Assessment,
@@ -184,18 +176,3 @@ async def load(session: AsyncSession, path: Path = FIXTURE) -> str:
     loaded = await session.scalar(select(Investigation.id).where(Investigation.id == inv["id"]))
     assert loaded == inv["id"]
     return str(loaded)
-
-
-async def _main(database_url: str) -> None:
-    engine = create_async_engine(database_url, poolclass=NullPool)
-    try:
-        async with session_factory(engine)() as session:
-            print(await load(session))
-    finally:
-        await engine.dispose()
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--database-url", required=True)
-    asyncio.run(_main(parser.parse_args().database_url))

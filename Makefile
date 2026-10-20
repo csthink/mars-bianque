@@ -68,7 +68,6 @@ REPLAY_LOGIN_ENV := .demo/replay-login.env
 DEMO_PASSWORD := .demo/demo-password
 COMPOSE_FILES := docker compose -f deploy/compose/replay.yaml --env-file $(REPLAY_ENV)
 COMPOSE_REPLAY := $(COMPOSE_FILES) --env-file $(REPLAY_LOGIN_ENV)
-COMPOSE_E2E := $(COMPOSE_REPLAY) -f deploy/compose/e2e.yaml
 REPLAY_URL := http://127.0.0.1:$${BIANQUE_REPLAY_PORT:-8080}
 
 $(REPLAY_ENV):
@@ -111,16 +110,15 @@ endif
 replay-down:
 	BIANQUE_DEMO_USERS=unused BIANQUE_SESSION_SECRET=unused $(COMPOSE_FILES) down --volumes
 
-# End-to-end tests: the replay stack with the database exposed to the host, the
-# investigation fixture loaded, then Playwright. Screenshots land in frontend/e2e/screenshots.
-# The stack starts from an empty database: decisions on suggestions are append-only, so
-# a fixture investigation that was decided on in an earlier run cannot be replaced.
+# End-to-end tests: the replay stack in scripted model mode, which investigates every case
+# once it has started, then Playwright against those investigations and new ones it
+# triggers. Screenshots land in frontend/e2e/screenshots. The stack starts from an empty
+# database: decisions on suggestions are append-only and cannot be undone between runs.
 e2e: $(REPLAY_ENV) replay-login
-	$(COMPOSE_E2E) down --volumes
-	$(COMPOSE_E2E) up --detach --build --wait
-	. ./$(REPLAY_ENV) && cd backend && uv run --locked python tests/api/investigation_fixture.py \
-		--database-url "postgresql+psycopg://postgres:$$BIANQUE_DB_PASSWORD@127.0.0.1:$${BIANQUE_E2E_DB_PORT:-55432}/postgres"
-	cd frontend && BIANQUE_E2E_URL="$(REPLAY_URL)" npx playwright test
+	$(COMPOSE_REPLAY) down --volumes
+	BIANQUE_LLM_MODE=scripted $(COMPOSE_REPLAY) up --detach --build --wait
+	cd frontend && BIANQUE_E2E_URL="$(REPLAY_URL)" BIANQUE_E2E_PASSWORD="$$(cat ../$(DEMO_PASSWORD))" \
+		npx playwright test
 
 # Embedding fixture: vectors of every runbook chunk and evaluation query, computed with the
 # local model. Rerun after editing knowledge/runbooks, eval/retrieval/queries.yaml or a
