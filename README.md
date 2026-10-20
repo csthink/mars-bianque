@@ -68,7 +68,7 @@ Bianque is an alert-driven root cause analysis agent for Kubernetes: when an ale
 | `knowledge_search` | 检索运维手册，结果是参考资料，不是证据 |
 | `investigation_list`、`investigation_get_report` | 列出一个命名空间最近的调查，读取一次调查的报告 |
 
-每个客户端持有一个 Bearer 令牌，令牌绑定允许的工具与命名空间（`BIANQUE_MCP_CLIENTS`，只配置令牌的 SHA-256）。没有令牌或令牌不对返回 401；令牌不允许的工具不出现在工具列表里，直接调用返回错误；命名空间范围作用于所有带 `namespace` 参数的工具。被拒的调用与失败的调用都写调用记录，记录调用方；失败时客户端收到结构化错误 `{"error": {"code": "timeout", "message": "..."}}`。
+每个客户端持有一个 Bearer 令牌，令牌绑定允许的工具与命名空间（`BIANQUE_MCP_CLIENTS`，只配置令牌的 SHA-256）。没有令牌或令牌不对返回 401；令牌不允许的工具不出现在工具列表里，直接调用返回错误；命名空间范围作用于所有带 `namespace` 参数的工具。被拒的调用与失败的调用都写调用记录，记录调用方；失败时客户端收到结构化错误 `{"error": {"code": "timeout", "message": "..."}}`。调用记录写不进数据库这类意外只写服务端日志，客户端收到 `failed`，不含异常内容。
 
 `make replay`（与 `make e2e`）每次启动生成一个随机令牌，保存在被忽略的 `.demo/mcp-token`，并配置客户端 `claude-code`：全部工具，命名空间 `demo-s1`。在仓库根目录用下面的命令把它加入 Claude Code；命令从文件读出令牌，命令本身不含令牌，Claude Code 会把它保存在本机配置里：
 

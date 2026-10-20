@@ -2,6 +2,9 @@
 
 Each test serves the application on a local port with the evidence pack backend and
 talks to ``/mcp`` with the SDK's Streamable HTTP client, as an external MCP client does.
+The main cases run in both protocol modes of the client: ``legacy``, the initialize
+handshake that Claude Code uses, and ``auto``, which takes the newer protocol; the SDK
+handles errors on the two paths differently.
 """
 
 from __future__ import annotations
@@ -23,11 +26,17 @@ from mcp_types import CallToolResult
 from sqlalchemy import Engine, text
 
 from bianque.api.app import create_app
+from bianque.llm.redacted import build_redaction_engine
 from bianque.mcp import token_sha256
-from bianque.tools import registry
+from bianque.tools import CallerScope, ToolExecutor, registry
+from bianque.tools.backends import open_backends
 from bianque.tools.pack.format import PackError
+from bianque.tools.store import EvidenceRecord, ToolCallRecord
 
 NAMESPACE = "demo-s1"
+
+#: The client's protocol modes; Claude Code speaks the ``legacy`` handshake.
+MODES = pytest.mark.parametrize("mode", ["legacy", "auto"])
 
 
 def client_config(name: str, tools: list[str], namespaces: list[str]) -> tuple[str, dict[str, Any]]:
@@ -42,16 +51,17 @@ def client_config(name: str, tools: list[str], namespaces: list[str]) -> tuple[s
     return token, entry
 
 
-def with_mcp[T](server: Server, token: str, work: Callable[[Client], Awaitable[T]]) -> T:
-    """Connect an MCP client with ``token`` and run ``work`` with it."""
+def with_mcp[T](
+    server: Server, token: str, work: Callable[[Client], Awaitable[T]], mode: str = "legacy"
+) -> T:
+    """Connect an MCP client with ``token`` in protocol ``mode`` and run ``work`` with it."""
 
     async def run() -> T:
         headers = {"Authorization": f"Bearer {token}"}
-        async with (
-            httpx2.AsyncClient(headers=headers, timeout=60) as http,
-            Client(streamable_http_client(f"{server.url}/mcp", http_client=http)) as client,
-        ):
-            return await work(client)
+        async with httpx2.AsyncClient(headers=headers, timeout=60) as http:
+            transport = streamable_http_client(f"{server.url}/mcp", http_client=http)
+            async with Client(transport, mode=mode) as client:
+                return await work(client)
 
     return asyncio.run(run())
 
@@ -80,8 +90,27 @@ def evidence_count(engine: Engine) -> int:
         return int(connection.execute(text("SELECT count(*) FROM evidence")).scalar_one())
 
 
+class _Sink:
+    async def save(self, call: ToolCallRecord, evidence: EvidenceRecord | None) -> None:
+        pass
+
+
+def direct_view(pg_url: str, name: str, arguments: dict[str, Any]) -> str:
+    """The executor's redacted view of a call, made directly as an evidence sub-agent would."""
+    settings = scripted(pg_url)
+
+    async def run() -> str:
+        async with open_backends(settings) as backends:
+            executor = ToolExecutor(backends, _Sink(), engine=build_redaction_engine(settings))
+            scope = CallerScope(agent="kubernetes", domain="kubernetes")
+            return (await executor.call(name, arguments, scope=scope)).model_view.text
+
+    return asyncio.run(run())
+
+
+@MODES
 def test_a_client_lists_its_tools_and_calls_one_through_the_executor(
-    migrated: Engine, pg_url: str
+    migrated: Engine, pg_url: str, mode: str
 ) -> None:
     token, entry = client_config("claude-code", ["*"], [NAMESPACE])
     with serve(scripted(pg_url, mcp_clients=[entry])) as server:
@@ -95,7 +124,7 @@ def test_a_client_lists_its_tools_and_calls_one_through_the_executor(
             )
             return tools, pod, status
 
-        tools, pod, status = with_mcp(server, token, work)
+        tools, pod, status = with_mcp(server, token, work, mode)
 
     expected = {definition.name: definition.spec() for definition in registry}
     assert sorted(tool.name for tool in tools) == sorted(expected)
@@ -104,7 +133,10 @@ def test_a_client_lists_its_tools_and_calls_one_through_the_executor(
         assert tool.description == expected[tool.name].description
         assert tool.annotations is not None and tool.annotations.read_only_hint is True
     assert not status.is_error
-    assert json.loads(status.content[0].text)["name"] == pod  # type: ignore[union-attr]
+    # The same text an evidence sub-agent sees from the same call.
+    assert status.content[0].text == direct_view(  # type: ignore[union-attr]
+        pg_url, "k8s_get_pod_status", {"namespace": NAMESPACE, "pod": pod}
+    )
     calls = mcp_calls(migrated)
     assert [(c["name"], c["status"], c["caller"]) for c in calls] == [
         ("k8s_list_pods", "ok", "claude-code"),
@@ -146,7 +178,8 @@ def test_requests_without_a_valid_token_are_refused(migrated: Engine, pg_url: st
     assert mcp_calls(migrated) == []
 
 
-def test_a_client_sees_and_calls_only_its_tools(migrated: Engine, pg_url: str) -> None:
+@MODES
+def test_a_client_sees_and_calls_only_its_tools(migrated: Engine, pg_url: str, mode: str) -> None:
     token, entry = client_config("pods-only", ["k8s_*"], [NAMESPACE])
     with serve(scripted(pg_url, mcp_clients=[entry])) as server:
 
@@ -155,7 +188,7 @@ def test_a_client_sees_and_calls_only_its_tools(migrated: Engine, pg_url: str) -
             denied = await client.call_tool("change_list_commits", {})
             return names, denied
 
-        names, denied = with_mcp(server, token, work)
+        names, denied = with_mcp(server, token, work, mode)
 
     assert sorted(names) == sorted(d.name for d in registry if d.name.startswith("k8s_"))
     assert error_of(denied) == {
@@ -167,20 +200,25 @@ def test_a_client_sees_and_calls_only_its_tools(migrated: Engine, pg_url: str) -
     ]
 
 
-def test_namespaces_outside_the_range_are_refused(migrated: Engine, pg_url: str) -> None:
+@MODES
+def test_namespaces_outside_the_range_are_refused(migrated: Engine, pg_url: str, mode: str) -> None:
     token, entry = client_config("demo-only", ["*"], [NAMESPACE])
     outside = [
         ("k8s_list_pods", {"namespace": "kube-system"}),
         ("logs_get_container_logs", {"namespace": "kube-system", "pod": "p", "container": "c"}),
         ("change_get_rollout_history", {"namespace": "kube-system", "deployment": "s1-app"}),
         ("investigation_list", {"namespace": "kube-system"}),
+        (
+            "investigation_get_report",
+            {"namespace": "kube-system", "investigation_id": "inv_01M5CMN7F732AM2B6JP2PFKGNP"},
+        ),
     ]
     with serve(scripted(pg_url, mcp_clients=[entry])) as server:
 
         async def work(client: Client) -> list[CallToolResult]:
             return [await client.call_tool(name, args) for name, args in outside]
 
-        results = with_mcp(server, token, work)
+        results = with_mcp(server, token, work, mode)
 
     for result in results:
         assert error_of(result) == {
@@ -193,8 +231,9 @@ def test_namespaces_outside_the_range_are_refused(migrated: Engine, pg_url: str)
     ]
 
 
+@MODES
 def test_a_timeout_is_a_structured_error_and_recorded_with_its_caller(
-    migrated: Engine, pg_url: str
+    migrated: Engine, pg_url: str, mode: str
 ) -> None:
     # The S1-d evidence pack injects a timeout of the log tool.
     token, entry = client_config("claude-code", ["logs_*"], [NAMESPACE])
@@ -206,7 +245,7 @@ def test_a_timeout_is_a_structured_error_and_recorded_with_its_caller(
                 {"namespace": NAMESPACE, "pod": "s1-app-5468546b65-dvgq5", "container": "app"},
             )
 
-        result = with_mcp(server, token, work)
+        result = with_mcp(server, token, work, mode)
 
     error = error_of(result)
     assert error["code"] == "timeout"
@@ -281,3 +320,33 @@ def test_a_client_with_an_unusable_backend_stops_the_start(
 
     with pytest.raises(PackError):
         asyncio.run(start())
+
+
+@MODES
+def test_input_the_database_cannot_store_is_rejected_and_recorded(
+    migrated: Engine, pg_url: str, mode: str
+) -> None:
+    # PostgreSQL text cannot hold NUL. A tool name or an argument key with one must still
+    # be answered with a structured error and recorded, and no database text may leak.
+    token, entry = client_config("claude-code", ["*"], [NAMESPACE])
+    with serve(scripted(pg_url, mcp_clients=[entry])) as server:
+
+        async def work(client: Client) -> list[CallToolResult]:
+            return [
+                await client.call_tool("k8s\x00list_pods", {"namespace": NAMESPACE}),
+                await client.call_tool("k8s_list_pods", {"namespace": NAMESPACE, "a\x00": 1}),
+            ]
+
+        unknown, invalid = with_mcp(server, token, work, mode)
+
+    assert error_of(unknown)["code"] == "unknown_tool"
+    assert error_of(invalid)["code"] == "invalid_arguments"
+    for result in (unknown, invalid):
+        text_ = result.content[0].text  # type: ignore[union-attr]
+        assert "SQL" not in text_ and "psycopg" not in text_ and "\x00" not in text_
+    calls = mcp_calls(migrated)
+    assert [(c["name"], c["status"], c["caller"]) for c in calls] == [
+        ("k8s\\x00list_pods", "rejected", "claude-code"),
+        ("k8s_list_pods", "rejected", "claude-code"),
+    ]
+    assert all("\x00" not in (c["error"] or "") for c in calls)

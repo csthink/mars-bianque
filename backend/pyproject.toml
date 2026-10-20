@@ -46,6 +46,12 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["bianque"]
 
+[tool.uv]
+# Every package is a release at least 14 days old when it is locked. pycparser 3.1 and
+# 3.11 (a dependency of cffi, through cryptography and the MCP SDK) were newer than that
+# when the MCP SDK was added; lift this once they have been out for 14 days.
+constraint-dependencies = ["pycparser<3.1"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"

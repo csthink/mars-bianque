@@ -15,7 +15,9 @@ through the same steps:
 6. Return a ``ToolResult`` whose ``model_view`` is the only text that may reach a model.
 
 Error texts carry the category and the object only, never timings or retry counts, so
-that a failure reads the same on every run.
+that a failure reads the same on every run. A caller's tool name and argument keys are
+its own text: NUL characters in them, which PostgreSQL text cannot store, are escaped,
+so that every call can be recorded.
 """
 
 from __future__ import annotations
@@ -42,6 +44,9 @@ from bianque.tools.store import EvidenceRecord, ToolCallRecord, ToolCallSink
 
 #: Delays in seconds before each retry; their count is the number of retries.
 RETRY_DELAYS: tuple[float, ...] = (0.5, 1.0)
+
+#: The longest tool name kept of a call to a tool that does not exist.
+NAME_LIMIT = 128
 
 ToolStatus = Literal["ok", "error", "rejected"]
 
@@ -98,10 +103,17 @@ def _describe(definition: ToolDefinition, args: BaseModel) -> str:
     return " ".join([definition.name, *parts])
 
 
+def storable(text: str) -> str:
+    """Return ``text`` with NUL characters escaped; PostgreSQL text cannot hold them."""
+    return text.replace("\x00", "\\x00")
+
+
 def _validation_summary(error: ValidationError) -> str:
-    return "; ".join(
-        f"{'.'.join(str(p) for p in item['loc']) or 'arguments'}: {item['msg']}"
-        for item in error.errors()
+    return storable(
+        "; ".join(
+            f"{'.'.join(str(p) for p in item['loc']) or 'arguments'}: {item['msg']}"
+            for item in error.errors()
+        )
     )
 
 
@@ -161,7 +173,10 @@ class ToolExecutor:
         """
         started_at = datetime.now(UTC)
         clock = time.monotonic()
-        raw_input = arguments if isinstance(arguments, str) else json.dumps(dict(arguments))
+        raw_input = storable(
+            arguments if isinstance(arguments, str) else json.dumps(dict(arguments))
+        )
+        name = storable(name)[:NAME_LIMIT]
 
         async def finish(
             status: ToolStatus,
@@ -196,6 +211,11 @@ class ToolExecutor:
         definition = self._tools.get(name)
         if definition is None:
             return await finish("rejected", ToolError("unknown_tool", name))
+        # The tool itself first: a caller learns nothing of the arguments of a tool it
+        # may not call.
+        denial = self._check_tool(definition, scope)
+        if denial is not None:
+            return await finish("rejected", denial)
         try:
             payload = json.loads(arguments) if isinstance(arguments, str) else dict(arguments)
             args = definition.args_model.model_validate(payload)
@@ -204,10 +224,12 @@ class ToolExecutor:
                 "rejected", ToolError("invalid_arguments", name, _validation_summary(exc))
             )
         except ValueError as exc:
-            return await finish("rejected", ToolError("invalid_arguments", name, str(exc)))
+            return await finish(
+                "rejected", ToolError("invalid_arguments", name, storable(str(exc)))
+            )
         input_text = json.dumps(args.model_dump())
         named = [str(value) for value in args.model_dump().values() if isinstance(value, str)]
-        denial = self._check_scope(definition, args, scope)
+        denial = self._check_namespace(args, scope)
         if denial is not None:
             return await finish("rejected", denial, input_text=input_text, keep=named)
 
@@ -253,9 +275,7 @@ class ToolExecutor:
         evidence_ids = (evidence.evidence_id,) if evidence is not None else ()
         return ToolResult("ok", evidence_ids, view, None, identifiers)
 
-    def _check_scope(
-        self, definition: ToolDefinition, args: BaseModel, scope: CallerScope
-    ) -> ToolError | None:
+    def _check_tool(self, definition: ToolDefinition, scope: CallerScope) -> ToolError | None:
         if scope.domain is not None and (
             definition.kind != "evidence" or definition.domain != scope.domain
         ):
@@ -264,6 +284,9 @@ class ToolExecutor:
             )
         if scope.tools is not None and definition.name not in scope.tools:
             return ToolError("rejected", f"{definition.name} is not allowed for this client")
+        return None
+
+    def _check_namespace(self, args: BaseModel, scope: CallerScope) -> ToolError | None:
         namespace = getattr(args, "namespace", None)
         if scope.namespaces is not None and namespace is not None:
             if namespace not in scope.namespaces:

@@ -41,12 +41,14 @@ class _Investigations:
     def __init__(self, report: dict[str, str] | None = BODY) -> None:
         self.report = report
         self.listed: list[tuple[str, int]] = []
+        self.read: list[str] = []
 
     async def list_investigations(self, namespace: str, limit: int) -> list[InvestigationRow]:
         self.listed.append((namespace, limit))
         return [ROW] if namespace == "demo-s1" else []
 
     async def get_report(self, investigation_id: str) -> InvestigationReport | None:
+        self.read.append(investigation_id)
         if investigation_id != INVESTIGATION:
             return None
         return InvestigationReport(ROW, self.report, (POD, "9b9a6ea8a72b4e1c"))
@@ -127,14 +129,15 @@ async def test_a_report_outside_the_namespace_or_missing_is_not_found() -> None:
 
 
 async def test_an_investigation_id_is_validated_before_any_lookup() -> None:
-    sink = MemorySink()
-    result = await _executor(_Investigations(), sink).call(
+    source, sink = _Investigations(), MemorySink()
+    result = await _executor(source, sink).call(
         "investigation_get_report",
         {"namespace": "demo-s1", "investigation_id": "'; drop table reports; --"},
         scope=MCP,
     )
     assert result.status == "rejected"
     assert result.error is not None and result.error.startswith("invalid_arguments")
+    assert source.read == []
 
 
 async def test_without_a_source_the_tools_fail() -> None:

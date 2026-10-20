@@ -72,7 +72,6 @@ class GitSource(Protocol):
         ...
 
 
-@dataclass
 @dataclass(frozen=True)
 class InvestigationRow:
     """One investigation as the auxiliary tools list it; ``case_id`` names a replayed case."""

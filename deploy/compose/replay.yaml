@@ -30,6 +30,8 @@ services:
       BIANQUE_DEMO_USERS: ${BIANQUE_DEMO_USERS:?run make replay, which generates it}
       BIANQUE_SESSION_SECRET: ${BIANQUE_SESSION_SECRET:?run make replay, which generates it}
       BIANQUE_MCP_CLIENTS: ${BIANQUE_MCP_CLIENTS:?run make replay, which generates it}
+      # The case whose evidence pack MCP calls read.
+      BIANQUE_PACK_CASE: ${BIANQUE_PACK_CASE:-s1-a}
       # Pages are served over plain http on the workstation, where a browser would not
       # keep a Secure cookie.
       BIANQUE_SESSION_COOKIE_SECURE: "false"
