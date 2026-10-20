@@ -54,17 +54,23 @@ export function PlanPanel({ plans, assessments }: { plans: PlanView[]; assessmen
                 const status = STEP_STATUS[step.status] ?? { label: step.status, className: "" };
                 return (
                   <li key={step.id} data-testid="plan-step" className="text-sm">
-                    <div className="flex items-start gap-2">
-                      <span className="w-[5.5rem] shrink-0">
+                    {/* Narrow screens: domain and status on one row, the goal below at full
+                        width. From sm up: domain column, goal, status. */}
+                    <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-2 gap-y-1 sm:grid-cols-[5.5rem_minmax(0,1fr)_auto]">
+                      <span className="col-start-1 row-start-1">
                         <Badge tone={agentColor(step.domain).chip}>{step.domain}</Badge>
                       </span>
-                      <span className="min-w-0 flex-1 text-slate-800 dark:text-slate-200">{step.goal}</span>
-                      <span className={`shrink-0 text-xs font-medium ${status.className}`}>{status.label}</span>
+                      <span className="col-span-3 row-start-2 min-w-0 text-slate-800 sm:col-span-1 sm:col-start-2 sm:row-start-1 dark:text-slate-200">
+                        {step.goal}
+                      </span>
+                      <span className={`col-start-3 row-start-1 justify-self-end text-xs font-medium ${status.className}`}>
+                        {status.label}
+                      </span>
                     </div>
                     {step.findings.map((finding) => (
                       <p
                         key={finding.statement}
-                        className="mt-1 ml-[6rem] border-l-2 border-slate-200 pl-3 text-xs leading-relaxed text-slate-500 dark:border-slate-700 dark:text-slate-400"
+                        className="mt-1 border-l-2 sm:ml-[6rem] border-slate-200 pl-3 text-xs leading-relaxed text-slate-500 dark:border-slate-700 dark:text-slate-400"
                       >
                         {finding.statement} <Citations ids={finding.citations} />
                       </p>

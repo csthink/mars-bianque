@@ -1,8 +1,11 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "PingFang SC", "Noto Sans SC", "Microsoft YaHei", ui-sans-serif, system-ui,
-    sans-serif;
+  /* Latin fonts first: a CJK font draws "-" as a wide dash, so names such as
+     s1-app-5468546b65-dvgq5 would read as if they held en dashes. Chinese text falls
+     through to the CJK fonts, which the Latin fonts do not cover. */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC",
+    "Noto Sans SC", "Microsoft YaHei", sans-serif;
   --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
 }
 
