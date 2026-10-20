@@ -109,17 +109,6 @@ def storable(text: str) -> str:
     return text.replace("\x00", "\\x00")
 
 
-def _strings(arguments: Mapping[str, Any] | str) -> list[str]:
-    # The string values a caller passed, as far as they can be read before validation.
-    try:
-        payload = json.loads(arguments) if isinstance(arguments, str) else dict(arguments)
-    except ValueError:
-        return []
-    if not isinstance(payload, dict):
-        return []
-    return [value for value in payload.values() if isinstance(value, str)]
-
-
 def _validation_summary(error: ValidationError) -> str:
     return storable(
         "; ".join(
@@ -127,6 +116,20 @@ def _validation_summary(error: ValidationError) -> str:
             for item in error.errors()
         )
     )
+
+
+def _validate(
+    definition: ToolDefinition, arguments: Mapping[str, Any] | str
+) -> BaseModel | ToolError:
+    # The validated arguments of a call, or why they are invalid.
+    try:
+        payload = json.loads(arguments) if isinstance(arguments, str) else dict(arguments)
+        return definition.args_model.model_validate(payload)
+    except ValidationError as exc:
+        return ToolError("invalid_arguments", definition.name, _validation_summary(exc))
+    except (ValueError, RecursionError) as exc:
+        # RecursionError: JSON text nested too deeply to decode.
+        return ToolError("invalid_arguments", definition.name, storable(str(exc)))
 
 
 class ToolExecutor:
@@ -224,25 +227,18 @@ class ToolExecutor:
 
         if definition is None:
             return await finish("rejected", ToolError("unknown_tool", name))
+        validated = _validate(definition, arguments)
         # The tool itself first: a caller learns nothing of the arguments of a tool it
-        # may not call. The names it passed stay readable in the record.
+        # may not call. The record of a refused call with valid arguments keeps their
+        # names readable, as the record of any other call does.
         denial = self._check_tool(definition, scope)
-        if denial is not None:
-            return await finish("rejected", denial, keep=_strings(arguments))
-        try:
-            payload = json.loads(arguments) if isinstance(arguments, str) else dict(arguments)
-            args = definition.args_model.model_validate(payload)
-        except ValidationError as exc:
-            return await finish(
-                "rejected", ToolError("invalid_arguments", name, _validation_summary(exc))
-            )
-        except ValueError as exc:
-            return await finish(
-                "rejected", ToolError("invalid_arguments", name, storable(str(exc)))
-            )
+        if isinstance(validated, ToolError):
+            return await finish("rejected", denial or validated)
+        args = validated
         input_text = json.dumps(args.model_dump())
         named = [str(value) for value in args.model_dump().values() if isinstance(value, str)]
-        denial = self._check_namespace(args, scope)
+        if denial is None:
+            denial = self._check_namespace(args, scope)
         if denial is not None:
             return await finish("rejected", denial, input_text=input_text, keep=named)
 

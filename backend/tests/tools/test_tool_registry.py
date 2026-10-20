@@ -66,6 +66,10 @@ def test_a_malformed_name_is_refused(name: str) -> None:
         _declare(name=name)
 
 
+def test_a_name_of_64_characters_is_accepted() -> None:
+    _declare(name="p" * 64)
+
+
 def test_an_auxiliary_tool_has_no_domain() -> None:
     _declare(kind="auxiliary", domain=None, source=None, identity_args=())
 

@@ -347,21 +347,24 @@ def test_input_the_database_cannot_store_is_rejected_and_recorded(
             return [
                 await client.call_tool("k8s\x00list_pods", {"namespace": NAMESPACE}),
                 await client.call_tool("k8s_list_pods", {"namespace": NAMESPACE, "a\x00": 1}),
+                await client.call_tool("knowledge_search", {"query": "a\x00b"}),
             ]
 
-        unknown, invalid = with_mcp(server, token, work, mode)
+        unknown, invalid, query = with_mcp(server, token, work, mode)
 
     assert error_of(unknown)["code"] == "unknown_tool"
     assert error_of(invalid)["code"] == "invalid_arguments"
-    for result in (unknown, invalid):
+    assert error_of(query)["code"] == "invalid_arguments"
+    for result in (unknown, invalid, query):
         text_ = result.content[0].text  # type: ignore[union-attr]
         assert "SQL" not in text_ and "psycopg" not in text_ and "\x00" not in text_
     calls = mcp_calls(migrated)
     assert [(c["name"], c["status"], c["caller"]) for c in calls] == [
         ("k8s\\x00list_pods", "rejected", "claude-code"),
         ("k8s_list_pods", "rejected", "claude-code"),
+        ("knowledge_search", "rejected", "claude-code"),
     ]
-    assert all("\x00" not in (c["error"] or "") for c in calls)
+    assert all("\x00" not in (c["error"] or "") and "SQL" not in (c["error"] or "") for c in calls)
 
 
 @MODES

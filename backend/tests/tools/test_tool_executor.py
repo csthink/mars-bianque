@@ -120,8 +120,36 @@ async def test_a_tool_is_refused_before_its_arguments_are_read(
     )
     assert result.error == "rejected: k8s_probe is not a tool of the logs domain"
     assert behaviour.calls == 0
-    # The names the caller passed stay readable in the record.
-    assert POD in sink.calls[0].input_summary
+
+
+@pytest.mark.parametrize(
+    ("arguments", "readable"),
+    [
+        # Valid arguments: their names stay readable, as in the record of any call.
+        ({"namespace": "demo-s1", "pod": POD}, True),
+        # Invalid arguments are redacted in full, entropy fallback included.
+        ({"namespace": "demo-s1", "pod": POD, "bogus": SECRET}, False),
+    ],
+)
+async def test_the_record_of_a_refused_tool_keeps_only_valid_names(
+    tools: ToolRegistry, arguments: dict[str, object], readable: bool
+) -> None:
+    sink = MemorySink()
+    await _executor(tools, sink).call("k8s_probe", arguments, scope=SUBAGENT)
+    [call] = sink.calls
+    assert (POD in call.input_summary) is readable
+    assert SECRET not in call.input_summary
+
+
+async def test_json_nested_too_deeply_is_invalid(tools: ToolRegistry) -> None:
+    sink = MemorySink()
+    executor = _executor(tools, sink)
+    deep = "[" * 100_000
+    allowed = await executor.call("logs_probe", deep, scope=SUBAGENT)
+    refused = await executor.call("k8s_probe", deep, scope=SUBAGENT)
+    assert allowed.error == "invalid_arguments: logs_probe"
+    assert refused.error == "rejected: k8s_probe is not a tool of the logs domain"
+    assert len(sink.calls) == 2
 
 
 async def test_a_sub_agent_cannot_call_an_auxiliary_tool(tools: ToolRegistry) -> None:
@@ -168,7 +196,8 @@ async def test_an_argument_value_with_a_nul_character_is_invalid(
 async def test_nul_characters_in_output_and_errors_are_escaped(
     tools: ToolRegistry, behaviour: _Behaviour
 ) -> None:
-    # PostgreSQL text cannot store NUL; container logs, for one, may carry it.
+    # PostgreSQL text cannot store NUL. Tools render JSON, which escapes it, so escaping
+    # the output is a second line of defence; exception texts do carry it.
     behaviour.text = json.dumps({"pod": POD, "line": "start"}).replace("start", "a\x00b")
     sink = MemorySink()
     executor = _executor(tools, sink)
