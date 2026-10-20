@@ -1,4 +1,5 @@
-"""``demo-login.sh`` writes a new random demo password and a matching hash on every run.
+"""``demo-login.sh`` writes a new random demo password, an MCP token and their hashes on
+every run.
 
 The hash command is ``bianque auth hash-password`` run by this interpreter, the same
 command ``make replay`` runs inside the backend image.
@@ -6,6 +7,7 @@ command ``make replay`` runs inside the backend image.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -22,12 +24,20 @@ HASH_COMMAND = [sys.executable, "-m", "bianque.cli", "auth", "hash-password"]
 ENV_LINE = re.compile(
     r"BIANQUE_DEMO_USERS='(?P<users>[^']*)'\n"
     r"BIANQUE_SESSION_SECRET=(?P<secret>[0-9a-f]{64})\n"
+    r"BIANQUE_MCP_CLIENTS='(?P<clients>[^']*)'\n"
 )
+FILES = ["login.env", "mcp-token", "password"]
 
 
 def _run(tmp_path: Path, *command: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [str(SCRIPT), str(tmp_path / "login.env"), str(tmp_path / "password"), *command],
+        [
+            str(SCRIPT),
+            str(tmp_path / "login.env"),
+            str(tmp_path / "password"),
+            str(tmp_path / "mcp-token"),
+            *command,
+        ],
         capture_output=True,
         text=True,
         env={**os.environ, "DEMO_DIR": str(tmp_path)},
@@ -35,21 +45,38 @@ def _run(tmp_path: Path, *command: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _read(tmp_path: Path) -> tuple[str, dict[str, str], str]:
+def _read(tmp_path: Path) -> tuple[str, dict[str, str], str, str, list[dict[str, object]]]:
     password = (tmp_path / "password").read_text().rstrip("\n")
+    token = (tmp_path / "mcp-token").read_text().rstrip("\n")
     match = ENV_LINE.fullmatch((tmp_path / "login.env").read_text())
     assert match, (tmp_path / "login.env").read_text()
-    return password, json.loads(match["users"]), match["secret"]
+    return (
+        password,
+        json.loads(match["users"]),
+        match["secret"],
+        token,
+        json.loads(match["clients"]),
+    )
 
 
 def test_writes_a_password_and_its_hash(tmp_path: Path) -> None:
     result = _run(tmp_path, *HASH_COMMAND)
     assert result.returncode == 0, result.stderr
-    password, users, secret = _read(tmp_path)
+    password, users, secret, token, clients = _read(tmp_path)
     assert re.fullmatch(r"[0-9a-f]{32}", password)
     assert list(users) == ["demo"] and verify_password(password, users["demo"])
-    assert password not in result.stdout and secret not in result.stdout
-    for name in ("password", "login.env"):
+    assert re.fullmatch(r"[0-9a-f]{64}", token)
+    assert clients == [
+        {
+            "name": "claude-code",
+            "token_sha256": hashlib.sha256(token.encode()).hexdigest(),
+            "tools": ["*"],
+            "namespaces": ["demo-s1"],
+        }
+    ]
+    for value in (password, secret, token):
+        assert value not in result.stdout
+    for name in FILES:
         assert stat.S_IMODE((tmp_path / name).stat().st_mode) == 0o600
 
 
@@ -58,7 +85,7 @@ def test_every_run_is_new(tmp_path: Path) -> None:
     first = _read(tmp_path)
     assert _run(tmp_path, *HASH_COMMAND).returncode == 0
     second = _read(tmp_path)
-    assert first[0] != second[0] and first[2] != second[2]
+    assert first[0] != second[0] and first[2] != second[2] and first[3] != second[3]
 
 
 def test_failed_hash_keeps_the_earlier_files(tmp_path: Path) -> None:
@@ -68,4 +95,4 @@ def test_failed_hash_keeps_the_earlier_files(tmp_path: Path) -> None:
         result = _run(tmp_path, *command)
         assert result.returncode != 0 and result.stderr.startswith("error: ")
         assert _read(tmp_path) == before
-    assert sorted(p.name for p in tmp_path.iterdir()) == ["login.env", "password"]
+    assert sorted(p.name for p in tmp_path.iterdir()) == FILES

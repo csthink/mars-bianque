@@ -56,6 +56,29 @@ Bianque is an alert-driven root cause analysis agent for Kubernetes: when an ale
 
 前端开发：`cd frontend && npm ci && npm run dev`，开发服务器把 `/api` 代理到 `BIANQUE_BACKEND_URL`（默认 `http://127.0.0.1:8000`）；后端用 `uvicorn --factory bianque.api.app:create_app` 启动。`make check` 包含前端的 lint、类型检查、单元测试与构建。
 
+## MCP 服务
+
+扁鹊把自己的只读工具经 MCP（Streamable HTTP）提供给 Claude Code 等客户端，地址是 `/mcp`。外部客户端与扁鹊的取证子 Agent 用的是同一个工具注册表与执行器，超时、重试、脱敏与调用记录都相同；MCP 调用不属于任何调查，不产生证据。
+
+| 工具 | 作用 |
+| --- | --- |
+| `k8s_list_pods`、`k8s_get_pod_status`、`k8s_list_events`、`k8s_get_deployment` | 读 Kubernetes 现状 |
+| `logs_get_container_logs` | 读容器当前或上一次的日志 |
+| `change_get_rollout_history`、`change_list_commits`、`change_show_commit` | 读 Deployment 修订历史与清单仓的提交 |
+| `knowledge_search` | 检索运维手册，结果是参考资料，不是证据 |
+| `investigation_list`、`investigation_get_report` | 列出一个命名空间最近的调查，读取一次调查的报告 |
+
+每个客户端持有一个 Bearer 令牌，令牌绑定允许的工具与命名空间（`BIANQUE_MCP_CLIENTS`，只配置令牌的 SHA-256）。没有令牌或令牌不对返回 401；令牌不允许的工具不出现在工具列表里，直接调用返回错误；命名空间范围作用于所有带 `namespace` 参数的工具。被拒的调用与失败的调用都写调用记录，记录调用方；失败时客户端收到结构化错误 `{"error": {"code": "timeout", "message": "..."}}`。
+
+`make replay`（与 `make e2e`）每次启动生成一个随机令牌，保存在被忽略的 `.demo/mcp-token`，并配置客户端 `claude-code`：全部工具，命名空间 `demo-s1`。在仓库根目录用下面的命令把它加入 Claude Code；命令从文件读出令牌，命令本身不含令牌，Claude Code 会把它保存在本机配置里：
+
+```bash
+claude mcp add --transport http bianque http://127.0.0.1:8080/mcp \
+  --header "Authorization: Bearer $(cat .demo/mcp-token)"
+```
+
+之后在 Claude Code 里可以问「用 bianque 列出 demo-s1 最近的调查，读最近一次的报告，根因是什么」。重新启动回放形态会换令牌，要重新加一次。回放形态下工具读证据包（默认用例 S1-a，`BIANQUE_PACK_CASE` 可改），`knowledge_search` 的自由查询只走全文检索。
+
 ## 证据包
 
 证据包是故障发生时整个演示命名空间（Pod、事件、Deployment、ReplicaSet、全部容器日志）与清单 Git 仓的快照，外加触发调查的那条告警。扁鹊的每个取证工具都有两种后端：读真实集群与清单仓的真实后端，和读证据包的回放后端；两者接口相同，同一查询返回相同的内容。所以没有 kind 集群也能用证据包重跑调查与评测，回放时把录制时间当作当前时间。

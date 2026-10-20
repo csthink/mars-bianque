@@ -61,11 +61,13 @@ derive-packs:
 
 # Replay profile: database, backend and nginx in Docker Compose, no cluster needed. The
 # database password is generated once into .demo/replay.env, since the data volume keeps
-# it; the demo login is generated again on every run into .demo/replay-login.env and
-# .demo/demo-password. None of them is ever committed.
+# it; the demo login and the MCP token are generated again on every run into
+# .demo/replay-login.env, .demo/demo-password and .demo/mcp-token. None of them is ever
+# committed.
 REPLAY_ENV := .demo/replay.env
 REPLAY_LOGIN_ENV := .demo/replay-login.env
 DEMO_PASSWORD := .demo/demo-password
+MCP_TOKEN := .demo/mcp-token
 COMPOSE_FILES := docker compose -f deploy/compose/replay.yaml --env-file $(REPLAY_ENV)
 COMPOSE_REPLAY := $(COMPOSE_FILES) --env-file $(REPLAY_LOGIN_ENV)
 REPLAY_URL := http://127.0.0.1:$${BIANQUE_REPLAY_PORT:-8080}
@@ -77,7 +79,7 @@ $(REPLAY_ENV):
 # The password is hashed inside the backend image, so the host needs no Python.
 replay-login:
 	mkdir -p .demo
-	demo/scripts/demo-login.sh $(REPLAY_LOGIN_ENV) $(DEMO_PASSWORD) \
+	demo/scripts/demo-login.sh $(REPLAY_LOGIN_ENV) $(DEMO_PASSWORD) $(MCP_TOKEN) \
 		docker run --rm -i "$$(docker build -q backend)" bianque auth hash-password
 
 # LLM_MODE picks the model mode: recorded (the default) replays recorded responses;
@@ -104,11 +106,14 @@ endif
 	$(COMPOSE_MODE) up --detach --wait
 	@echo "Bianque (replay profile, $(LLM_MODE) model mode): $(REPLAY_URL)"
 	@echo "Demo login: demo / $$(cat $(DEMO_PASSWORD))"
+	@echo "MCP for Claude Code, run from this directory:"
+	@echo "  claude mcp add --transport http bianque $(REPLAY_URL)/mcp --header \"Authorization: Bearer \$$(cat $(MCP_TOKEN))\""
 
 # Compose checks every variable of the file even to stop it; the login values are not
 # used by `down`, so placeholders stand in when no login was generated yet.
 replay-down:
-	BIANQUE_DEMO_USERS=unused BIANQUE_SESSION_SECRET=unused $(COMPOSE_FILES) down --volumes
+	BIANQUE_DEMO_USERS=unused BIANQUE_SESSION_SECRET=unused BIANQUE_MCP_CLIENTS=unused \
+		$(COMPOSE_FILES) down --volumes
 
 # End-to-end tests: the replay stack in scripted model mode, which investigates every case
 # once it has started, then Playwright against those investigations and new ones it
