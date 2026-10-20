@@ -140,14 +140,41 @@ async def _top5(
 async def test_local_and_fixture_embeddings_give_the_same_top_five(
     sessions: async_sessionmaker[AsyncSession],
 ) -> None:
-    """The fixture was generated on another machine; the ranking must not change."""
+    """Both modes find the same five chunks for every query.
+
+    The fixture may have been generated on another CPU architecture, where float
+    differences can swap two chunks whose distances almost tie; the order within the top
+    five is therefore checked on the machine that generates the fixture, not here.
+    Recording and replay both read the fixture, so their prompts never depend on it.
+    """
     queries = _query_texts()
     with_fixture = await _top5(sessions, FixtureEmbedder(FIXTURE), queries)
     with_model = await _top5(sessions, _local_embedder(), queries)
     differing = {
-        q: (with_fixture[q], with_model[q]) for q in queries if with_fixture[q] != with_model[q]
+        q: (with_fixture[q], with_model[q])
+        for q in queries
+        if set(with_fixture[q]) != set(with_model[q])
     }
     assert differing == {}
+
+
+#: Largest cosine distance between a fixture vector and the local model's vector of the
+#: same text; float differences between machines stay far below it.
+MAX_DISTANCE = 0.001
+
+
+async def test_the_fixture_holds_the_vectors_the_local_model_computes() -> None:
+    """Every fixture vector is within cosine distance 0.001 of the local model's."""
+    fixture = load_fixture(FIXTURE, model=MODEL_NAME, dimension=EMBEDDING_DIMENSION)
+    queries = [query.query for query in load_queries(QUERIES)]
+    texts = fixture_texts(RUNBOOKS, CASES, queries)
+    keys = sorted(texts)
+    computed = await _local_embedder().embed([texts[key] for key in keys])
+    distances = {
+        texts[key][:60]: 1 - sum(a * b for a, b in zip(fixture.vectors[key], vector, strict=True))
+        for key, vector in zip(keys, computed, strict=True)
+    }
+    assert {text: d for text, d in distances.items() if d > MAX_DISTANCE} == {}
 
 
 def test_the_local_embedder_never_downloads(tmp_path: Path) -> None:
