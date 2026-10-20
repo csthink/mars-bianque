@@ -1,0 +1,1603 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-20T22:19:55Z",
+  "passed": true,
+  "llm": {
+    "mode": "live",
+    "model": "deepseek-v4-pro",
+    "extra_body": {
+      "thinking": {
+        "type": "disabled"
+      }
+    },
+    "recorded_at": null,
+    "note": null
+  },
+  "embedding": {
+    "mode": "fixture",
+    "model": "BAAI/bge-small-en-v1.5",
+    "fixture_file": "bge-small-en-v1.5.json",
+    "fixture_sha256": "df0a135b54f46d5369a4cccc9b9e1a04e5b097e517b9d02f316fc97d26dfcb3d"
+  },
+  "prompts": {
+    "assess.md": "4405ee3c40c78f015f66c6c6a8b567aa956acc19b67d3d672b6d70b007fef702",
+    "discipline.md": "b37c402d115cdf92ecc406a6cfc5c4c0a677bff3352264ab3eee506e3dce8fc9",
+    "evidence_agent.md": "b37780062dd2355977760a0b1e02d58a7ddbd6c84116382cb76d582426093211",
+    "followup.md": "73fbac49e61c6ebebb20d8416775cf189d941501a670be6aa8ecf8d1162274b0",
+    "plan.md": "b611105af4cb672980a6aa03f26e28f0cb54e7c55a1ad311c71362b394ddd033",
+    "replan.md": "ad35b6bbe0f42874f0bf1507927d05eb489710b0478434c89142123070c0ad94",
+    "report.md": "70f6778eb1a01c45900755726f85488eb24e5fe3355ebbfa18414aef521a2242"
+  },
+  "tool_schemas_sha256": "8b6562024782e3d5998778411a05ea2d7e23fdf607039b0288ecce9ebbce5567",
+  "network_isolated": null,
+  "hard_gates": [
+    {
+      "name": "investigations_report",
+      "passed": true,
+      "details": []
+    },
+    {
+      "name": "outputs_pass_the_gate",
+      "passed": true,
+      "details": []
+    },
+    {
+      "name": "no_write_tools",
+      "passed": true,
+      "details": []
+    },
+    {
+      "name": "no_agent_evidence",
+      "passed": true,
+      "details": []
+    },
+    {
+      "name": "knowledge_not_cited",
+      "passed": true,
+      "details": []
+    }
+  ],
+  "summary": {
+    "cases": 6,
+    "root_cause_correct": {
+      "count": 6,
+      "total": 6,
+      "value": 1.0
+    },
+    "citation_completeness": {
+      "count": 108,
+      "total": 108,
+      "value": 1.0
+    },
+    "required_evidence": {
+      "count": 17,
+      "total": 17,
+      "value": 1.0
+    },
+    "gate_first_pass": {
+      "plan": {
+        "count": 13,
+        "total": 13,
+        "value": 1.0
+      },
+      "findings": {
+        "count": 48,
+        "total": 51,
+        "value": 0.9412
+      },
+      "assessment": {
+        "count": 13,
+        "total": 13,
+        "value": 1.0
+      },
+      "report": {
+        "count": 6,
+        "total": 6,
+        "value": 1.0
+      },
+      "followup_answer": {
+        "count": 16,
+        "total": 19,
+        "value": 0.8421
+      }
+    },
+    "followup_cited_segments": {
+      "count": 58,
+      "total": 58,
+      "value": 1.0
+    },
+    "followup_expected_evidence": {
+      "count": 10,
+      "total": 10,
+      "value": 1.0
+    },
+    "followup_unknown": {
+      "count": 6,
+      "total": 7,
+      "value": 0.8571
+    },
+    "tokens": 636557,
+    "model_calls": 198
+  },
+  "cases": [
+    {
+      "case": "s1-a",
+      "title": "A commit sets APP_MODE to an invalid value",
+      "investigation_id": "inv_01M5DP043Z6CB9JK2PRB0PQPR2",
+      "status": "reported",
+      "error": null,
+      "duration_s": 66.4,
+      "tokens": 92036,
+      "token_budget": 120000,
+      "model_calls": 28,
+      "tool_calls": 16,
+      "recording_misses": 0,
+      "plans": [
+        "v1 (model)",
+        "v2 (model)"
+      ],
+      "rule_overrides": 1,
+      "citation_completeness": {
+        "count": 20,
+        "total": 20,
+        "value": 1.0
+      },
+      "root_cause": {
+        "expected": {
+          "status": "identified",
+          "category": "config_error",
+          "object": {
+            "kind": "Deployment",
+            "namespace": "demo-s1",
+            "name": "s1-app"
+          }
+        },
+        "actual": {
+          "status": "identified",
+          "category": "config_error",
+          "object": {
+            "kind": "Deployment",
+            "name": "s1-app",
+            "field": "spec.template.spec.containers[app].env[APP_MODE]",
+            "namespace": "demo-s1"
+          },
+          "confidence": "high"
+        },
+        "correct": true,
+        "cites_expected_evidence": true,
+        "confidence_ok": null,
+        "missing_evidence_ok": null
+      },
+      "required_evidence": {
+        "count": 4,
+        "total": 4,
+        "value": 1.0
+      },
+      "required_evidence_matches": [
+        {
+          "tool": "k8s_get_pod_status",
+          "args": {
+            "namespace": "demo-s1",
+            "pod": "s1-app-5468546b65-dvgq5"
+          },
+          "matched": [
+            "ev_6fbf4102f4"
+          ]
+        },
+        {
+          "tool": "logs_get_container_logs",
+          "args": {
+            "namespace": "demo-s1",
+            "pod": "s1-app-5468546b65-dvgq5",
+            "previous": true
+          },
+          "matched": [
+            "ev_12997f657d"
+          ]
+        },
+        {
+          "tool": "k8s_get_deployment",
+          "args": {
+            "namespace": "demo-s1",
+            "name": "s1-app"
+          },
+          "matched": [
+            "ev_67fd6463e6"
+          ]
+        },
+        {
+          "tool": "change_show_commit",
+          "args": {
+            "commit": "9b9a6ea*"
+          },
+          "matched": [
+            "ev_9cfa6c69db"
+          ]
+        }
+      ],
+      "gate": {
+        "plan": {
+          "generations": 2,
+          "first_pass": {
+            "count": 2,
+            "total": 2,
+            "value": 1.0
+          },
+          "attempts": 2,
+          "mean_retries": 0.0,
+          "fallbacks": 0,
+          "rejected_by": {}
+        },
+        "findings": {
+          "generations": 7,
+          "first_pass": {
+            "count": 7,
+            "total": 7,
+            "value": 1.0
+          },
+          "attempts": 7,
+          "mean_retries": 0.0,
+          "fallbacks": 0,
+          "rejected_by": {}
+        },
+        "assessment": {
+          "generations": 2,
+          "first_pass": {
+            "count": 2,
+            "total": 2,
+            "value": 1.0
+          },
+          "attempts": 2,
+          "mean_retries": 0.0,
+          "fallbacks": 0,
+          "rejected_by": {}
+        },
+        "report": {
+          "generations": 1,
+          "first_pass": {
+            "count": 1,
+            "total": 1,
+            "value": 1.0
+          },
+          "attempts": 1,
+          "mean_retries": 0.0,
+          "fallbacks": 0,
+          "rejected_by": {}
+        },
+        "followup_answer": {
+          "generations": 4,
+          "first_pass": {
+            "count": 4,
+            "total": 4,
+            "value": 1.0
+          },
+          "attempts": 4,
+          "mean_retries": 0.0,
+          "fallbacks": 0,
+          "rejected_by": {}
+        }
+      },
+      "report_attempts": 1,
+      "report_status": "published",
+      "followup": [
+        {
+          "id": "q1",
+          "question": "为什么认定是这次提交，而不是更早的改动？",
+          "outcome": "answered",
+          "segments": 4,
+          "cited_segments": {
+            "count": 4,
+            "total": 4,
+            "value": 1.0
+          },
+          "unknown": false,
+          "expect_unknown": false,
+          "expected_evidence_hit": true,
+          "suggestion_cited": null,
+          "depends_on": null
+        },
+        {
+          "id": "q2",
+          "question": "它具体改了 Deployment 的哪一项？",
+          "outcome": "answered",
+          "segments": 3,
+          "cited_segments": {
+            "count": 3,
+            "total": 3,
+            "value": 1.0
+          },
+          "unknown": false,
+          "expect_unknown": false,
+          "expected_evidence_hit": true,
+          "suggestion_cited": null,
+          "depends_on": "q1"
+        },
+        {
+          "id": "q3",
+          "question": "回滚之后怎么确认服务恢复了？",
+          "outcome": "answered",
+          "segments": 5,
+          "cited_segments": {
+            "count": 4,
+            "total": 4,
+            "value": 1.0
+          },
+          "unknown": true,
+          "expect_unknown": false,
+          "expected_evidence_hit": null,
+          "suggestion_cited": true,
+          "depends_on": null
+        },
+        {
+          "id": "q4",
+          "question": "这次故障影响了多少用户请求？",
+          "outcome": "answered",
+          "segments": 3,
+          "cited_segments": {
+            "count": 1,
+            "total": 1,
+            "value": 1.0
+          },
+          "unknown": true,
+          "expect_unknown": true,
+          "expected_evidence_hit": null,
+          "suggestion_cited": null,
+          "depends_on": null
+        }
+      ]
+    },
+    {
+      "case": "s1-b",
+      "title": "A commit lowers the memory limit",
+      "investigation_id": "inv_01M5DP250ZD1CR0VNXY1AWP8QY",
+      "status": "reported",
+      "error": null,
+      "duration_s": 70.2,
+      "tokens": 93487,
+      "token_budget": 120000,
+      "model_calls": 28,
+      "tool_calls": 16,
+      "recording_misses": 0,
+      "plans": [
+        "v1 (model)",
+        "v2 (model)"
+      ],
+      "rule_overrides": 1,
+      "citation_completeness": {
+        "count": 20,
+        "total": 20,
+        "value": 1.0
+      },
+      "root_cause": {
+        "expected": {
+          "status": "identified",
+          "category": "resource_limit",
+          "object": {
+            "kind": "Deployment",
+            "namespace": "demo-s1",
+            "name": "s1-app"
+          }
+        },
+        "actual": {
+          "status": "identified",
+          "category": "resource_limit",
+          "object": {
+            "kind": "Deployment",
+            "name": "s1-app",
+            "field": "spec.template.spec.containers[app].resources.limits.memory",
+            "namespace": "demo-s1"
+          },
+          "confidence": "high"
+        },
+        "correct": true,
+        "cites_expected_evidence": null,
+        "confidence_ok": null,
+        "missing_evidence_ok": null
+      },
+      "required_evidence": {
+        "count": 3,
+        "total": 3,
+        "value": 1.0
+      },
+      "required_evidence_matches": [
+        {
+          "tool": "k8s_get_pod_status",
+          "args": {
+            "namespace": "demo-s1",
+            "pod": "s1-app-6867fdfbd4-bpv2m"
+          },
+          "matched": [
+            "ev_ada9eb82e2"
+          ]
+        },
+        {
+          "tool": "k8s_get_deployment",
+          "args": {
+            "namespace": "demo-s1",
+            "name": "s1-app"
+          },
+          "matched": [
+            "ev_22659662bc"
+          ]
+        },
+        {
+          "tool": "change_get_rollout_history",
+          "args": {
+            "namespace": "demo-s1",
+            "deployment": "s1-app"
+          },
+          "matched": [
+            "ev_dd8756b24d"
+          ]
+        }
+      ],
+      "gate": {
+        "plan": {
+          "generations": 2,
+          "first_pass": {
+            "count": 2,
+            "total": 2,
+            "value": 1.0
+          },
+          "attempts": 2,
+          "mean_retries": 0.0,
+          "fallbacks": 0,
+          "rejected_by": {}
+        },
+        "findings": {
+          "generations": 7,
+          "first_pass": {
+            "count": 7,
+            "total": 7,
+            "value": 1.0
+          },
+          "attempts": 7,
+          "mean_retries": 0.0,
+          "fallbacks": 0,
+          "rejected_by": {}
+        },
+        "assessment": {
+          "generations": 2,
+          "first_pass": {
+            "count": 2,
+            "total": 2,
+            "value": 1.0
+          },
+          "attempts": 2,
+          "mean_retries": 0.0,
+          "fallbacks": 0,
+          "rejected_by": {}
+        },
+        "report": {
+          "generations": 1,
+          "first_pass": {
+            "count": 1,
+            "total": 1,
+            "value": 1.0
+          },
+          "attempts": 1,
+          "mean_retries": 0.0,
+          "fallbacks": 0,
+          "rejected_by": {}
+        },
+        "followup_answer": {
+          "generations": 3,
+          "first_pass": {
+            "count": 2,
+            "total": 3,
+            "value": 0.6667
+          },
+          "attempts": 4,
+          "mean_retries": 0.3333,
+          "fallbacks": 0,
+          "rejected_by": {
+            "citation_integrity": 1
+          }
+        }
+      },
+      "report_attempts": 1,
+      "report_status": "published",
+      "followup": [
+        {
+          "id": "q1",
+          "question": "为什么判断是内存不足，而不是应用自身的错误？",
+          "outcome": "answered",
+          "segments": 4,
+          "cited_segments": {
+            "count": 3,
+            "total": 3,
+            "value": 1.0
+          },
+          "unknown": true,
+          "expect_unknown": false,
+          "expected_evidence_hit": true,
+          "suggestion_cited": null,
+          "depends_on": null
+        },
+        {
+          "id": "q2",
+          "question": "内存限制是在哪次修订里改小的？",
+          "outcome": "answered",
+          "segments": 3,
+          "cited_segments": {
+            "count": 3,
+            "total": 3,
+            "value": 1.0
+          },
+          "unknown": false,
+          "expect_unknown": false,
+          "expected_evidence_hit": true,
+          "suggestion_cited": null,
+          "depends_on": null
+        },
+        {
+          "id": "q3",
+          "question": "容器被杀之前内存实际用到了多少？",
+          "outcome": "answered",
+          "segments": 2,
+          "cited_segments": {
+            "count": 2,
+            "total": 2,
+            "value": 1.0
+          },
+          "unknown": false,
+          "expect_unknown": true,
+          "expected_evidence_hit": null,
+          "suggestion_cited": null,
+          "depends_on": null
+        }
+      ]
+    },
+    {
+      "case": "s1-c",
+      "title": "A commit points the liveness probe at a wrong path",
+      "investigation_id": "inv_01M5DP49MBBM0K1R9NJF03YNGD",
+      "status": "reported",
+      "error": null,
+      "duration_s": 64.6,
+      "tokens": 91943,
+      "token_budget": 120000,
+      "model_calls": 25,
+      "tool_calls": 12,
+      "recording_misses": 0,
+      "plans": [
+        "v1 (model)",
+        "v2 (model)"
+      ],
+      "rule_overrides": 1,
+      "citation_completeness": {
+        "count": 17,
+        "total": 17,
+        "value": 1.0
+      },
+      "root_cause": {
+        "expected": {
+          "status": "identified",
+          "category": "probe_misconfig",
+          "object": {
+            "kind": "Deployment",
+            "namespace": "demo-s1",
+            "name": "s1-app"
+          }
+        },
+        "actual": {
+          "status": "identified",
+          "category": "probe_misconfig",
+          "object": {
+            "kind": "Deployment",
+            "name": "s1-app",
+            "field": "spec.template.spec.containers[app].livenessProbe.httpGet.path",
+            "namespace": "demo-s1"
+          },
+          "confidence": "high"
+        },
+        "correct": true,
+        "cites_expected_evidence": true,
+        "confidence_ok": null,
+        "missing_evidence_ok": null
+      },
+      "required_evidence": {
+        "count": 3,
+        "total": 3,
+        "value": 1.0
+      },
+      "required_evidence_matches": [
+        {
+          "tool": "k8s_list_events",
+          "args": {
+            "namespace": "demo-s1"
+          },
+          "matched": [
+            "ev_6c30168c89",
+            "ev_82a2fba83b"
+          ]
+        },
+        {
+          "tool": "k8s_get_deployment",
+          "args": {
+            "namespace": "demo-s1",
+            "name": "s1-app"
+          },
+          "matched": [
+            "ev_5f9afc980a"
+          ]
+        },
+        {
+          "tool": "change_show_commit",
+          "args": {
+            "commit": "5ee1c22*"
+          },
+          "matched": [
+            "ev_f88a94b86c"
+          ]
+        }
+      ],
+      "gate": {
+        "plan": {
+          "generations": 2,
+          "first_pass": {
+            "count": 2,
+            "total": 2,
+            "value": 1.0
+          },
+          "attempts": 2,
+          "mean_retries": 0.0,
+          "fallbacks": 0,
+          "rejected_by": {}
+        },
+        "findings": {
+          "generations": 7,
+          "first_pass": {
+            "count": 7,
+            "total": 7,
+            "value": 1.0
+          },
+          "attempts": 7,
+          "mean_retries": 0.0,
+          "fallbacks": 0,
+          "rejected_by": {}
+        },
+        "assessment": {
+          "generations": 2,
+          "first_pass": {
+            "count": 2,
+            "total": 2,
+            "value": 1.0
+          },
+          "attempts": 2,
+          "mean_retries": 0.0,
+          "fallbacks": 0,
+          "rejected_by": {}
+        },
+        "report": {
+          "generations": 1,
+          "first_pass": {
+            "count": 1,
+            "total": 1,
+            "value": 1.0
+          },
+          "attempts": 1,
+          "mean_retries": 0.0,
+          "fallbacks": 0,
+          "rejected_by": {}
+        },
+        "followup_answer": {
+          "generations": 3,
+          "first_pass": {
+            "count": 3,
+            "total": 3,
+            "value": 1.0
+          },
+          "attempts": 3,
+          "mean_retries": 0.0,
+          "fallbacks": 0,
+          "rejected_by": {}
+        }
+      },
+      "report_attempts": 1,
+      "report_status": "published",
+      "followup": [
+        {
+          "id": "q1",
+          "question": "为什么认为是探针配置的问题？",
+          "outcome": "answered",
+          "segments": 5,
+          "cited_segments": {
+            "count": 4,
+            "total": 4,
+            "value": 1.0
+          },
+          "unknown": true,
+          "expect_unknown": false,
+          "expected_evidence_hit": true,
+          "suggestion_cited": null,
+          "depends_on": null
+        },
+        {
+          "id": "q2",
+          "question": "它的路径是从什么改成什么的？",
+          "outcome": "answered",
+          "segments": 3,
+          "cited_segments": {
+            "count": 3,
+            "total": 3,
+            "value": 1.0
+          },
+          "unknown": false,
+          "expect_unknown": false,
+          "expected_evidence_hit": true,
+          "suggestion_cited": null,
+          "depends_on": "q1"
+        },
+        {
+          "id": "q3",
+          "question": "探针失败时 /status 接口的响应时间是多少？",
+          "outcome": "answered",
+          "segments": 2,
+          "cited_segments": {
+            "count": 1,
+            "total": 1,
+            "value": 1.0
+          },
+          "unknown": true,
+          "expect_unknown": true,
+          "expected_evidence_hit": null,
+          "suggestion_cited": null,
+          "depends_on": null
+        }
+      ]
+    },
+    {
+      "case": "s1-d",
+      "title": "S1-a while the log tool times out",
+      "investigation_id": "inv_01M5DP68RT4RNKEKHP4PA8WEY5",
+      "status": "reported",
+      "error": null,
+      "duration_s": 66.1,
+      "tokens": 111061,
+      "token_budget": 120000,
+      "model_calls": 34,
+      "tool_calls": 22,
+      "recording_misses": 0,
+      "plans": [
+        "v1 (model)",
+        "v2 (model)"
+      ],
+      "rule_overrides": 0,
+      "citation_completeness": {
+        "count": 16,
+        "total": 16,
+        "value": 1.0
+      },
+      "root_cause": {
+        "expected": {
+          "status": "identified",
+          "category": "config_error",
+          "object": {
+            "kind": "Deployment",
+            "namespace": "demo-s1",
+            "name": "s1-app"
+          }
+        },
+        "actual": {
+          "status": "identified",
+          "category": "config_error",
+          "object": {
+            "kind": "Deployment",
+            "name": "s1-app",
+            "field": "spec.template.spec.containers[app].env[APP_MODE]",
+            "namespace": "demo-s1"
+          },
+          "confidence": "medium"
+        },
+        "correct": true,
+        "cites_expected_evidence": true,
+        "confidence_ok": true,
+        "missing_evidence_ok": true
+      },
+      "required_evidence": {
+        "count": 3,
+        "total": 3,
+        "value": 1.0
+      },
+      "required_evidence_matches": [
+        {
+          "tool": "k8s_get_pod_status",
+          "args": {
+            "namespace": "demo-s1",
+            "pod": "s1-app-5468546b65-dvgq5"
+          },
+          "matched": [
+            "ev_6fbf4102f4"
+          ]
+        },
+        {
+          "tool": "k8s_get_deployment",
+          "args": {
+            "namespace": "demo-s1",
+            "name": "s1-app"
+          },
+          "matched": [
+            "ev_67fd6463e6"
+          ]
+        },
+        {
+          "tool": "change_show_commit",
+          "args": {
+            "commit": "9b9a6ea*"
+          },
+          "matched": [
+            "ev_9cfa6c69db"
+          ]
+        }
+      ],
+      "gate": {
+        "plan": {
+          "generations": 2,
+          "first_pass": {
+            "count": 2,
+            "total": 2,
+            "value": 1.0
+          },
+          "attempts": 2,
+          "mean_retries": 0.0,
+          "fallbacks": 0,
+          "rejected_by": {}
+        },
+        "findings": {
+          "generations": 8,
+          "first_pass": {
+            "count": 8,
+            "total": 8,
+            "value": 1.0
+          },
+          "attempts": 8,
+          "mean_retries": 0.0,
+          "fallbacks": 0,
+          "rejected_by": {}
+        },
+        "assessment": {
+          "generations": 2,
+          "first_pass": {
+            "count": 2,
+            "total": 2,
+            "value": 1.0
+          },
+          "attempts": 2,
+          "mean_retries": 0.0,
+          "fallbacks": 0,
+          "rejected_by": {}
+        },
+        "report": {
+          "generations": 1,
+          "first_pass": {
+            "count": 1,
+            "total": 1,
+            "value": 1.0
+          },
+          "attempts": 1,
+          "mean_retries": 0.0,
+          "fallbacks": 0,
+          "rejected_by": {}
+        },
+        "followup_answer": {
+          "generations": 3,
+          "first_pass": {
+            "count": 2,
+            "total": 3,
+            "value": 0.6667
+          },
+          "attempts": 4,
+          "mean_retries": 0.3333,
+          "fallbacks": 0,
+          "rejected_by": {
+            "citation_integrity": 1
+          }
+        }
+      },
+      "report_attempts": 1,
+      "report_status": "published",
+      "followup": [
+        {
+          "id": "q1",
+          "question": "根因的依据有哪些？",
+          "outcome": "answered",
+          "segments": 7,
+          "cited_segments": {
+            "count": 7,
+            "total": 7,
+            "value": 1.0
+          },
+          "unknown": false,
+          "expect_unknown": false,
+          "expected_evidence_hit": true,
+          "suggestion_cited": null,
+          "depends_on": null
+        },
+        {
+          "id": "q2",
+          "question": "容器退出前的日志里写了什么？",
+          "outcome": "answered",
+          "segments": 3,
+          "cited_segments": {
+            "count": 2,
+            "total": 2,
+            "value": 1.0
+          },
+          "unknown": true,
+          "expect_unknown": true,
+          "expected_evidence_hit": null,
+          "suggestion_cited": null,
+          "depends_on": null
+        },
+        {
+          "id": "q3",
+          "question": "回滚之后怎么确认服务恢复了？",
+          "outcome": "answered",
+          "segments": 5,
+          "cited_segments": {
+            "count": 4,
+            "total": 4,
+            "value": 1.0
+          },
+          "unknown": true,
+          "expect_unknown": false,
+          "expected_evidence_hit": null,
+          "suggestion_cited": false,
+          "depends_on": null
+        }
+      ]
+    },
+    {
+      "case": "s1-e",
+      "title": "The faulty commit is the earlier of two",
+      "investigation_id": "inv_01M5DP89C1NQP4WVQ7SNYY75H9",
+      "status": "reported",
+      "error": null,
+      "duration_s": 53.7,
+      "tokens": 83490,
+      "token_budget": 120000,
+      "model_calls": 26,
+      "tool_calls": 12,
+      "recording_misses": 0,
+      "plans": [
+        "v1 (model)",
+        "v2 (model)"
+      ],
+      "rule_overrides": 1,
+      "citation_completeness": {
+        "count": 17,
+        "total": 17,
+        "value": 1.0
+      },
+      "root_cause": {
+        "expected": {
+          "status": "identified",
+          "category": "config_error",
+          "object": {
+            "kind": "Deployment",
+            "namespace": "demo-s1",
+            "name": "s1-app"
+          }
+        },
+        "actual": {
+          "status": "identified",
+          "category": "config_error",
+          "object": {
+            "kind": "Deployment",
+            "name": "s1-app",
+            "field": "spec.template.spec.containers[app].env[APP_MODE]",
+            "namespace": "demo-s1"
+          },
+          "confidence": "high"
+        },
+        "correct": true,
+        "cites_expected_evidence": true,
+        "confidence_ok": null,
+        "missing_evidence_ok": null
+      },
+      "required_evidence": {
+        "count": 4,
+        "total": 4,
+        "value": 1.0
+      },
+      "required_evidence_matches": [
+        {
+          "tool": "k8s_get_pod_status",
+          "args": {
+            "namespace": "demo-s1",
+            "pod": "s1-app-5468546b65-gjkcl"
+          },
+          "matched": [
+            "ev_ff96737437"
+          ]
+        },
+        {
+          "tool": "logs_get_container_logs",
+          "args": {
+            "namespace": "demo-s1",
+            "pod": "s1-app-5468546b65-gjkcl",
+            "previous": true
+          },
+          "matched": [
+            "ev_22f8434e8b"
+          ]
+        },
+        {
+          "tool": "k8s_get_deployment",
+          "args": {
+            "namespace": "demo-s1",
+            "name": "s1-app"
+          },
+          "matched": [
+            "ev_67fd6463e6"
+          ]
+        },
+        {
+          "tool": "change_show_commit",
+          "args": {
+            "commit": "617e33d*"
+          },
+          "matched": [
+            "ev_bebbdb4ced"
+          ]
+        }
+      ],
+      "gate": {
+        "plan": {
+          "generations": 2,
+          "first_pass": {
+            "count": 2,
+            "total": 2,
+            "value": 1.0
+          },
+          "attempts": 2,
+          "mean_retries": 0.0,
+          "fallbacks": 0,
+          "rejected_by": {}
+        },
+        "findings": {
+          "generations": 7,
+          "first_pass": {
+            "count": 7,
+            "total": 7,
+            "value": 1.0
+          },
+          "attempts": 7,
+          "mean_retries": 0.0,
+          "fallbacks": 0,
+          "rejected_by": {}
+        },
+        "assessment": {
+          "generations": 2,
+          "first_pass": {
+            "count": 2,
+            "total": 2,
+            "value": 1.0
+          },
+          "attempts": 2,
+          "mean_retries": 0.0,
+          "fallbacks": 0,
+          "rejected_by": {}
+        },
+        "report": {
+          "generations": 1,
+          "first_pass": {
+            "count": 1,
+            "total": 1,
+            "value": 1.0
+          },
+          "attempts": 1,
+          "mean_retries": 0.0,
+          "fallbacks": 0,
+          "rejected_by": {}
+        },
+        "followup_answer": {
+          "generations": 3,
+          "first_pass": {
+            "count": 3,
+            "total": 3,
+            "value": 1.0
+          },
+          "attempts": 3,
+          "mean_retries": 0.0,
+          "fallbacks": 0,
+          "rejected_by": {}
+        }
+      },
+      "report_attempts": 1,
+      "report_status": "published",
+      "followup": [
+        {
+          "id": "q1",
+          "question": "最近有两次提交，为什么认定是较早的那一次？",
+          "outcome": "answered",
+          "segments": 4,
+          "cited_segments": {
+            "count": 4,
+            "total": 4,
+            "value": 1.0
+          },
+          "unknown": false,
+          "expect_unknown": false,
+          "expected_evidence_hit": true,
+          "suggestion_cited": null,
+          "depends_on": null
+        },
+        {
+          "id": "q2",
+          "question": "它改了 Deployment 的哪一项？",
+          "outcome": "answered",
+          "segments": 1,
+          "cited_segments": {
+            "count": 1,
+            "total": 1,
+            "value": 1.0
+          },
+          "unknown": false,
+          "expect_unknown": false,
+          "expected_evidence_hit": true,
+          "suggestion_cited": null,
+          "depends_on": "q1"
+        },
+        {
+          "id": "q3",
+          "question": "故障期间服务的错误率是多少？",
+          "outcome": "answered",
+          "segments": 1,
+          "cited_segments": {
+            "count": 0,
+            "total": 0,
+            "value": null
+          },
+          "unknown": true,
+          "expect_unknown": true,
+          "expected_evidence_hit": null,
+          "suggestion_cited": null,
+          "depends_on": null
+        }
+      ]
+    },
+    {
+      "case": "s1-f",
+      "title": "Only the alert and the pods are available",
+      "investigation_id": "inv_01M5DP9XTJNMHWNVFCG9JJWK8F",
+      "status": "reported",
+      "error": null,
+      "duration_s": 89.5,
+      "tokens": 164540,
+      "token_budget": 120000,
+      "model_calls": 57,
+      "tool_calls": 38,
+      "recording_misses": 0,
+      "plans": [
+        "v1 (model)",
+        "v2 (model)",
+        "v3 (model)"
+      ],
+      "rule_overrides": 0,
+      "citation_completeness": {
+        "count": 18,
+        "total": 18,
+        "value": 1.0
+      },
+      "root_cause": {
+        "expected": {
+          "status": "unknown"
+        },
+        "actual": {
+          "status": "unknown",
+          "category": null,
+          "object": null,
+          "confidence": "low"
+        },
+        "correct": true,
+        "cites_expected_evidence": null,
+        "confidence_ok": null,
+        "missing_evidence_ok": null
+      },
+      "required_evidence": {
+        "count": 0,
+        "total": 0,
+        "value": null
+      },
+      "required_evidence_matches": [],
+      "gate": {
+        "plan": {
+          "generations": 3,
+          "first_pass": {
+            "count": 3,
+            "total": 3,
+            "value": 1.0
+          },
+          "attempts": 3,
+          "mean_retries": 0.0,
+          "fallbacks": 0,
+          "rejected_by": {}
+        },
+        "findings": {
+          "generations": 15,
+          "first_pass": {
+            "count": 12,
+            "total": 15,
+            "value": 0.8
+          },
+          "attempts": 18,
+          "mean_retries": 0.2,
+          "fallbacks": 0,
+          "rejected_by": {
+            "citation_integrity": 7
+          }
+        },
+        "assessment": {
+          "generations": 3,
+          "first_pass": {
+            "count": 3,
+            "total": 3,
+            "value": 1.0
+          },
+          "attempts": 3,
+          "mean_retries": 0.0,
+          "fallbacks": 0,
+          "rejected_by": {}
+        },
+        "report": {
+          "generations": 1,
+          "first_pass": {
+            "count": 1,
+            "total": 1,
+            "value": 1.0
+          },
+          "attempts": 1,
+          "mean_retries": 0.0,
+          "fallbacks": 0,
+          "rejected_by": {}
+        },
+        "followup_answer": {
+          "generations": 3,
+          "first_pass": {
+            "count": 2,
+            "total": 3,
+            "value": 0.6667
+          },
+          "attempts": 4,
+          "mean_retries": 0.3333,
+          "fallbacks": 0,
+          "rejected_by": {
+            "citation_integrity": 1
+          }
+        }
+      },
+      "report_attempts": 1,
+      "report_status": "published",
+      "followup": [
+        {
+          "id": "q1",
+          "question": "目前能确定的事实有哪些？",
+          "outcome": "answered",
+          "segments": 8,
+          "cited_segments": {
+            "count": 8,
+            "total": 8,
+            "value": 1.0
+          },
+          "unknown": false,
+          "expect_unknown": false,
+          "expected_evidence_hit": true,
+          "suggestion_cited": null,
+          "depends_on": null
+        },
+        {
+          "id": "q2",
+          "question": "是哪次提交引入的问题？",
+          "outcome": "answered",
+          "segments": 3,
+          "cited_segments": {
+            "count": 2,
+            "total": 2,
+            "value": 1.0
+          },
+          "unknown": true,
+          "expect_unknown": true,
+          "expected_evidence_hit": null,
+          "suggestion_cited": null,
+          "depends_on": null
+        },
+        {
+          "id": "q3",
+          "question": "Deployment 当前的环境变量是什么？",
+          "outcome": "answered",
+          "segments": 3,
+          "cited_segments": {
+            "count": 2,
+            "total": 2,
+            "value": 1.0
+          },
+          "unknown": true,
+          "expect_unknown": true,
+          "expected_evidence_hit": null,
+          "suggestion_cited": null,
+          "depends_on": null
+        }
+      ]
+    }
+  ],
+  "retrieval": {
+    "queries_file": "queries.yaml",
+    "queries_sha256": "b5df5ce7f20b5dedb960bfc03f294b192c69969921728ec995d1048cf2c42151",
+    "top": 5,
+    "queries": 24,
+    "metrics": {
+      "hit_at_1": 0.7917,
+      "hit_at_3": 0.8333,
+      "hit_at_5": 0.9167,
+      "mrr": 0.8264
+    },
+    "outcomes": [
+      {
+        "id": "q01",
+        "top": [
+          "kn_b728d580f575",
+          "kn_255795fa4d69",
+          "kn_1721783d983e",
+          "kn_c73d8439117f",
+          "kn_d86edfa4918e"
+        ],
+        "first_hit_rank": 1
+      },
+      {
+        "id": "q02",
+        "top": [
+          "kn_b728d580f575",
+          "kn_255795fa4d69",
+          "kn_1721783d983e",
+          "kn_5b073a7a8edb",
+          "kn_c73d8439117f"
+        ],
+        "first_hit_rank": 1
+      },
+      {
+        "id": "q03",
+        "top": [
+          "kn_b728d580f575",
+          "kn_9cf7cc4bee53",
+          "kn_a9dafa2d208d",
+          "kn_fa369be3768e",
+          "kn_3cac9b81d277"
+        ],
+        "first_hit_rank": 3
+      },
+      {
+        "id": "q04",
+        "top": [
+          "kn_67ddfff8429e",
+          "kn_c73d8439117f",
+          "kn_108d4bc17008",
+          "kn_ec08bb6f0706",
+          "kn_4810fd3b3e2a"
+        ],
+        "first_hit_rank": 1
+      },
+      {
+        "id": "q05",
+        "top": [
+          "kn_85905f724e53",
+          "kn_a9dafa2d208d",
+          "kn_6efeb0925a08",
+          "kn_675de0a3fc2e",
+          "kn_c73d8439117f"
+        ],
+        "first_hit_rank": 4
+      },
+      {
+        "id": "q06",
+        "top": [
+          "kn_8fcd7b075182",
+          "kn_63c62a0dc2ed",
+          "kn_f711e33d520f",
+          "kn_0b88a95a34b1",
+          "kn_af6e9ef1490c"
+        ],
+        "first_hit_rank": 1
+      },
+      {
+        "id": "q07",
+        "top": [
+          "kn_3e184df28070",
+          "kn_cdead09f4e98",
+          "kn_789cc8acfec7",
+          "kn_af6e9ef1490c",
+          "kn_b874c93d4f84"
+        ],
+        "first_hit_rank": 1
+      },
+      {
+        "id": "q08",
+        "top": [
+          "kn_9cf7cc4bee53",
+          "kn_3cac9b81d277",
+          "kn_3f75de2cfa5c",
+          "kn_fa369be3768e",
+          "kn_88da75651df2"
+        ],
+        "first_hit_rank": 1
+      },
+      {
+        "id": "q09",
+        "top": [
+          "kn_63c62a0dc2ed",
+          "kn_88da75651df2",
+          "kn_df8eca97b410",
+          "kn_640c524a2ab0",
+          "kn_85905f724e53"
+        ],
+        "first_hit_rank": 1
+      },
+      {
+        "id": "q10",
+        "top": [
+          "kn_640c524a2ab0",
+          "kn_af6e9ef1490c",
+          "kn_3e184df28070",
+          "kn_4a8931623695",
+          "kn_df8eca97b410"
+        ],
+        "first_hit_rank": 1
+      },
+      {
+        "id": "q11",
+        "top": [
+          "kn_452d485346a6",
+          "kn_2a1260ea6ec1",
+          "kn_5b073a7a8edb",
+          "kn_d86edfa4918e",
+          "kn_4f1d8a44d6fb"
+        ],
+        "first_hit_rank": 1
+      },
+      {
+        "id": "q12",
+        "top": [
+          "kn_d86edfa4918e",
+          "kn_2a1260ea6ec1",
+          "kn_5b073a7a8edb",
+          "kn_452d485346a6",
+          "kn_4f1d8a44d6fb"
+        ],
+        "first_hit_rank": 1
+      },
+      {
+        "id": "q13",
+        "top": [
+          "kn_a9dafa2d208d",
+          "kn_3cac9b81d277",
+          "kn_85905f724e53",
+          "kn_c73d8439117f",
+          "kn_d86edfa4918e"
+        ],
+        "first_hit_rank": 1
+      },
+      {
+        "id": "q14",
+        "top": [
+          "kn_af6e9ef1490c",
+          "kn_93b2379527ed",
+          "kn_887e49dfc02e",
+          "kn_3e184df28070",
+          "kn_ddc3631fea5c"
+        ],
+        "first_hit_rank": 1
+      },
+      {
+        "id": "q15",
+        "top": [
+          "kn_93b2379527ed",
+          "kn_4a8931623695",
+          "kn_887e49dfc02e",
+          "kn_ddc3631fea5c",
+          "kn_3284ccd24359"
+        ],
+        "first_hit_rank": 1
+      },
+      {
+        "id": "q16",
+        "top": [
+          "kn_3284ccd24359",
+          "kn_af6e9ef1490c",
+          "kn_3e184df28070",
+          "kn_17ac40feca00",
+          "kn_93b2379527ed"
+        ],
+        "first_hit_rank": 1
+      },
+      {
+        "id": "q17",
+        "top": [
+          "kn_1b9bd8f6621a",
+          "kn_cdead09f4e98",
+          "kn_7899497dac13",
+          "kn_b874c93d4f84",
+          "kn_789cc8acfec7"
+        ],
+        "first_hit_rank": 4
+      },
+      {
+        "id": "q18",
+        "top": [
+          "kn_789cc8acfec7",
+          "kn_90e8974eafba",
+          "kn_cdead09f4e98",
+          "kn_1b9bd8f6621a",
+          "kn_af6e9ef1490c"
+        ],
+        "first_hit_rank": 1
+      },
+      {
+        "id": "q19",
+        "top": [
+          "kn_90e8974eafba",
+          "kn_255795fa4d69",
+          "kn_5d58a20c4b4d",
+          "kn_1721783d983e",
+          "kn_3284ccd24359"
+        ],
+        "first_hit_rank": 1
+      },
+      {
+        "id": "q20",
+        "top": [
+          "kn_1b9bd8f6621a",
+          "kn_cdead09f4e98",
+          "kn_0b88a95a34b1",
+          "kn_df8eca97b410",
+          "kn_3e184df28070"
+        ],
+        "first_hit_rank": 1
+      },
+      {
+        "id": "q21",
+        "top": [
+          "kn_398b15151b48",
+          "kn_f1244427a745",
+          "kn_3dcfba03a93e",
+          "kn_81031977d568",
+          "kn_108d4bc17008"
+        ],
+        "first_hit_rank": 1
+      },
+      {
+        "id": "q22",
+        "top": [
+          "kn_6efeb0925a08",
+          "kn_d86edfa4918e",
+          "kn_255795fa4d69",
+          "kn_4810fd3b3e2a",
+          "kn_90e8974eafba"
+        ],
+        "first_hit_rank": null
+      },
+      {
+        "id": "q23",
+        "top": [
+          "kn_5d58a20c4b4d",
+          "kn_1721783d983e",
+          "kn_4381d03b3635",
+          "kn_81031977d568",
+          "kn_4fc0fc15aa65"
+        ],
+        "first_hit_rank": null
+      },
+      {
+        "id": "q24",
+        "top": [
+          "kn_9b59e79f151b",
+          "kn_1721783d983e",
+          "kn_5d58a20c4b4d",
+          "kn_f4f7f8a26da4",
+          "kn_218e336f424c"
+        ],
+        "first_hit_rank": 1
+      }
+    ]
+  }
+}

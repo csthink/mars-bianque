@@ -1,0 +1,252 @@
+{
+  "agent": "kubernetes",
+  "key": "2c29eccbe734fc310b5a0ac7ca6244478d6a65a0c68e04430d3b76cac648098a",
+  "model": "deepseek-v4-pro",
+  "operation": "evidence_agent",
+  "recorded_at": "2026-10-20T22:15:28+00:00",
+  "request": {
+    "agent": "kubernetes",
+    "messages": [
+      {
+        "content": "You are the kubernetes evidence agent of Bianque. Bianque investigates Kubernetes alerts from read-only evidence. You collect evidence for one step of the investigation plan; the investigation agent decides the root cause and writes the report, not you.\n\nEvidence discipline:\n\n1. Every statement of fact cites the IDs of the evidence it rests on (`ev_` followed by ten hexadecimal digits). Cite only IDs that appear in the evidence you were given.\n2. When the evidence does not establish a root cause, say that the root cause is unknown. Do not guess.\n3. Knowledge (`kn_` IDs, from runbooks) is not evidence. It may only be listed as a reference, never cited for a fact.\n4. You never change the system. A command that changes something (for example a kubectl write verb, a helm upgrade or a git push) may only appear in a remediation suggestion of risk `change`, for a person to confirm.\n\nHow you work:\n\n- Call the tools you are offered to obtain the evidence the step asks for. They are the only tools you may use: they read the kubernetes domain and change nothing.\n- Every successful tool result starts with its evidence ID. A failed call tells you what went wrong; do not repeat a call that cannot succeed.\n- Take names (namespace, pod, container, deployment, commit) from the alert and from earlier tool results. Do not invent them.\n- When you have the evidence the step asks for, or no tool can obtain more, call `submit_findings`. A finding is one short factual note about the evidence, with the IDs it rests on. Findings are not conclusions about the root cause.\n",
+        "role": "system"
+      },
+      {
+        "content": "## Evidence\n[ev_6b29089264] source: alertmanager; tool: -\n{\n  \"annotations\": {\n    \"description\": \"The container is in CrashLoopBackOff or restarted more than twice in the last two minutes.\",\n    \"summary\": \"Container app of pod demo-s1/s1-app-7fb788b78f-7xq95 keeps restarting\"\n  },\n  \"endsAt\": \"0001-01-01T00:00:00Z\",\n  \"fingerprint\": \"39e027d095410a3b\",\n  \"generatorURL\": \"http:<high-entropy://…rm>:9090/graph?g0.expr=max+by+%28namespace%2C+pod%2C+container%29+%28max_over_time%<high-entropy:28…on>%7Breason%3D%22CrashLoopBackOff%22%7D%5B1m%5D%29%29+%3E+0+or+max+by+%28namespace%2C+pod%2C+container%29+%28increase%<high-entropy:28…al>%5B2m%5D%29%29+%3E+2&g0.tab=1\",\n  \"labels\": {\n    \"alertname\": \"BianquePodRestarting\",\n    \"container\": \"app\",\n    \"namespace\": \"demo-s1\",\n    \"pod\": \"s1-app-7fb788b78f-7xq95\",\n    \"severity\": \"warning\"\n  },\n  \"startsAt\": \"2026-10-19T22:37:57.664Z\",\n  \"status\": \"firing\"\n}\n\n## Step\nGoal: Confirm the Pod's current status, restart count, and last termination state (exit code, reason, start/finish times) for the app container.\nSuggested tools: k8s_get_pod_status\nExpected evidence: Pod status showing CrashLoopBackOff, RESTARTS count, and lastState.terminated with exit code, reason, and timestamps.\n\n## Findings\n(none)",
+        "role": "user"
+      },
+      {
+        "content": "I'll investigate the pod status for the app container.",
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "arguments": "{\"namespace\":\"demo-s1\",\"pod\":\"s1-app-7fb788b78f-7xq95\"}",
+            "id": "call_00_bi84zQ5h9YbJkvTqjucO7351",
+            "name": "k8s_get_pod_status"
+          }
+        ]
+      },
+      {
+        "content": "Evidence ID: ev_a1dac7f4b2\n{\n  \"namespace\": \"demo-s1\",\n  \"name\": \"s1-app-7fb788b78f-7xq95\",\n  \"labels\": {\n    \"app.kubernetes.io/name\": \"s1-app\",\n    \"pod-template-hash\": \"7fb788b78f\"\n  },\n  \"owner\": {\n    \"kind\": \"ReplicaSet\",\n    \"name\": \"s1-app-7fb788b78f\"\n  },\n  \"phase\": \"Running\",\n  \"started_at\": \"2026-10-19T22:36:50Z\",\n  \"conditions\": [\n    {\n      \"type\": \"PodReadyToStartContainers\",\n      \"status\": \"True\",\n      \"reason\": null\n    },\n    {\n      \"type\": \"Initialized\",\n      \"status\": \"True\",\n      \"reason\": null\n    },\n    {\n      \"type\": \"Ready\",\n      \"status\": \"False\",\n      \"reason\": \"ContainersNotReady\"\n    },\n    {\n      \"type\": \"ContainersReady\",\n      \"status\": \"False\",\n      \"reason\": \"ContainersNotReady\"\n    },\n    {\n      \"type\": \"PodScheduled\",\n      \"status\": \"True\",\n      \"reason\": null\n    }\n  ],\n  \"containers\": [\n    {\n      \"name\": \"app\",\n      \"image\": \"docker.io/library/bianque-s1-app:dev\",\n      \"ready\": false,\n      \"restart_count\": 4,\n      \"state\": {\n        \"state\": \"waiting\",\n        \"reason\": \"CrashLoopBackOff\",\n        \"message\": \"back-off 40s restarting failed container=app pod=s1-app-7fb788b78f-7xq95_demo-s1(<high-entropy:e2…83>)\"\n      },\n      \"last_state\": {\n        \"state\": \"terminated\",\n        \"reason\": \"Completed\",\n        \"exit_code\": 0,\n        \"started_at\": \"2026-10-19T22:37:53Z\",\n        \"finished_at\": \"2026-10-19T22:38:01Z\"\n      }\n    }\n  ]\n}",
+        "role": "tool",
+        "tool_call_id": "call_00_bi84zQ5h9YbJkvTqjucO7351"
+      }
+    ],
+    "model": "deepseek-v4-pro",
+    "sampling": {
+      "extra_body": {
+        "thinking": {
+          "type": "disabled"
+        }
+      },
+      "temperature": 0.0,
+      "tool_choice": "auto"
+    },
+    "tools": [
+      {
+        "description": "Read a deployment's spec and status: replicas, revision, conditions and containers.",
+        "name": "k8s_get_deployment",
+        "parameters": {
+          "additionalProperties": false,
+          "description": "Arguments of ``k8s_get_deployment``.",
+          "properties": {
+            "name": {
+              "description": "Deployment name.",
+              "maxLength": 253,
+              "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+              "title": "Name",
+              "type": "string"
+            },
+            "namespace": {
+              "description": "Namespace.",
+              "maxLength": 63,
+              "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+              "title": "Namespace",
+              "type": "string"
+            }
+          },
+          "required": [
+            "namespace",
+            "name"
+          ],
+          "type": "object"
+        }
+      },
+      {
+        "description": "Read one pod's status: conditions and, per container, image, restarts and states.",
+        "name": "k8s_get_pod_status",
+        "parameters": {
+          "additionalProperties": false,
+          "description": "Arguments of ``k8s_get_pod_status``.",
+          "properties": {
+            "namespace": {
+              "description": "Namespace.",
+              "maxLength": 63,
+              "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+              "title": "Namespace",
+              "type": "string"
+            },
+            "pod": {
+              "description": "Pod name.",
+              "maxLength": 253,
+              "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+              "title": "Pod",
+              "type": "string"
+            }
+          },
+          "required": [
+            "namespace",
+            "pod"
+          ],
+          "type": "object"
+        }
+      },
+      {
+        "description": "List recent events of a namespace, oldest first, optionally about one object.",
+        "name": "k8s_list_events",
+        "parameters": {
+          "additionalProperties": false,
+          "description": "Arguments of ``k8s_list_events``.",
+          "properties": {
+            "involved_object": {
+              "anyOf": [
+                {
+                  "maxLength": 253,
+                  "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Only events about the object with this name.",
+              "title": "Involved Object"
+            },
+            "namespace": {
+              "description": "Namespace.",
+              "maxLength": 63,
+              "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+              "title": "Namespace",
+              "type": "string"
+            },
+            "since_minutes": {
+              "default": 60,
+              "description": "Only events from the last this many minutes.",
+              "maximum": 1440,
+              "minimum": 1,
+              "title": "Since Minutes",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "namespace"
+          ],
+          "type": "object"
+        }
+      },
+      {
+        "description": "List the pods of a namespace with phase, readiness, owner and per-container restarts.",
+        "name": "k8s_list_pods",
+        "parameters": {
+          "additionalProperties": false,
+          "description": "Arguments of ``k8s_list_pods``.",
+          "properties": {
+            "label_selector": {
+              "anyOf": [
+                {
+                  "description": "Equality-based label selector, such as app=web,tier!=cache.",
+                  "maxLength": 256,
+                  "pattern": "^[A-Za-z0-9._/-]+(==|=|!=)[A-Za-z0-9._-]*(,[A-Za-z0-9._/-]+(==|=|!=)[A-Za-z0-9._-]*)*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Label Selector"
+            },
+            "namespace": {
+              "description": "Namespace.",
+              "maxLength": 63,
+              "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+              "title": "Namespace",
+              "type": "string"
+            }
+          },
+          "required": [
+            "namespace"
+          ],
+          "type": "object"
+        }
+      },
+      {
+        "description": "Submit the findings of this step: short factual notes about the evidence, each citing the evidence IDs it rests on. Call it alone, after the tool results are in.",
+        "name": "submit_findings",
+        "parameters": {
+          "$defs": {
+            "Finding": {
+              "additionalProperties": false,
+              "description": "A short note of an evidence sub-agent on the evidence of its step. Not a conclusion.",
+              "properties": {
+                "citations": {
+                  "description": "IDs of the evidence this item rests on.",
+                  "items": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "title": "Citations",
+                  "type": "array"
+                },
+                "statement": {
+                  "minLength": 1,
+                  "title": "Statement",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "statement",
+                "citations"
+              ],
+              "title": "Finding",
+              "type": "object"
+            }
+          },
+          "additionalProperties": false,
+          "properties": {
+            "findings": {
+              "items": {
+                "$ref": "#/$defs/Finding"
+              },
+              "title": "Findings",
+              "type": "array"
+            }
+          },
+          "required": [
+            "findings"
+          ],
+          "type": "object"
+        }
+      }
+    ]
+  },
+  "response": {
+    "finish_reason": "tool_calls",
+    "model": "deepseek-v4-pro",
+    "text": "",
+    "tool_calls": [
+      {
+        "arguments": "{\"findings\": [{\"statement\": \"Pod s1-app-7fb788b78f-7xq95 in demo-s1 is in Running phase but not Ready (ContainersNotReady).\", \"citations\": [\"ev_a1dac7f4b2\"]}, {\"statement\": \"The app container is in waiting state with reason CrashLoopBackOff (back-off 40s restarting failed container).\", \"citations\": [\"ev_a1dac7f4b2\"]}, {\"statement\": \"The app container has restart_count 4.\", \"citations\": [\"ev_a1dac7f4b2\"]}, {\"statement\": \"The app container's last_state.terminated shows reason Completed, exit_code 0, started_at 2026-10-19T22:37:53Z, finished_at 2026-10-19T22:38:01Z.\", \"citations\": [\"ev_a1dac7f4b2\"]}, {\"statement\": \"The app container image is docker.io/library/bianque-s1-app:dev.\", \"citations\": [\"ev_a1dac7f4b2\"]}]}",
+        "id": "call_00_R39B0OShqRLfeNcjyMVt4715",
+        "name": "submit_findings"
+      }
+    ],
+    "usage": {
+      "completion_tokens": 289,
+      "estimated": false,
+      "prompt_tokens": 2753
+    }
+  },
+  "schema_version": 1
+}

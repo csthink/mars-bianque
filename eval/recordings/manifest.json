@@ -1,0 +1,29 @@
+{
+  "cases": [
+    "s1-a",
+    "s1-b",
+    "s1-c",
+    "s1-d",
+    "s1-e",
+    "s1-f"
+  ],
+  "endpoint_host": "api.deepseek.com",
+  "extra_body": {
+    "thinking": {
+      "type": "disabled"
+    }
+  },
+  "model": "deepseek-v4-pro",
+  "prompts": {
+    "assess.md": "4405ee3c40c78f015f66c6c6a8b567aa956acc19b67d3d672b6d70b007fef702",
+    "discipline.md": "b37c402d115cdf92ecc406a6cfc5c4c0a677bff3352264ab3eee506e3dce8fc9",
+    "evidence_agent.md": "b37780062dd2355977760a0b1e02d58a7ddbd6c84116382cb76d582426093211",
+    "followup.md": "73fbac49e61c6ebebb20d8416775cf189d941501a670be6aa8ecf8d1162274b0",
+    "plan.md": "b611105af4cb672980a6aa03f26e28f0cb54e7c55a1ad311c71362b394ddd033",
+    "replan.md": "ad35b6bbe0f42874f0bf1507927d05eb489710b0478434c89142123070c0ad94",
+    "report.md": "70f6778eb1a01c45900755726f85488eb24e5fe3355ebbfa18414aef521a2242"
+  },
+  "recorded_at": "2026-10-20T22:19:55Z",
+  "schema_version": 1,
+  "tool_schemas_sha256": "8b6562024782e3d5998778411a05ea2d7e23fdf607039b0288ecce9ebbce5567"
+}
