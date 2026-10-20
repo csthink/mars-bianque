@@ -1,0 +1,1201 @@
+{
+  "investigation": {
+    "id": "inv_01JB2K7Q8M3X9V4T6N5R2C1D0E",
+    "trigger": "replay",
+    "case_id": "s1-a",
+    "status": "reported",
+    "tool_backend": "pack",
+    "llm_mode": "scripted",
+    "llm_model": null,
+    "token_budget": 120000,
+    "tokens_used": 61805,
+    "started_at": "2026-10-19T22:33:58Z",
+    "finished_at": "2026-10-19T22:35:22Z",
+    "error": null
+  },
+  "alert": {
+    "fingerprint": "a2b4e6e9dd73d436",
+    "status": "firing",
+    "labels": {
+      "alertname": "BianquePodRestarting",
+      "container": "app",
+      "namespace": "demo-s1",
+      "pod": "s1-app-5468546b65-dvgq5",
+      "severity": "warning"
+    },
+    "annotations": {
+      "description": "The container is in CrashLoopBackOff or restarted more than twice in the last two minutes.",
+      "summary": "Container app of pod demo-s1/s1-app-5468546b65-dvgq5 keeps restarting"
+    },
+    "starts_at": "2026-10-19T22:33:27.664Z",
+    "received_at": "2026-10-19T22:33:57.600000Z",
+    "payload": {
+      "alerts": [
+        {
+          "annotations": {
+            "description": "The container is in CrashLoopBackOff or restarted more than twice in the last two minutes.",
+            "summary": "Container app of pod demo-s1/s1-app-5468546b65-dvgq5 keeps restarting"
+          },
+          "endsAt": "0001-01-01T00:00:00Z",
+          "fingerprint": "a2b4e6e9dd73d436",
+          "generatorURL": "http://prometheus-server-6fb9768697-w5nrm:9090/graph?g0.expr=max+by+%28namespace%2C+pod%2C+container%29+%28max_over_time%28kube_pod_container_status_waiting_reason%7Breason%3D%22CrashLoopBackOff%22%7D%5B1m%5D%29%29+%3E+0+or+max+by+%28namespace%2C+pod%2C+container%29+%28increase%28kube_pod_container_status_restarts_total%5B2m%5D%29%29+%3E+2&g0.tab=1",
+          "labels": {
+            "alertname": "BianquePodRestarting",
+            "container": "app",
+            "namespace": "demo-s1",
+            "pod": "s1-app-5468546b65-dvgq5",
+            "severity": "warning"
+          },
+          "startsAt": "2026-10-19T22:33:27.664Z",
+          "status": "firing"
+        }
+      ],
+      "commonAnnotations": {
+        "description": "The container is in CrashLoopBackOff or restarted more than twice in the last two minutes.",
+        "summary": "Container app of pod demo-s1/s1-app-5468546b65-dvgq5 keeps restarting"
+      },
+      "commonLabels": {
+        "alertname": "BianquePodRestarting",
+        "container": "app",
+        "namespace": "demo-s1",
+        "pod": "s1-app-5468546b65-dvgq5",
+        "severity": "warning"
+      },
+      "externalURL": "http://prometheus-alertmanager-0:9093",
+      "groupKey": "{}:{alertname=\"BianquePodRestarting\", container=\"app\", namespace=\"demo-s1\", pod=\"s1-app-5468546b65-dvgq5\"}",
+      "groupLabels": {
+        "alertname": "BianquePodRestarting",
+        "container": "app",
+        "namespace": "demo-s1",
+        "pod": "s1-app-5468546b65-dvgq5"
+      },
+      "notification_reason": "first notification",
+      "receiver": "bianque",
+      "routeLabels": {},
+      "status": "firing",
+      "truncatedAlerts": 0,
+      "version": "4"
+    }
+  },
+  "plans": [
+    {
+      "version": 1,
+      "source": "model",
+      "created_at": "2026-10-19T22:34:03.600000Z",
+      "rationale": "The alert names pod s1-app-5468546b65-dvgq5 restarting in demo-s1. Read its current state, events, owning deployment and the logs of the last two container instances first.",
+      "steps": [
+        {
+          "seq": 1,
+          "domain": "kubernetes",
+          "goal": "List the pods of demo-s1 with their phase and restart counts.",
+          "agent": "kubernetes",
+          "suggested_tools": [
+            "k8s_list_pods"
+          ],
+          "expected_evidence": [
+            "Which pods restart and how often."
+          ],
+          "status": "done",
+          "findings": [
+            {
+              "statement": "s1-app-5468546b65-dvgq5 has restarted 3 times; the pod of the previous revision is ready.",
+              "citations": [
+                "ev_ec1761dee2"
+              ]
+            }
+          ],
+          "started_at": "2026-10-19T22:34:04Z",
+          "finished_at": "2026-10-19T22:34:04.400000Z"
+        },
+        {
+          "seq": 2,
+          "domain": "kubernetes",
+          "goal": "Read the status of pod s1-app-5468546b65-dvgq5.",
+          "agent": "kubernetes",
+          "suggested_tools": [
+            "k8s_get_pod_status"
+          ],
+          "expected_evidence": [
+            "The reason and exit code of the last termination."
+          ],
+          "status": "done",
+          "findings": [
+            {
+              "statement": "Container app is in CrashLoopBackOff; its last instance exited with code 2 (Error).",
+              "citations": [
+                "ev_e0c389d9d4"
+              ]
+            }
+          ],
+          "started_at": "2026-10-19T22:34:07.300000Z",
+          "finished_at": "2026-10-19T22:34:07.700000Z"
+        },
+        {
+          "seq": 3,
+          "domain": "kubernetes",
+          "goal": "List the recent events about s1-app-5468546b65-dvgq5.",
+          "agent": "kubernetes",
+          "suggested_tools": [
+            "k8s_list_events"
+          ],
+          "expected_evidence": [
+            "Back-off and probe events."
+          ],
+          "status": "done",
+          "findings": [
+            {
+              "statement": "Back-off events repeat; readiness probes fail with connection refused while the container is down.",
+              "citations": [
+                "ev_1baeb6a570"
+              ]
+            }
+          ],
+          "started_at": "2026-10-19T22:34:10.700000Z",
+          "finished_at": "2026-10-19T22:34:11.100000Z"
+        },
+        {
+          "seq": 4,
+          "domain": "kubernetes",
+          "goal": "Read deployment s1-app.",
+          "agent": "kubernetes",
+          "suggested_tools": [
+            "k8s_get_deployment"
+          ],
+          "expected_evidence": [
+            "Image, environment, limits and probes."
+          ],
+          "status": "done",
+          "findings": [
+            {
+              "statement": "Deployment s1-app sets APP_MODE to invalid.",
+              "citations": [
+                "ev_67fd6463e6"
+              ]
+            }
+          ],
+          "started_at": "2026-10-19T22:34:13.900000Z",
+          "finished_at": "2026-10-19T22:34:16.400000Z"
+        },
+        {
+          "seq": 5,
+          "domain": "logs",
+          "goal": "Read the logs of the previous container instance of s1-app-5468546b65-dvgq5.",
+          "agent": "logs",
+          "suggested_tools": [
+            "logs_get_container_logs"
+          ],
+          "expected_evidence": [
+            "The last lines before the exit."
+          ],
+          "status": "done",
+          "findings": [
+            {
+              "statement": "The previous instance logged: invalid APP_MODE \"invalid\"; expected readonly or standard.",
+              "citations": [
+                "ev_12997f657d"
+              ]
+            }
+          ],
+          "started_at": "2026-10-19T22:34:04.200000Z",
+          "finished_at": "2026-10-19T22:34:04.700000Z"
+        },
+        {
+          "seq": 6,
+          "domain": "logs",
+          "goal": "Read the logs of the current container instance of s1-app-5468546b65-dvgq5.",
+          "agent": "logs",
+          "suggested_tools": [
+            "logs_get_container_logs"
+          ],
+          "expected_evidence": [
+            "The lines of the starting container."
+          ],
+          "status": "done",
+          "findings": [
+            {
+              "statement": "The current instance logs the same APP_MODE error.",
+              "citations": [
+                "ev_907d61881a"
+              ]
+            }
+          ],
+          "started_at": "2026-10-19T22:34:08.800000Z",
+          "finished_at": "2026-10-19T22:34:11.100000Z"
+        }
+      ]
+    },
+    {
+      "version": 2,
+      "source": "model",
+      "created_at": "2026-10-19T22:34:26.600000Z",
+      "rationale": "APP_MODE looks misconfigured; find the change that set it to invalid.",
+      "steps": [
+        {
+          "seq": 1,
+          "domain": "change",
+          "goal": "Read the rollout history of deployment s1-app.",
+          "agent": "change",
+          "suggested_tools": [
+            "change_get_rollout_history"
+          ],
+          "expected_evidence": [
+            "Revisions and the template difference."
+          ],
+          "status": "done",
+          "findings": [
+            {
+              "statement": "Revision 2 changed APP_MODE from standard to invalid.",
+              "citations": [
+                "ev_d7fd206133"
+              ]
+            }
+          ],
+          "started_at": "2026-10-19T22:34:39.100000Z",
+          "finished_at": "2026-10-19T22:34:39.500000Z"
+        },
+        {
+          "seq": 2,
+          "domain": "change",
+          "goal": "List the recent commits of the manifest repository.",
+          "agent": "change",
+          "suggested_tools": [
+            "change_list_commits"
+          ],
+          "expected_evidence": [
+            "Commits touching deployment.yaml."
+          ],
+          "status": "done",
+          "findings": [
+            {
+              "statement": "Commit 9b9a6ea8a72b changed deployment.yaml at 22:32:31.",
+              "citations": [
+                "ev_bc44a24667"
+              ]
+            }
+          ],
+          "started_at": "2026-10-19T22:34:42.900000Z",
+          "finished_at": "2026-10-19T22:34:43.200000Z"
+        },
+        {
+          "seq": 3,
+          "domain": "change",
+          "goal": "Show commit 9b9a6ea8a72b.",
+          "agent": "change",
+          "suggested_tools": [
+            "change_show_commit"
+          ],
+          "expected_evidence": [
+            "The diff of that commit."
+          ],
+          "status": "done",
+          "findings": [
+            {
+              "statement": "The commit sets APP_MODE from standard to invalid.",
+              "citations": [
+                "ev_9cfa6c69db"
+              ]
+            }
+          ],
+          "started_at": "2026-10-19T22:34:46.500000Z",
+          "finished_at": "2026-10-19T22:34:49.200000Z"
+        }
+      ]
+    }
+  ],
+  "assessments": [
+    {
+      "round": 1,
+      "sufficient": false,
+      "reason": "The container exits on an invalid APP_MODE, but the change that set it is not known yet.",
+      "hypothesis_category": "config_error",
+      "missing": [
+        "The commit or revision that changed APP_MODE."
+      ],
+      "rule_override": false,
+      "created_at": "2026-10-19T22:34:21.300000Z"
+    },
+    {
+      "round": 2,
+      "sufficient": true,
+      "reason": "The commit diff and the revision diff both show APP_MODE changed from standard to invalid.",
+      "hypothesis_category": "config_error",
+      "missing": [],
+      "rule_override": false,
+      "created_at": "2026-10-19T22:34:53.900000Z"
+    }
+  ],
+  "calls": [
+    {
+      "key": "plan-1",
+      "agent": "investigation",
+      "kind": "model",
+      "name": "plan",
+      "input_summary": "XMODELINX plan prompt",
+      "output_summary": "XMODELOUTX plan arguments",
+      "gate_result": {
+        "output_type": "plan",
+        "passed": true,
+        "violations": []
+      },
+      "status": "ok",
+      "error": null,
+      "retries": 0,
+      "started_at": "2026-10-19T22:33:58.400000Z",
+      "latency_ms": 5200,
+      "tokens_in": 2410,
+      "tokens_out": 690
+    },
+    {
+      "key": "k8s-1",
+      "agent": "kubernetes",
+      "kind": "model",
+      "name": "evidence_agent",
+      "input_summary": "XMODELINX evidence_agent prompt",
+      "output_summary": "XMODELOUTX evidence_agent arguments",
+      "gate_result": null,
+      "status": "ok",
+      "error": null,
+      "retries": 0,
+      "started_at": "2026-10-19T22:34:03.600000Z",
+      "latency_ms": 480,
+      "tokens_in": 1310,
+      "tokens_out": 120
+    },
+    {
+      "key": "logs-1",
+      "agent": "logs",
+      "kind": "model",
+      "name": "evidence_agent",
+      "input_summary": "XMODELINX evidence_agent prompt",
+      "output_summary": "XMODELOUTX evidence_agent arguments",
+      "gate_result": null,
+      "status": "ok",
+      "error": null,
+      "retries": 0,
+      "started_at": "2026-10-19T22:34:03.700000Z",
+      "latency_ms": 520,
+      "tokens_in": 1180,
+      "tokens_out": 110
+    },
+    {
+      "key": "k8s_list_pods",
+      "agent": "kubernetes",
+      "kind": "tool",
+      "name": "k8s_list_pods",
+      "input_summary": "{\"namespace\": \"demo-s1\", \"label_selector\": null}",
+      "output_summary": "{\n  \"namespace\": \"demo-s1\",\n  \"label_selector\": null,\n  \"pods\": [\n    {\n      \"name\": \"s1-app-5468546b65-dvgq5\",\n      \"phase\": \"Running\",\n      \"ready\": \"0/1\",\n      \"owner\": {\n        \"kind\": \"ReplicaSet\",\n        \"name\": \"s1-app-5468546b65\"\n      },\n      \"restarts\": 3,\n      \"containers\": [\n        {\n          \"name\": \"app\",\n          \"ready\": false,\n          \"restart_count\": 3,\n          \"state\": {\n            \"state\": \"waiting\",\n            \"reason\": \"CrashLoopBackOff\",\n            \"message\": \"back-off 40s restarting failed container=app pod=s1-app-5468546b65-dvgq5_demo-s1(<high-entropy:9c…80>)\"\n          }\n        }\n      ]\n    },\n    {\n      \"name\": \"s1-app-666f75b99-nlpbt\",\n      \"phase\": \"Running\",\n      \"ready\": \"1/1\",\n      \"owner\": {\n        \"kind\": \"ReplicaSet\",\n        \"name\": \"s1-app-666f75b99\"\n      },\n      \"restarts\": 0,\n      \"containers\": [\n        {\n          \"name\": \"app\",\n          \"ready\": true,\n          \"restart_count\": 0,\n          \"state\": {\n            \"state\": \"running\",\n            \"started_at\": \"2026-10-19T22:32:28Z\"\n          }\n        }\n      ]\n    }\n  ]\n}",
+      "gate_result": null,
+      "status": "ok",
+      "error": null,
+      "retries": 0,
+      "started_at": "2026-10-19T22:34:04.100000Z",
+      "latency_ms": 180,
+      "tokens_in": null,
+      "tokens_out": null
+    },
+    {
+      "key": "logs_get_container_logs/previous",
+      "agent": "logs",
+      "kind": "tool",
+      "name": "logs_get_container_logs",
+      "input_summary": "{\"namespace\": \"demo-s1\", \"pod\": \"s1-app-5468546b65-dvgq5\", \"container\": \"app\", \"previous\": true, \"tail_lines\": 200}",
+      "output_summary": "{\n  \"namespace\": \"demo-s1\",\n  \"pod\": \"s1-app-5468546b65-dvgq5\",\n  \"container\": \"app\",\n  \"previous\": true,\n  \"total_lines\": 1,\n  \"truncated\": false,\n  \"lines\": [\n    \"ERROR invalid APP_MODE \\\"invalid\\\"; expected one of: readonly, standard\"\n  ]\n}",
+      "gate_result": null,
+      "status": "ok",
+      "error": null,
+      "retries": 0,
+      "started_at": "2026-10-19T22:34:04.300000Z",
+      "latency_ms": 340,
+      "tokens_in": null,
+      "tokens_out": null
+    },
+    {
+      "key": "k8s_get_pod_status",
+      "agent": "kubernetes",
+      "kind": "tool",
+      "name": "k8s_get_pod_status",
+      "input_summary": "{\"namespace\": \"demo-s1\", \"pod\": \"s1-app-5468546b65-dvgq5\"}",
+      "output_summary": "{\n  \"namespace\": \"demo-s1\",\n  \"name\": \"s1-app-5468546b65-dvgq5\",\n  \"labels\": {\n    \"app.kubernetes.io/name\": \"s1-app\",\n    \"pod-template-hash\": \"5468546b65\"\n  },\n  \"owner\": {\n    \"kind\": \"ReplicaSet\",\n    \"name\": \"s1-app-5468546b65\"\n  },\n  \"phase\": \"Running\",\n  \"started_at\": \"2026-10-19T22:32:31Z\",\n  \"conditions\": [\n    {\n      \"type\": \"PodReadyToStartContainers\",\n      \"status\": \"True\",\n      \"reason\": null\n    },\n    {\n      \"type\": \"Initialized\",\n      \"status\": \"True\",\n      \"reason\": null\n    },\n    {\n      \"type\": \"Ready\",\n      \"status\": \"False\",\n      \"reason\": \"ContainersNotReady\"\n    },\n    {\n      \"type\": \"ContainersReady\",\n      \"status\": \"False\",\n      \"reason\": \"ContainersNotReady\"\n    },\n    {\n      \"type\": \"PodScheduled\",\n      \"status\": \"True\",\n      \"reason\": null\n    }\n  ],\n  \"containers\": [\n    {\n      \"name\": \"app\",\n      \"image\": \"docker.<high-entropy:io…pp>:dev\",\n      \"ready\": false,\n      \"restart_count\": 3,\n      \"state\": {\n        \"state\": \"waiting\",\n        \"reason\": \"CrashLoopBackOff\",\n        \"message\": \"back-off 40s restarting failed container=app pod=s1-app-5468546b65-dvgq5_demo-s1(<high-entropy:9c…80>)\"\n      },\n      \"last_state\": {\n        \"state\": \"terminated\",\n        \"reason\": \"Error\",\n        \"exit_code\": 2,\n        \"started_at\": \"2026-10-19T22:33:11Z\",\n        \"finished_at\": \"2026-10-19T22:33:11Z\"\n      }\n    }\n  ]\n}",
+      "gate_result": null,
+      "status": "ok",
+      "error": null,
+      "retries": 0,
+      "started_at": "2026-10-19T22:34:07.400000Z",
+      "latency_ms": 210,
+      "tokens_in": null,
+      "tokens_out": null
+    },
+    {
+      "key": "logs_get_container_logs",
+      "agent": "logs",
+      "kind": "tool",
+      "name": "logs_get_container_logs",
+      "input_summary": "{\"namespace\": \"demo-s1\", \"pod\": \"s1-app-5468546b65-dvgq5\", \"container\": \"app\", \"previous\": false, \"tail_lines\": 200}",
+      "output_summary": "{\n  \"namespace\": \"demo-s1\",\n  \"pod\": \"s1-app-5468546b65-dvgq5\",\n  \"container\": \"app\",\n  \"previous\": false,\n  \"total_lines\": 1,\n  \"truncated\": false,\n  \"lines\": [\n    \"ERROR invalid APP_MODE \\\"invalid\\\"; expected one of: readonly, standard\"\n  ]\n}",
+      "gate_result": null,
+      "status": "ok",
+      "error": null,
+      "retries": 0,
+      "started_at": "2026-10-19T22:34:08.900000Z",
+      "latency_ms": 310,
+      "tokens_in": null,
+      "tokens_out": null
+    },
+    {
+      "key": "logs-2",
+      "agent": "logs",
+      "kind": "model",
+      "name": "evidence_agent",
+      "input_summary": "XMODELINX evidence_agent prompt",
+      "output_summary": "XMODELOUTX evidence_agent arguments",
+      "gate_result": {
+        "output_type": "findings",
+        "passed": true,
+        "violations": []
+      },
+      "status": "ok",
+      "error": null,
+      "retries": 0,
+      "started_at": "2026-10-19T22:34:09.500000Z",
+      "latency_ms": 1600,
+      "tokens_in": 2210,
+      "tokens_out": 190
+    },
+    {
+      "key": "k8s_list_events",
+      "agent": "kubernetes",
+      "kind": "tool",
+      "name": "k8s_list_events",
+      "input_summary": "{\"namespace\": \"demo-s1\", \"involved_object\": \"s1-app-5468546b65-dvgq5\", \"since_minutes\": 60}",
+      "output_summary": "{\n  \"namespace\": \"demo-s1\",\n  \"involved_object\": \"s1-app-5468546b65-dvgq5\",\n  \"since\": \"2026-10-19T21:33:43Z\",\n  \"matched\": 6,\n  \"events\": [\n    {\n      \"time\": \"2026-10-19T22:32:31Z\",\n      \"type\": \"Normal\",\n      \"reason\": \"Scheduled\",\n      \"object\": {\n        \"kind\": \"Pod\",\n        \"name\": \"s1-app-5468546b65-dvgq5\"\n      },\n      \"message\": \"Successfully assigned demo-s1/s1-app-5468546b65-dvgq5 to <high-entropy:bi…ne>\",\n      \"count\": 1,\n      \"first_time\": \"2026-10-19T22:32:31Z\"\n    },\n    {\n      \"time\": \"2026-10-19T22:33:11Z\",\n      \"type\": \"Normal\",\n      \"reason\": \"Pulled\",\n      \"object\": {\n        \"kind\": \"Pod\",\n        \"name\": \"s1-app-5468546b65-dvgq5\"\n      },\n      \"message\": \"Container image \\\"bianque-s1-app:dev\\\" already present on machine and can be accessed by the pod\",\n      \"count\": 4,\n      \"first_time\": \"2026-10-19T22:32:31Z\"\n    },\n    {\n      \"time\": \"2026-10-19T22:33:11Z\",\n      \"type\": \"Normal\",\n      \"reason\": \"Created\",\n      \"object\": {\n        \"kind\": \"Pod\",\n        \"name\": \"s1-app-5468546b65-dvgq5\"\n      },\n      \"message\": \"Container created\",\n      \"count\": 4,\n      \"first_time\": \"2026-10-19T22:32:31Z\"\n    },\n    {\n      \"time\": \"2026-10-19T22:33:11Z\",\n      \"type\": \"Normal\",\n      \"reason\": \"Started\",\n      \"object\": {\n        \"kind\": \"Pod\",\n        \"name\": \"s1-app-5468546b65-dvgq5\"\n      },\n      \"message\": \"Container started\",\n      \"count\": 4,\n      \"first_time\": \"2026-10-19T22:32:31Z\"\n    },\n    {\n      \"time\": \"2026-10-19T22:33:11Z\",\n      \"type\": \"Warning\",\n      \"reason\": \"Unhealthy\",\n      \"object\": {\n        \"kind\": \"Pod\",\n        \"name\": \"s1-app-5468546b65-dvgq5\"\n      },\n      \"message\": \"Readiness probe failed: Get \\\"http://10.244.x.x:8080/healthz\\\": dial tcp 10.244.x.x:8080: connect: connection refused\",\n      \"count\": 5,\n      \"first_time\": \"2026-10-19T22:32:31Z\"\n    },\n    {\n      \"time\": \"2026-10-19T22:33:16Z\",\n      \"type\": \"Warning\",\n      \"reason\": \"BackOff\",\n      \"object\": {\n        \"kind\": \"Pod\",\n        \"name\": \"s1-app-5468546b65-dvgq5\"\n      },\n      \"message\": \"Back-off restarting failed container app in pod s1-app-5468546b65-dvgq5_demo-s1(<high-entropy:9c…80>)\",\n      \"count\": 9,\n      \"first_time\": \"2026-10-19T22:32:33Z\"\n    }\n  ]\n}",
+      "gate_result": null,
+      "status": "ok",
+      "error": null,
+      "retries": 0,
+      "started_at": "2026-10-19T22:34:10.800000Z",
+      "latency_ms": 260,
+      "tokens_in": null,
+      "tokens_out": null
+    },
+    {
+      "key": "k8s-2",
+      "agent": "kubernetes",
+      "kind": "model",
+      "name": "evidence_agent",
+      "input_summary": "XMODELINX evidence_agent prompt",
+      "output_summary": "XMODELOUTX evidence_agent arguments",
+      "gate_result": {
+        "output_type": "findings",
+        "passed": true,
+        "violations": []
+      },
+      "status": "ok",
+      "error": null,
+      "retries": 0,
+      "started_at": "2026-10-19T22:34:14.500000Z",
+      "latency_ms": 1900,
+      "tokens_in": 4850,
+      "tokens_out": 260
+    },
+    {
+      "key": "k8s_get_deployment",
+      "agent": "kubernetes",
+      "kind": "tool",
+      "name": "k8s_get_deployment",
+      "input_summary": "{\"namespace\": \"demo-s1\", \"name\": \"s1-app\"}",
+      "output_summary": "{\n  \"namespace\": \"demo-s1\",\n  \"name\": \"s1-app\",\n  \"revision\": \"2\",\n  \"replicas\": {\n    \"desired\": 1,\n    \"updated\": 1,\n    \"ready\": 1,\n    \"available\": 1,\n    \"unavailable\": 1\n  },\n  \"selector\": {\n    \"app.kubernetes.io/name\": \"s1-app\"\n  },\n  \"strategy\": \"RollingUpdate\",\n  \"conditions\": [\n    {\n      \"type\": \"Available\",\n      \"status\": \"True\",\n      \"reason\": \"MinimumReplicasAvailable\",\n      \"message\": \"Deployment has minimum availability.\"\n    },\n    {\n      \"type\": \"Progressing\",\n      \"status\": \"True\",\n      \"reason\": \"ReplicaSetUpdated\",\n      \"message\": \"ReplicaSet \\\"s1-app-5468546b65\\\" is progressing.\"\n    }\n  ],\n  \"containers\": [\n    {\n      \"name\": \"app\",\n      \"image\": \"bianque-s1-app:dev\",\n      \"env\": [\n        {\n          \"name\": \"APP_MODE\",\n          \"value\": \"invalid\"\n        },\n        {\n          \"name\": \"ALLOC_MB\",\n          \"value\": \"48\"\n        }\n      ],\n      \"resources\": {\n        \"limits\": {\n          \"cpu\": \"200m\",\n          \"memory\": \"128Mi\"\n        },\n        \"requests\": {\n          \"cpu\": \"50m\",\n          \"memory\": \"64Mi\"\n        }\n      },\n      \"liveness_probe\": {\n        \"failureThreshold\": 2,\n        \"httpGet\": {\n          \"path\": \"/healthz\",\n          \"port\": \"http\",\n          \"scheme\": \"HTTP\"\n        },\n        \"initialDelaySeconds\": 3,\n        \"periodSeconds\": 5,\n        \"successThreshold\": 1,\n        \"timeoutSeconds\": 1\n      },\n      \"readiness_probe\": {\n        \"failureThreshold\": 3,\n        \"httpGet\": {\n          \"path\": \"/healthz\",\n          \"port\": \"http\",\n          \"scheme\": \"HTTP\"\n        },\n        \"periodSeconds\": 5,\n        \"successThreshold\": 1,\n        \"timeoutSeconds\": 1\n      }\n    }\n  ]\n}",
+      "gate_result": null,
+      "status": "ok",
+      "error": null,
+      "retries": 0,
+      "started_at": "2026-10-19T22:34:14Z",
+      "latency_ms": 190,
+      "tokens_in": null,
+      "tokens_out": null
+    },
+    {
+      "key": "assess-1",
+      "agent": "investigation",
+      "kind": "model",
+      "name": "assess",
+      "input_summary": "XMODELINX assess prompt",
+      "output_summary": "XMODELOUTX assess arguments",
+      "gate_result": {
+        "output_type": "assessment",
+        "passed": true,
+        "violations": []
+      },
+      "status": "ok",
+      "error": null,
+      "retries": 0,
+      "started_at": "2026-10-19T22:34:17.200000Z",
+      "latency_ms": 4100,
+      "tokens_in": 6020,
+      "tokens_out": 310
+    },
+    {
+      "key": "replan",
+      "agent": "investigation",
+      "kind": "model",
+      "name": "replan",
+      "input_summary": "XMODELINX replan prompt",
+      "output_summary": "XMODELOUTX replan arguments",
+      "gate_result": {
+        "output_type": "plan",
+        "passed": true,
+        "violations": []
+      },
+      "status": "ok",
+      "error": null,
+      "retries": 0,
+      "started_at": "2026-10-19T22:34:22Z",
+      "latency_ms": 4600,
+      "tokens_in": 6480,
+      "tokens_out": 420
+    },
+    {
+      "key": "change-1",
+      "agent": "change",
+      "kind": "model",
+      "name": "evidence_agent",
+      "input_summary": "XMODELINX evidence_agent prompt",
+      "output_summary": "XMODELOUTX evidence_agent arguments",
+      "gate_result": null,
+      "status": "ok",
+      "error": null,
+      "retries": 0,
+      "started_at": "2026-10-19T22:34:38.700000Z",
+      "latency_ms": 450,
+      "tokens_in": 1290,
+      "tokens_out": 115
+    },
+    {
+      "key": "change_get_rollout_history",
+      "agent": "change",
+      "kind": "tool",
+      "name": "change_get_rollout_history",
+      "input_summary": "{\"namespace\": \"demo-s1\", \"deployment\": \"s1-app\"}",
+      "output_summary": "{\n  \"namespace\": \"demo-s1\",\n  \"deployment\": \"s1-app\",\n  \"revisions\": [\n    {\n      \"revision\": 1,\n      \"replicaset\": \"s1-app-666f75b99\",\n      \"created_at\": \"2026-10-19T22:32:28Z\",\n      \"replicas\": 1,\n      \"ready\": 1\n    },\n    {\n      \"revision\": 2,\n      \"replicaset\": \"s1-app-5468546b65\",\n      \"created_at\": \"2026-10-19T22:32:31Z\",\n      \"replicas\": 1,\n      \"ready\": 0\n    }\n  ],\n  \"template_diff\": {\n    \"from_revision\": 1,\n    \"to_revision\": 2,\n    \"patch\": \"--- revision 1\\n+++ revision 2\\n@@ -10,7 +10,7 @@\\n         \\\"env\\\": [\\n           {\\n             \\\"name\\\": \\\"APP_MODE\\\",\\n-            \\\"value\\\": \\\"standard\\\"\\n+            \\\"value\\\": \\\"invalid\\\"\\n           },\\n           {\\n             \\\"name\\\": \\\"ALLOC_MB\\\",\",\n    \"truncated\": false\n  }\n}",
+      "gate_result": null,
+      "status": "ok",
+      "error": null,
+      "retries": 0,
+      "started_at": "2026-10-19T22:34:39.200000Z",
+      "latency_ms": 230,
+      "tokens_in": null,
+      "tokens_out": null
+    },
+    {
+      "key": "change_list_commits",
+      "agent": "change",
+      "kind": "tool",
+      "name": "change_list_commits",
+      "input_summary": "{\"path\": null, \"max_count\": 20}",
+      "output_summary": "{\n  \"path\": null,\n  \"commits\": [\n    {\n      \"commit\": \"9b9a6ea8a72b\",\n      \"author\": \"Bianque Demo\",\n      \"date\": \"2026-10-19T22:32:31Z\",\n      \"subject\": \"Update app mode configuration\",\n      \"files\": [\n        \"deployment.yaml\"\n      ]\n    },\n    {\n      \"commit\": \"339332f21347\",\n      \"author\": \"Bianque Demo\",\n      \"date\": \"2026-10-19T22:32:28Z\",\n      \"subject\": \"Add s1-app manifests\",\n      \"files\": [\n        \"00-namespace.yaml\",\n        \"README.md\",\n        \"deployment.yaml\",\n        \"service.yaml\"\n      ]\n    }\n  ]\n}",
+      "gate_result": null,
+      "status": "ok",
+      "error": null,
+      "retries": 0,
+      "started_at": "2026-10-19T22:34:43Z",
+      "latency_ms": 150,
+      "tokens_in": null,
+      "tokens_out": null
+    },
+    {
+      "key": "change_show_commit",
+      "agent": "change",
+      "kind": "tool",
+      "name": "change_show_commit",
+      "input_summary": "{\"commit\": \"9b9a6ea8a72b\"}",
+      "output_summary": "{\n  \"commit\": \"9b9a6ea8a72b36341c33db6b42368aca7d56a7db\",\n  \"short\": \"9b9a6ea8a72b\",\n  \"author\": \"Bianque Demo\",\n  \"date\": \"2026-10-19T22:32:31Z\",\n  \"message\": \"Update app mode configuration\",\n  \"diff\": \"diff --git a/deployment.yaml b/deployment.yaml\\nindex 818c3e9..7316b63 100644\\n--- a/deployment.yaml\\n+++ b/deployment.yaml\\n@@ -24,7 +24,7 @@ spec:\\n               containerPort: 8080\\n           env:\\n             - name: APP_MODE\\n-              value: standard\\n+              value: invalid\\n             - name: ALLOC_MB\\n               value: \\\"48\\\"\\n           resources:\",\n  \"diff_truncated\": false\n}",
+      "gate_result": null,
+      "status": "ok",
+      "error": null,
+      "retries": 0,
+      "started_at": "2026-10-19T22:34:46.600000Z",
+      "latency_ms": 170,
+      "tokens_in": null,
+      "tokens_out": null
+    },
+    {
+      "key": "change-2",
+      "agent": "change",
+      "kind": "model",
+      "name": "evidence_agent",
+      "input_summary": "XMODELINX evidence_agent prompt",
+      "output_summary": "XMODELOUTX evidence_agent arguments",
+      "gate_result": {
+        "output_type": "findings",
+        "passed": true,
+        "violations": []
+      },
+      "status": "ok",
+      "error": null,
+      "retries": 0,
+      "started_at": "2026-10-19T22:34:47.100000Z",
+      "latency_ms": 2100,
+      "tokens_in": 3880,
+      "tokens_out": 240
+    },
+    {
+      "key": "assess-2",
+      "agent": "investigation",
+      "kind": "model",
+      "name": "assess",
+      "input_summary": "XMODELINX assess prompt",
+      "output_summary": "XMODELOUTX assess arguments",
+      "gate_result": {
+        "output_type": "assessment",
+        "passed": true,
+        "violations": []
+      },
+      "status": "ok",
+      "error": null,
+      "retries": 0,
+      "started_at": "2026-10-19T22:34:50Z",
+      "latency_ms": 3900,
+      "tokens_in": 7810,
+      "tokens_out": 280
+    },
+    {
+      "key": "report-1",
+      "agent": "investigation",
+      "kind": "model",
+      "name": "report",
+      "input_summary": "XMODELINX report prompt",
+      "output_summary": "XMODELOUTX report arguments",
+      "gate_result": {
+        "output_type": "report",
+        "passed": false,
+        "violations": [
+          {
+            "validator": "citation_integrity",
+            "path": "claims[1].citations[0]",
+            "code": "unknown_id"
+          }
+        ]
+      },
+      "status": "ok",
+      "error": null,
+      "retries": 0,
+      "started_at": "2026-10-19T22:34:54.400000Z",
+      "latency_ms": 11800,
+      "tokens_in": 9120,
+      "tokens_out": 1460
+    },
+    {
+      "key": "report-2",
+      "agent": "investigation",
+      "kind": "model",
+      "name": "report",
+      "input_summary": "XMODELINX report prompt",
+      "output_summary": "XMODELOUTX report arguments",
+      "gate_result": {
+        "output_type": "report",
+        "passed": true,
+        "violations": []
+      },
+      "status": "ok",
+      "error": null,
+      "retries": 0,
+      "started_at": "2026-10-19T22:35:06.600000Z",
+      "latency_ms": 13900,
+      "tokens_in": 9540,
+      "tokens_out": 1510
+    }
+  ],
+  "evidence": [
+    {
+      "id": "ev_9e686c49e7",
+      "step": null,
+      "call": null,
+      "source": "alertmanager",
+      "tool": null,
+      "collected_at": "2026-10-19T22:33:58Z",
+      "raw_content": "{\n  \"annotations\": {\n    \"description\": \"The container is in CrashLoopBackOff or restarted more than twice in the last two minutes.\",\n    \"summary\": \"Container app of pod demo-s1/s1-app-5468546b65-dvgq5 keeps restarting\"\n  },\n  \"endsAt\": \"0001-01-01T00:00:00Z\",\n  \"fingerprint\": \"a2b4e6e9dd73d436\",\n  \"generatorURL\": \"http://prometheus-server-6fb9768697-w5nrm:9090/graph?g0.expr=max+by+%28namespace%2C+pod%2C+container%29+%28max_over_time%28kube_pod_container_status_waiting_reason%7Breason%3D%22CrashLoopBackOff%22%7D%5B1m%5D%29%29+%3E+0+or+max+by+%28namespace%2C+pod%2C+container%29+%28increase%28kube_pod_container_status_restarts_total%5B2m%5D%29%29+%3E+2&g0.tab=1\",\n  \"labels\": {\n    \"alertname\": \"BianquePodRestarting\",\n    \"container\": \"app\",\n    \"namespace\": \"demo-s1\",\n    \"pod\": \"s1-app-5468546b65-dvgq5\",\n    \"severity\": \"warning\"\n  },\n  \"startsAt\": \"2026-10-19T22:33:27.664Z\",\n  \"status\": \"firing\"\n}",
+      "redacted_content": "{\n  \"annotations\": {\n    \"description\": \"The container is in CrashLoopBackOff or restarted more than twice in the last two minutes.\",\n    \"summary\": \"Container app of pod demo-s1/s1-app-5468546b65-dvgq5 keeps restarting\"\n  },\n  \"endsAt\": \"0001-01-01T00:00:00Z\",\n  \"fingerprint\": \"a2b4e6e9dd73d436\",\n  \"generatorURL\": \"http:<high-entropy://…rm>:9090/graph?g0.expr=max+by+%28namespace%2C+pod%2C+container%29+%28max_over_time%<high-entropy:28…on>%7Breason%3D%22CrashLoopBackOff%22%7D%5B1m%5D%29%29+%3E+0+or+max+by+%28namespace%2C+pod%2C+container%29+%28increase%<high-entropy:28…al>%5B2m%5D%29%29+%3E+2&g0.tab=1\",\n  \"labels\": {\n    \"alertname\": \"BianquePodRestarting\",\n    \"container\": \"app\",\n    \"namespace\": \"demo-s1\",\n    \"pod\": \"s1-app-5468546b65-dvgq5\",\n    \"severity\": \"warning\"\n  },\n  \"startsAt\": \"2026-10-19T22:33:27.664Z\",\n  \"status\": \"firing\"\n}",
+      "identifiers": [
+        "BianquePodRestarting",
+        "app",
+        "demo-s1",
+        "s1-app",
+        "s1-app-5468546b65-dvgq5",
+        "warning"
+      ],
+      "meta": {}
+    },
+    {
+      "id": "ev_ec1761dee2",
+      "step": [
+        1,
+        1
+      ],
+      "call": "k8s_list_pods",
+      "source": "kubernetes",
+      "tool": "k8s_list_pods",
+      "collected_at": "2026-10-19T22:34:04.280000Z",
+      "raw_content": "{\n  \"namespace\": \"demo-s1\",\n  \"label_selector\": null,\n  \"pods\": [\n    {\n      \"name\": \"s1-app-5468546b65-dvgq5\",\n      \"phase\": \"Running\",\n      \"ready\": \"0/1\",\n      \"owner\": {\n        \"kind\": \"ReplicaSet\",\n        \"name\": \"s1-app-5468546b65\"\n      },\n      \"restarts\": 3,\n      \"containers\": [\n        {\n          \"name\": \"app\",\n          \"ready\": false,\n          \"restart_count\": 3,\n          \"state\": {\n            \"state\": \"waiting\",\n            \"reason\": \"CrashLoopBackOff\",\n            \"message\": \"back-off 40s restarting failed container=app pod=s1-app-5468546b65-dvgq5_demo-s1(9c3517b4-6285-4696-922f-fbb7d024fd80)\"\n          }\n        }\n      ]\n    },\n    {\n      \"name\": \"s1-app-666f75b99-nlpbt\",\n      \"phase\": \"Running\",\n      \"ready\": \"1/1\",\n      \"owner\": {\n        \"kind\": \"ReplicaSet\",\n        \"name\": \"s1-app-666f75b99\"\n      },\n      \"restarts\": 0,\n      \"containers\": [\n        {\n          \"name\": \"app\",\n          \"ready\": true,\n          \"restart_count\": 0,\n          \"state\": {\n            \"state\": \"running\",\n            \"started_at\": \"2026-10-19T22:32:28Z\"\n          }\n        }\n      ]\n    }\n  ]\n}",
+      "redacted_content": "{\n  \"namespace\": \"demo-s1\",\n  \"label_selector\": null,\n  \"pods\": [\n    {\n      \"name\": \"s1-app-5468546b65-dvgq5\",\n      \"phase\": \"Running\",\n      \"ready\": \"0/1\",\n      \"owner\": {\n        \"kind\": \"ReplicaSet\",\n        \"name\": \"s1-app-5468546b65\"\n      },\n      \"restarts\": 3,\n      \"containers\": [\n        {\n          \"name\": \"app\",\n          \"ready\": false,\n          \"restart_count\": 3,\n          \"state\": {\n            \"state\": \"waiting\",\n            \"reason\": \"CrashLoopBackOff\",\n            \"message\": \"back-off 40s restarting failed container=app pod=s1-app-5468546b65-dvgq5_demo-s1(<high-entropy:9c…80>)\"\n          }\n        }\n      ]\n    },\n    {\n      \"name\": \"s1-app-666f75b99-nlpbt\",\n      \"phase\": \"Running\",\n      \"ready\": \"1/1\",\n      \"owner\": {\n        \"kind\": \"ReplicaSet\",\n        \"name\": \"s1-app-666f75b99\"\n      },\n      \"restarts\": 0,\n      \"containers\": [\n        {\n          \"name\": \"app\",\n          \"ready\": true,\n          \"restart_count\": 0,\n          \"state\": {\n            \"state\": \"running\",\n            \"started_at\": \"2026-10-19T22:32:28Z\"\n          }\n        }\n      ]\n    }\n  ]\n}",
+      "identifiers": [
+        "5468546b65",
+        "666f75b99",
+        "ContainersNotReady",
+        "ContainersReady",
+        "CrashLoopBackOff",
+        "Error",
+        "Initialized",
+        "PodReadyToStartContainers",
+        "PodScheduled",
+        "Ready",
+        "app",
+        "demo-s1",
+        "s1-app",
+        "s1-app-5468546b65",
+        "s1-app-5468546b65-dvgq5",
+        "s1-app-666f75b99",
+        "s1-app-666f75b99-nlpbt"
+      ],
+      "meta": {
+        "arguments": {
+          "namespace": "demo-s1",
+          "label_selector": null
+        },
+        "backend": "pack"
+      }
+    },
+    {
+      "id": "ev_e0c389d9d4",
+      "step": [
+        1,
+        2
+      ],
+      "call": "k8s_get_pod_status",
+      "source": "kubernetes",
+      "tool": "k8s_get_pod_status",
+      "collected_at": "2026-10-19T22:34:07.610000Z",
+      "raw_content": "{\n  \"namespace\": \"demo-s1\",\n  \"name\": \"s1-app-5468546b65-dvgq5\",\n  \"labels\": {\n    \"app.kubernetes.io/name\": \"s1-app\",\n    \"pod-template-hash\": \"5468546b65\"\n  },\n  \"owner\": {\n    \"kind\": \"ReplicaSet\",\n    \"name\": \"s1-app-5468546b65\"\n  },\n  \"phase\": \"Running\",\n  \"started_at\": \"2026-10-19T22:32:31Z\",\n  \"conditions\": [\n    {\n      \"type\": \"PodReadyToStartContainers\",\n      \"status\": \"True\",\n      \"reason\": null\n    },\n    {\n      \"type\": \"Initialized\",\n      \"status\": \"True\",\n      \"reason\": null\n    },\n    {\n      \"type\": \"Ready\",\n      \"status\": \"False\",\n      \"reason\": \"ContainersNotReady\"\n    },\n    {\n      \"type\": \"ContainersReady\",\n      \"status\": \"False\",\n      \"reason\": \"ContainersNotReady\"\n    },\n    {\n      \"type\": \"PodScheduled\",\n      \"status\": \"True\",\n      \"reason\": null\n    }\n  ],\n  \"containers\": [\n    {\n      \"name\": \"app\",\n      \"image\": \"docker.io/library/bianque-s1-app:dev\",\n      \"ready\": false,\n      \"restart_count\": 3,\n      \"state\": {\n        \"state\": \"waiting\",\n        \"reason\": \"CrashLoopBackOff\",\n        \"message\": \"back-off 40s restarting failed container=app pod=s1-app-5468546b65-dvgq5_demo-s1(9c3517b4-6285-4696-922f-fbb7d024fd80)\"\n      },\n      \"last_state\": {\n        \"state\": \"terminated\",\n        \"reason\": \"Error\",\n        \"exit_code\": 2,\n        \"started_at\": \"2026-10-19T22:33:11Z\",\n        \"finished_at\": \"2026-10-19T22:33:11Z\"\n      }\n    }\n  ]\n}",
+      "redacted_content": "{\n  \"namespace\": \"demo-s1\",\n  \"name\": \"s1-app-5468546b65-dvgq5\",\n  \"labels\": {\n    \"app.kubernetes.io/name\": \"s1-app\",\n    \"pod-template-hash\": \"5468546b65\"\n  },\n  \"owner\": {\n    \"kind\": \"ReplicaSet\",\n    \"name\": \"s1-app-5468546b65\"\n  },\n  \"phase\": \"Running\",\n  \"started_at\": \"2026-10-19T22:32:31Z\",\n  \"conditions\": [\n    {\n      \"type\": \"PodReadyToStartContainers\",\n      \"status\": \"True\",\n      \"reason\": null\n    },\n    {\n      \"type\": \"Initialized\",\n      \"status\": \"True\",\n      \"reason\": null\n    },\n    {\n      \"type\": \"Ready\",\n      \"status\": \"False\",\n      \"reason\": \"ContainersNotReady\"\n    },\n    {\n      \"type\": \"ContainersReady\",\n      \"status\": \"False\",\n      \"reason\": \"ContainersNotReady\"\n    },\n    {\n      \"type\": \"PodScheduled\",\n      \"status\": \"True\",\n      \"reason\": null\n    }\n  ],\n  \"containers\": [\n    {\n      \"name\": \"app\",\n      \"image\": \"docker.<high-entropy:io…pp>:dev\",\n      \"ready\": false,\n      \"restart_count\": 3,\n      \"state\": {\n        \"state\": \"waiting\",\n        \"reason\": \"CrashLoopBackOff\",\n        \"message\": \"back-off 40s restarting failed container=app pod=s1-app-5468546b65-dvgq5_demo-s1(<high-entropy:9c…80>)\"\n      },\n      \"last_state\": {\n        \"state\": \"terminated\",\n        \"reason\": \"Error\",\n        \"exit_code\": 2,\n        \"started_at\": \"2026-10-19T22:33:11Z\",\n        \"finished_at\": \"2026-10-19T22:33:11Z\"\n      }\n    }\n  ]\n}",
+      "identifiers": [
+        "5468546b65",
+        "ContainersNotReady",
+        "ContainersReady",
+        "CrashLoopBackOff",
+        "Error",
+        "Initialized",
+        "PodReadyToStartContainers",
+        "PodScheduled",
+        "Ready",
+        "app",
+        "demo-s1",
+        "s1-app",
+        "s1-app-5468546b65",
+        "s1-app-5468546b65-dvgq5"
+      ],
+      "meta": {
+        "arguments": {
+          "namespace": "demo-s1",
+          "pod": "s1-app-5468546b65-dvgq5"
+        },
+        "backend": "pack"
+      }
+    },
+    {
+      "id": "ev_1baeb6a570",
+      "step": [
+        1,
+        3
+      ],
+      "call": "k8s_list_events",
+      "source": "kubernetes",
+      "tool": "k8s_list_events",
+      "collected_at": "2026-10-19T22:34:11.060000Z",
+      "raw_content": "{\n  \"namespace\": \"demo-s1\",\n  \"involved_object\": \"s1-app-5468546b65-dvgq5\",\n  \"since\": \"2026-10-19T21:33:43Z\",\n  \"matched\": 6,\n  \"events\": [\n    {\n      \"time\": \"2026-10-19T22:32:31Z\",\n      \"type\": \"Normal\",\n      \"reason\": \"Scheduled\",\n      \"object\": {\n        \"kind\": \"Pod\",\n        \"name\": \"s1-app-5468546b65-dvgq5\"\n      },\n      \"message\": \"Successfully assigned demo-s1/s1-app-5468546b65-dvgq5 to bianque-demo-control-plane\",\n      \"count\": 1,\n      \"first_time\": \"2026-10-19T22:32:31Z\"\n    },\n    {\n      \"time\": \"2026-10-19T22:33:11Z\",\n      \"type\": \"Normal\",\n      \"reason\": \"Pulled\",\n      \"object\": {\n        \"kind\": \"Pod\",\n        \"name\": \"s1-app-5468546b65-dvgq5\"\n      },\n      \"message\": \"Container image \\\"bianque-s1-app:dev\\\" already present on machine and can be accessed by the pod\",\n      \"count\": 4,\n      \"first_time\": \"2026-10-19T22:32:31Z\"\n    },\n    {\n      \"time\": \"2026-10-19T22:33:11Z\",\n      \"type\": \"Normal\",\n      \"reason\": \"Created\",\n      \"object\": {\n        \"kind\": \"Pod\",\n        \"name\": \"s1-app-5468546b65-dvgq5\"\n      },\n      \"message\": \"Container created\",\n      \"count\": 4,\n      \"first_time\": \"2026-10-19T22:32:31Z\"\n    },\n    {\n      \"time\": \"2026-10-19T22:33:11Z\",\n      \"type\": \"Normal\",\n      \"reason\": \"Started\",\n      \"object\": {\n        \"kind\": \"Pod\",\n        \"name\": \"s1-app-5468546b65-dvgq5\"\n      },\n      \"message\": \"Container started\",\n      \"count\": 4,\n      \"first_time\": \"2026-10-19T22:32:31Z\"\n    },\n    {\n      \"time\": \"2026-10-19T22:33:11Z\",\n      \"type\": \"Warning\",\n      \"reason\": \"Unhealthy\",\n      \"object\": {\n        \"kind\": \"Pod\",\n        \"name\": \"s1-app-5468546b65-dvgq5\"\n      },\n      \"message\": \"Readiness probe failed: Get \\\"http://10.244.x.x:8080/healthz\\\": dial tcp 10.244.x.x:8080: connect: connection refused\",\n      \"count\": 5,\n      \"first_time\": \"2026-10-19T22:32:31Z\"\n    },\n    {\n      \"time\": \"2026-10-19T22:33:16Z\",\n      \"type\": \"Warning\",\n      \"reason\": \"BackOff\",\n      \"object\": {\n        \"kind\": \"Pod\",\n        \"name\": \"s1-app-5468546b65-dvgq5\"\n      },\n      \"message\": \"Back-off restarting failed container app in pod s1-app-5468546b65-dvgq5_demo-s1(9c3517b4-6285-4696-922f-fbb7d024fd80)\",\n      \"count\": 9,\n      \"first_time\": \"2026-10-19T22:32:33Z\"\n    }\n  ]\n}",
+      "redacted_content": "{\n  \"namespace\": \"demo-s1\",\n  \"involved_object\": \"s1-app-5468546b65-dvgq5\",\n  \"since\": \"2026-10-19T21:33:43Z\",\n  \"matched\": 6,\n  \"events\": [\n    {\n      \"time\": \"2026-10-19T22:32:31Z\",\n      \"type\": \"Normal\",\n      \"reason\": \"Scheduled\",\n      \"object\": {\n        \"kind\": \"Pod\",\n        \"name\": \"s1-app-5468546b65-dvgq5\"\n      },\n      \"message\": \"Successfully assigned demo-s1/s1-app-5468546b65-dvgq5 to <high-entropy:bi…ne>\",\n      \"count\": 1,\n      \"first_time\": \"2026-10-19T22:32:31Z\"\n    },\n    {\n      \"time\": \"2026-10-19T22:33:11Z\",\n      \"type\": \"Normal\",\n      \"reason\": \"Pulled\",\n      \"object\": {\n        \"kind\": \"Pod\",\n        \"name\": \"s1-app-5468546b65-dvgq5\"\n      },\n      \"message\": \"Container image \\\"bianque-s1-app:dev\\\" already present on machine and can be accessed by the pod\",\n      \"count\": 4,\n      \"first_time\": \"2026-10-19T22:32:31Z\"\n    },\n    {\n      \"time\": \"2026-10-19T22:33:11Z\",\n      \"type\": \"Normal\",\n      \"reason\": \"Created\",\n      \"object\": {\n        \"kind\": \"Pod\",\n        \"name\": \"s1-app-5468546b65-dvgq5\"\n      },\n      \"message\": \"Container created\",\n      \"count\": 4,\n      \"first_time\": \"2026-10-19T22:32:31Z\"\n    },\n    {\n      \"time\": \"2026-10-19T22:33:11Z\",\n      \"type\": \"Normal\",\n      \"reason\": \"Started\",\n      \"object\": {\n        \"kind\": \"Pod\",\n        \"name\": \"s1-app-5468546b65-dvgq5\"\n      },\n      \"message\": \"Container started\",\n      \"count\": 4,\n      \"first_time\": \"2026-10-19T22:32:31Z\"\n    },\n    {\n      \"time\": \"2026-10-19T22:33:11Z\",\n      \"type\": \"Warning\",\n      \"reason\": \"Unhealthy\",\n      \"object\": {\n        \"kind\": \"Pod\",\n        \"name\": \"s1-app-5468546b65-dvgq5\"\n      },\n      \"message\": \"Readiness probe failed: Get \\\"http://10.244.x.x:8080/healthz\\\": dial tcp 10.244.x.x:8080: connect: connection refused\",\n      \"count\": 5,\n      \"first_time\": \"2026-10-19T22:32:31Z\"\n    },\n    {\n      \"time\": \"2026-10-19T22:33:16Z\",\n      \"type\": \"Warning\",\n      \"reason\": \"BackOff\",\n      \"object\": {\n        \"kind\": \"Pod\",\n        \"name\": \"s1-app-5468546b65-dvgq5\"\n      },\n      \"message\": \"Back-off restarting failed container app in pod s1-app-5468546b65-dvgq5_demo-s1(<high-entropy:9c…80>)\",\n      \"count\": 9,\n      \"first_time\": \"2026-10-19T22:32:33Z\"\n    }\n  ]\n}",
+      "identifiers": [
+        "BackOff",
+        "Created",
+        "Pod",
+        "Pulled",
+        "Scheduled",
+        "Started",
+        "Unhealthy",
+        "demo-s1",
+        "s1-app-5468546b65-dvgq5"
+      ],
+      "meta": {
+        "arguments": {
+          "namespace": "demo-s1",
+          "involved_object": "s1-app-5468546b65-dvgq5",
+          "since_minutes": 60
+        },
+        "backend": "pack"
+      }
+    },
+    {
+      "id": "ev_67fd6463e6",
+      "step": [
+        1,
+        4
+      ],
+      "call": "k8s_get_deployment",
+      "source": "kubernetes",
+      "tool": "k8s_get_deployment",
+      "collected_at": "2026-10-19T22:34:14.190000Z",
+      "raw_content": "{\n  \"namespace\": \"demo-s1\",\n  \"name\": \"s1-app\",\n  \"revision\": \"2\",\n  \"replicas\": {\n    \"desired\": 1,\n    \"updated\": 1,\n    \"ready\": 1,\n    \"available\": 1,\n    \"unavailable\": 1\n  },\n  \"selector\": {\n    \"app.kubernetes.io/name\": \"s1-app\"\n  },\n  \"strategy\": \"RollingUpdate\",\n  \"conditions\": [\n    {\n      \"type\": \"Available\",\n      \"status\": \"True\",\n      \"reason\": \"MinimumReplicasAvailable\",\n      \"message\": \"Deployment has minimum availability.\"\n    },\n    {\n      \"type\": \"Progressing\",\n      \"status\": \"True\",\n      \"reason\": \"ReplicaSetUpdated\",\n      \"message\": \"ReplicaSet \\\"s1-app-5468546b65\\\" is progressing.\"\n    }\n  ],\n  \"containers\": [\n    {\n      \"name\": \"app\",\n      \"image\": \"bianque-s1-app:dev\",\n      \"env\": [\n        {\n          \"name\": \"APP_MODE\",\n          \"value\": \"invalid\"\n        },\n        {\n          \"name\": \"ALLOC_MB\",\n          \"value\": \"48\"\n        }\n      ],\n      \"resources\": {\n        \"limits\": {\n          \"cpu\": \"200m\",\n          \"memory\": \"128Mi\"\n        },\n        \"requests\": {\n          \"cpu\": \"50m\",\n          \"memory\": \"64Mi\"\n        }\n      },\n      \"liveness_probe\": {\n        \"failureThreshold\": 2,\n        \"httpGet\": {\n          \"path\": \"/healthz\",\n          \"port\": \"http\",\n          \"scheme\": \"HTTP\"\n        },\n        \"initialDelaySeconds\": 3,\n        \"periodSeconds\": 5,\n        \"successThreshold\": 1,\n        \"timeoutSeconds\": 1\n      },\n      \"readiness_probe\": {\n        \"failureThreshold\": 3,\n        \"httpGet\": {\n          \"path\": \"/healthz\",\n          \"port\": \"http\",\n          \"scheme\": \"HTTP\"\n        },\n        \"periodSeconds\": 5,\n        \"successThreshold\": 1,\n        \"timeoutSeconds\": 1\n      }\n    }\n  ]\n}",
+      "redacted_content": "{\n  \"namespace\": \"demo-s1\",\n  \"name\": \"s1-app\",\n  \"revision\": \"2\",\n  \"replicas\": {\n    \"desired\": 1,\n    \"updated\": 1,\n    \"ready\": 1,\n    \"available\": 1,\n    \"unavailable\": 1\n  },\n  \"selector\": {\n    \"app.kubernetes.io/name\": \"s1-app\"\n  },\n  \"strategy\": \"RollingUpdate\",\n  \"conditions\": [\n    {\n      \"type\": \"Available\",\n      \"status\": \"True\",\n      \"reason\": \"MinimumReplicasAvailable\",\n      \"message\": \"Deployment has minimum availability.\"\n    },\n    {\n      \"type\": \"Progressing\",\n      \"status\": \"True\",\n      \"reason\": \"ReplicaSetUpdated\",\n      \"message\": \"ReplicaSet \\\"s1-app-5468546b65\\\" is progressing.\"\n    }\n  ],\n  \"containers\": [\n    {\n      \"name\": \"app\",\n      \"image\": \"bianque-s1-app:dev\",\n      \"env\": [\n        {\n          \"name\": \"APP_MODE\",\n          \"value\": \"invalid\"\n        },\n        {\n          \"name\": \"ALLOC_MB\",\n          \"value\": \"48\"\n        }\n      ],\n      \"resources\": {\n        \"limits\": {\n          \"cpu\": \"200m\",\n          \"memory\": \"128Mi\"\n        },\n        \"requests\": {\n          \"cpu\": \"50m\",\n          \"memory\": \"64Mi\"\n        }\n      },\n      \"liveness_probe\": {\n        \"failureThreshold\": 2,\n        \"httpGet\": {\n          \"path\": \"/healthz\",\n          \"port\": \"http\",\n          \"scheme\": \"HTTP\"\n        },\n        \"initialDelaySeconds\": 3,\n        \"periodSeconds\": 5,\n        \"successThreshold\": 1,\n        \"timeoutSeconds\": 1\n      },\n      \"readiness_probe\": {\n        \"failureThreshold\": 3,\n        \"httpGet\": {\n          \"path\": \"/healthz\",\n          \"port\": \"http\",\n          \"scheme\": \"HTTP\"\n        },\n        \"periodSeconds\": 5,\n        \"successThreshold\": 1,\n        \"timeoutSeconds\": 1\n      }\n    }\n  ]\n}",
+      "identifiers": [
+        "Available",
+        "MinimumReplicasAvailable",
+        "Progressing",
+        "ReplicaSetUpdated",
+        "app",
+        "demo-s1",
+        "s1-app"
+      ],
+      "meta": {
+        "arguments": {
+          "namespace": "demo-s1",
+          "name": "s1-app"
+        },
+        "backend": "pack"
+      }
+    },
+    {
+      "id": "ev_12997f657d",
+      "step": [
+        1,
+        5
+      ],
+      "call": "logs_get_container_logs/previous",
+      "source": "kubernetes",
+      "tool": "logs_get_container_logs",
+      "collected_at": "2026-10-19T22:34:04.640000Z",
+      "raw_content": "{\n  \"namespace\": \"demo-s1\",\n  \"pod\": \"s1-app-5468546b65-dvgq5\",\n  \"container\": \"app\",\n  \"previous\": true,\n  \"total_lines\": 1,\n  \"truncated\": false,\n  \"lines\": [\n    \"ERROR invalid APP_MODE \\\"invalid\\\"; expected one of: readonly, standard\"\n  ]\n}",
+      "redacted_content": "{\n  \"namespace\": \"demo-s1\",\n  \"pod\": \"s1-app-5468546b65-dvgq5\",\n  \"container\": \"app\",\n  \"previous\": true,\n  \"total_lines\": 1,\n  \"truncated\": false,\n  \"lines\": [\n    \"ERROR invalid APP_MODE \\\"invalid\\\"; expected one of: readonly, standard\"\n  ]\n}",
+      "identifiers": [
+        "app",
+        "demo-s1",
+        "s1-app-5468546b65-dvgq5"
+      ],
+      "meta": {
+        "arguments": {
+          "namespace": "demo-s1",
+          "pod": "s1-app-5468546b65-dvgq5",
+          "container": "app",
+          "previous": true,
+          "tail_lines": 200
+        },
+        "backend": "pack"
+      }
+    },
+    {
+      "id": "ev_907d61881a",
+      "step": [
+        1,
+        6
+      ],
+      "call": "logs_get_container_logs",
+      "source": "kubernetes",
+      "tool": "logs_get_container_logs",
+      "collected_at": "2026-10-19T22:34:09.210000Z",
+      "raw_content": "{\n  \"namespace\": \"demo-s1\",\n  \"pod\": \"s1-app-5468546b65-dvgq5\",\n  \"container\": \"app\",\n  \"previous\": false,\n  \"total_lines\": 1,\n  \"truncated\": false,\n  \"lines\": [\n    \"ERROR invalid APP_MODE \\\"invalid\\\"; expected one of: readonly, standard\"\n  ]\n}",
+      "redacted_content": "{\n  \"namespace\": \"demo-s1\",\n  \"pod\": \"s1-app-5468546b65-dvgq5\",\n  \"container\": \"app\",\n  \"previous\": false,\n  \"total_lines\": 1,\n  \"truncated\": false,\n  \"lines\": [\n    \"ERROR invalid APP_MODE \\\"invalid\\\"; expected one of: readonly, standard\"\n  ]\n}",
+      "identifiers": [
+        "app",
+        "demo-s1",
+        "s1-app-5468546b65-dvgq5"
+      ],
+      "meta": {
+        "arguments": {
+          "namespace": "demo-s1",
+          "pod": "s1-app-5468546b65-dvgq5",
+          "container": "app",
+          "previous": false,
+          "tail_lines": 200
+        },
+        "backend": "pack"
+      }
+    },
+    {
+      "id": "ev_d7fd206133",
+      "step": [
+        2,
+        1
+      ],
+      "call": "change_get_rollout_history",
+      "source": "kubernetes",
+      "tool": "change_get_rollout_history",
+      "collected_at": "2026-10-19T22:34:39.430000Z",
+      "raw_content": "{\n  \"namespace\": \"demo-s1\",\n  \"deployment\": \"s1-app\",\n  \"revisions\": [\n    {\n      \"revision\": 1,\n      \"replicaset\": \"s1-app-666f75b99\",\n      \"created_at\": \"2026-10-19T22:32:28Z\",\n      \"replicas\": 1,\n      \"ready\": 1\n    },\n    {\n      \"revision\": 2,\n      \"replicaset\": \"s1-app-5468546b65\",\n      \"created_at\": \"2026-10-19T22:32:31Z\",\n      \"replicas\": 1,\n      \"ready\": 0\n    }\n  ],\n  \"template_diff\": {\n    \"from_revision\": 1,\n    \"to_revision\": 2,\n    \"patch\": \"--- revision 1\\n+++ revision 2\\n@@ -10,7 +10,7 @@\\n         \\\"env\\\": [\\n           {\\n             \\\"name\\\": \\\"APP_MODE\\\",\\n-            \\\"value\\\": \\\"standard\\\"\\n+            \\\"value\\\": \\\"invalid\\\"\\n           },\\n           {\\n             \\\"name\\\": \\\"ALLOC_MB\\\",\",\n    \"truncated\": false\n  }\n}",
+      "redacted_content": "{\n  \"namespace\": \"demo-s1\",\n  \"deployment\": \"s1-app\",\n  \"revisions\": [\n    {\n      \"revision\": 1,\n      \"replicaset\": \"s1-app-666f75b99\",\n      \"created_at\": \"2026-10-19T22:32:28Z\",\n      \"replicas\": 1,\n      \"ready\": 1\n    },\n    {\n      \"revision\": 2,\n      \"replicaset\": \"s1-app-5468546b65\",\n      \"created_at\": \"2026-10-19T22:32:31Z\",\n      \"replicas\": 1,\n      \"ready\": 0\n    }\n  ],\n  \"template_diff\": {\n    \"from_revision\": 1,\n    \"to_revision\": 2,\n    \"patch\": \"--- revision 1\\n+++ revision 2\\n@@ -10,7 +10,7 @@\\n         \\\"env\\\": [\\n           {\\n             \\\"name\\\": \\\"APP_MODE\\\",\\n-            \\\"value\\\": \\\"standard\\\"\\n+            \\\"value\\\": \\\"invalid\\\"\\n           },\\n           {\\n             \\\"name\\\": \\\"ALLOC_MB\\\",\",\n    \"truncated\": false\n  }\n}",
+      "identifiers": [
+        "demo-s1",
+        "s1-app",
+        "s1-app-5468546b65",
+        "s1-app-666f75b99"
+      ],
+      "meta": {
+        "arguments": {
+          "namespace": "demo-s1",
+          "deployment": "s1-app"
+        },
+        "backend": "pack"
+      }
+    },
+    {
+      "id": "ev_bc44a24667",
+      "step": [
+        2,
+        2
+      ],
+      "call": "change_list_commits",
+      "source": "git",
+      "tool": "change_list_commits",
+      "collected_at": "2026-10-19T22:34:43.150000Z",
+      "raw_content": "{\n  \"path\": null,\n  \"commits\": [\n    {\n      \"commit\": \"9b9a6ea8a72b\",\n      \"author\": \"Bianque Demo\",\n      \"date\": \"2026-10-19T22:32:31Z\",\n      \"subject\": \"Update app mode configuration\",\n      \"files\": [\n        \"deployment.yaml\"\n      ]\n    },\n    {\n      \"commit\": \"339332f21347\",\n      \"author\": \"Bianque Demo\",\n      \"date\": \"2026-10-19T22:32:28Z\",\n      \"subject\": \"Add s1-app manifests\",\n      \"files\": [\n        \"00-namespace.yaml\",\n        \"README.md\",\n        \"deployment.yaml\",\n        \"service.yaml\"\n      ]\n    }\n  ]\n}",
+      "redacted_content": "{\n  \"path\": null,\n  \"commits\": [\n    {\n      \"commit\": \"9b9a6ea8a72b\",\n      \"author\": \"Bianque Demo\",\n      \"date\": \"2026-10-19T22:32:31Z\",\n      \"subject\": \"Update app mode configuration\",\n      \"files\": [\n        \"deployment.yaml\"\n      ]\n    },\n    {\n      \"commit\": \"339332f21347\",\n      \"author\": \"Bianque Demo\",\n      \"date\": \"2026-10-19T22:32:28Z\",\n      \"subject\": \"Add s1-app manifests\",\n      \"files\": [\n        \"00-namespace.yaml\",\n        \"README.md\",\n        \"deployment.yaml\",\n        \"service.yaml\"\n      ]\n    }\n  ]\n}",
+      "identifiers": [
+        "339332f21347",
+        "9b9a6ea8a72b"
+      ],
+      "meta": {
+        "arguments": {
+          "path": null,
+          "max_count": 20
+        },
+        "backend": "pack"
+      }
+    },
+    {
+      "id": "ev_9cfa6c69db",
+      "step": [
+        2,
+        3
+      ],
+      "call": "change_show_commit",
+      "source": "git",
+      "tool": "change_show_commit",
+      "collected_at": "2026-10-19T22:34:46.770000Z",
+      "raw_content": "{\n  \"commit\": \"9b9a6ea8a72b36341c33db6b42368aca7d56a7db\",\n  \"short\": \"9b9a6ea8a72b\",\n  \"author\": \"Bianque Demo\",\n  \"date\": \"2026-10-19T22:32:31Z\",\n  \"message\": \"Update app mode configuration\",\n  \"diff\": \"diff --git a/deployment.yaml b/deployment.yaml\\nindex 818c3e9..7316b63 100644\\n--- a/deployment.yaml\\n+++ b/deployment.yaml\\n@@ -24,7 +24,7 @@ spec:\\n               containerPort: 8080\\n           env:\\n             - name: APP_MODE\\n-              value: standard\\n+              value: invalid\\n             - name: ALLOC_MB\\n               value: \\\"48\\\"\\n           resources:\",\n  \"diff_truncated\": false\n}",
+      "redacted_content": "{\n  \"commit\": \"9b9a6ea8a72b36341c33db6b42368aca7d56a7db\",\n  \"short\": \"9b9a6ea8a72b\",\n  \"author\": \"Bianque Demo\",\n  \"date\": \"2026-10-19T22:32:31Z\",\n  \"message\": \"Update app mode configuration\",\n  \"diff\": \"diff --git a/deployment.yaml b/deployment.yaml\\nindex 818c3e9..7316b63 100644\\n--- a/deployment.yaml\\n+++ b/deployment.yaml\\n@@ -24,7 +24,7 @@ spec:\\n               containerPort: 8080\\n           env:\\n             - name: APP_MODE\\n-              value: standard\\n+              value: invalid\\n             - name: ALLOC_MB\\n               value: \\\"48\\\"\\n           resources:\",\n  \"diff_truncated\": false\n}",
+      "identifiers": [
+        "9b9a6ea8a72b",
+        "9b9a6ea8a72b36341c33db6b42368aca7d56a7db"
+      ],
+      "meta": {
+        "arguments": {
+          "commit": "9b9a6ea8a72b"
+        },
+        "backend": "pack"
+      }
+    }
+  ],
+  "reports": [
+    {
+      "attempt": 1,
+      "status": "rejected",
+      "body": {
+        "schema_version": "1",
+        "summary": "XREJECTEDX Pod s1-app-5468546b65-dvgq5 in demo-s1 restarts because commit 9b9a6ea8a72b set APP_MODE of s1-app to invalid, which the application rejects at startup.",
+        "impact": "Deployment s1-app has no ready pod of revision 2; the pod of revision 1 still serves.",
+        "timeline": [
+          {
+            "time": "2026-10-19T22:32:31Z",
+            "event": "Commit 9b9a6ea8a72b changed APP_MODE to invalid and revision 2 rolled out.",
+            "citations": [
+              "ev_9cfa6c69db",
+              "ev_d7fd206133"
+            ]
+          },
+          {
+            "time": "2026-10-19T22:33:11Z",
+            "event": "Container app exited with code 2 for the third time.",
+            "citations": [
+              "ev_e0c389d9d4"
+            ]
+          },
+          {
+            "time": "2026-10-19T22:33:27Z",
+            "event": "Alert BianquePodRestarting started firing.",
+            "citations": [
+              "ev_9e686c49e7"
+            ]
+          }
+        ],
+        "root_cause": {
+          "status": "identified",
+          "category": "config_error",
+          "object": {
+            "kind": "Deployment",
+            "namespace": "demo-s1",
+            "name": "s1-app",
+            "field": "spec.template.spec.containers[app].env[APP_MODE]"
+          },
+          "statement": "Commit 9b9a6ea8a72b changed APP_MODE from standard to invalid; the application accepts only readonly or standard and exits with code 2 at startup.",
+          "citations": [
+            "ev_9cfa6c69db",
+            "ev_12997f657d",
+            "ev_e0c389d9d4"
+          ],
+          "confidence": "high"
+        },
+        "claims": [
+          {
+            "statement": "The previous container instance logged that APP_MODE \"invalid\" is not one of readonly or standard.",
+            "citations": [
+              "ev_12997f657d"
+            ]
+          },
+          {
+            "statement": "Revision 2 differs from revision 1 only in APP_MODE.",
+            "citations": [
+              "ev_0000000000"
+            ]
+          },
+          {
+            "statement": "No other commit after the initial manifests changed deployment.yaml.",
+            "citations": [
+              "ev_bc44a24667"
+            ]
+          }
+        ],
+        "missing_evidence": [],
+        "suggestions": [
+          {
+            "action": "Revert commit 9b9a6ea8a72b in the manifest repository and apply the manifests again.",
+            "command": "git revert 9b9a6ea8a72b",
+            "risk": "change",
+            "citations": [
+              "ev_9cfa6c69db"
+            ]
+          },
+          {
+            "action": "After the revert, check that the new pod becomes ready.",
+            "command": "kubectl -n demo-s1 get pods -l app.kubernetes.io/name=s1-app",
+            "risk": "read_only",
+            "citations": [
+              "ev_ec1761dee2"
+            ]
+          }
+        ],
+        "references": [],
+        "followup_questions": [
+          "Why this commit and not an earlier change?",
+          "What values does APP_MODE accept?"
+        ]
+      },
+      "gate_result": {
+        "output_type": "report",
+        "passed": false,
+        "violations": [
+          {
+            "validator": "citation_integrity",
+            "path": "claims[1].citations[0]",
+            "code": "unknown_id"
+          }
+        ]
+      },
+      "created_at": "2026-10-19T22:35:06.200000Z"
+    },
+    {
+      "attempt": 2,
+      "status": "published",
+      "body": {
+        "schema_version": "1",
+        "summary": "Pod s1-app-5468546b65-dvgq5 in demo-s1 restarts because commit 9b9a6ea8a72b set APP_MODE of s1-app to invalid, which the application rejects at startup.",
+        "impact": "Deployment s1-app has no ready pod of revision 2; the pod of revision 1 still serves.",
+        "timeline": [
+          {
+            "time": "2026-10-19T22:32:31Z",
+            "event": "Commit 9b9a6ea8a72b changed APP_MODE to invalid and revision 2 rolled out.",
+            "citations": [
+              "ev_9cfa6c69db",
+              "ev_d7fd206133"
+            ]
+          },
+          {
+            "time": "2026-10-19T22:33:11Z",
+            "event": "Container app exited with code 2 for the third time.",
+            "citations": [
+              "ev_e0c389d9d4"
+            ]
+          },
+          {
+            "time": "2026-10-19T22:33:27Z",
+            "event": "Alert BianquePodRestarting started firing.",
+            "citations": [
+              "ev_9e686c49e7"
+            ]
+          }
+        ],
+        "root_cause": {
+          "status": "identified",
+          "category": "config_error",
+          "object": {
+            "kind": "Deployment",
+            "namespace": "demo-s1",
+            "name": "s1-app",
+            "field": "spec.template.spec.containers[app].env[APP_MODE]"
+          },
+          "statement": "Commit 9b9a6ea8a72b changed APP_MODE from standard to invalid; the application accepts only readonly or standard and exits with code 2 at startup.",
+          "citations": [
+            "ev_9cfa6c69db",
+            "ev_12997f657d",
+            "ev_e0c389d9d4"
+          ],
+          "confidence": "high"
+        },
+        "claims": [
+          {
+            "statement": "The previous container instance logged that APP_MODE \"invalid\" is not one of readonly or standard.",
+            "citations": [
+              "ev_12997f657d"
+            ]
+          },
+          {
+            "statement": "Revision 2 differs from revision 1 only in APP_MODE.",
+            "citations": [
+              "ev_d7fd206133"
+            ]
+          },
+          {
+            "statement": "No other commit after the initial manifests changed deployment.yaml.",
+            "citations": [
+              "ev_bc44a24667"
+            ]
+          }
+        ],
+        "missing_evidence": [],
+        "suggestions": [
+          {
+            "action": "Revert commit 9b9a6ea8a72b in the manifest repository and apply the manifests again.",
+            "command": "git revert 9b9a6ea8a72b",
+            "risk": "change",
+            "citations": [
+              "ev_9cfa6c69db"
+            ]
+          },
+          {
+            "action": "After the revert, check that the new pod becomes ready.",
+            "command": "kubectl -n demo-s1 get pods -l app.kubernetes.io/name=s1-app",
+            "risk": "read_only",
+            "citations": [
+              "ev_ec1761dee2"
+            ]
+          }
+        ],
+        "references": [],
+        "followup_questions": [
+          "Why this commit and not an earlier change?",
+          "What values does APP_MODE accept?"
+        ]
+      },
+      "gate_result": {
+        "output_type": "report",
+        "passed": true,
+        "violations": []
+      },
+      "created_at": "2026-10-19T22:35:20.500000Z"
+    }
+  ]
+}

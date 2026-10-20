@@ -1,0 +1,313 @@
+"""The read interface of investigations: list, detail and calls."""
+
+from __future__ import annotations
+
+from collections.abc import AsyncIterator
+from datetime import timedelta
+from typing import Annotated, Any, Literal
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from bianque.api.schemas import (
+    AlertView,
+    AssessmentView,
+    CallList,
+    CallTotals,
+    CallView,
+    EvidenceView,
+    FindingView,
+    GateView,
+    InvestigationDetail,
+    InvestigationInfo,
+    InvestigationList,
+    InvestigationSummary,
+    PlanView,
+    RejectedAttempt,
+    ReportView,
+    StepView,
+    SuggestionView,
+)
+from bianque.storage.errors import NotFoundError
+from bianque.storage.models import Alert, CallRecord, Evidence, Investigation, Report
+from bianque.storage.repositories import (
+    AssessmentRepository,
+    CallRecordRepository,
+    EvidenceRepository,
+    InvestigationRepository,
+    PlanRepository,
+    ReportRepository,
+    SuggestionRepository,
+)
+
+router = APIRouter(prefix="/api/investigations", tags=["investigations"])
+
+
+async def _session(request: Request) -> AsyncIterator[AsyncSession]:
+    async with request.app.state.sessions() as session:
+        yield session
+
+
+Session = Annotated[AsyncSession, Depends(_session)]
+
+
+async def _investigation(session: AsyncSession, investigation_id: str) -> Investigation:
+    try:
+        return await InvestigationRepository(session).get(investigation_id)
+    except NotFoundError:
+        raise HTTPException(status_code=404, detail="investigation not found") from None
+
+
+@router.get("", response_model=InvestigationList)
+async def list_investigations(
+    session: Session, limit: Annotated[int, Query(ge=1, le=200)] = 50
+) -> InvestigationList:
+    """List the most recently started investigations."""
+    rows = await session.execute(
+        select(Investigation, Alert)
+        .outerjoin(Alert, Alert.id == Investigation.alert_id)
+        .order_by(Investigation.started_at.desc(), Investigation.id.desc())
+        .limit(limit)
+    )
+    pairs = rows.all()
+    finals = await session.execute(
+        select(Report.investigation_id, Report.status).where(
+            Report.investigation_id.in_([inv.id for inv, _ in pairs]),
+            Report.status.in_(("published", "degraded")),
+        )
+    )
+    report_status = {investigation_id: status for investigation_id, status in finals.all()}
+    return InvestigationList(
+        investigations=[
+            InvestigationSummary(
+                id=inv.id,
+                status=inv.status,
+                trigger=inv.trigger,
+                case_id=inv.case_id,
+                alert_name=_label(alert, "alertname"),
+                namespace=_label(alert, "namespace"),
+                pod=_label(alert, "pod"),
+                started_at=inv.started_at,
+                finished_at=inv.finished_at,
+                report_status=_final_status(report_status.get(inv.id)),
+            )
+            for inv, alert in pairs
+        ]
+    )
+
+
+def _final_status(status: str | None) -> Literal["published", "degraded"] | None:
+    if status == "published":
+        return "published"
+    return "degraded" if status == "degraded" else None
+
+
+def _label(alert: Alert | None, name: str) -> str | None:
+    if alert is None:
+        return None
+    value = alert.labels.get(name)
+    return None if value is None else str(value)
+
+
+@router.get("/{investigation_id}", response_model=InvestigationDetail)
+async def get_investigation(investigation_id: str, session: Session) -> InvestigationDetail:
+    """Return everything the detail page shows about one investigation."""
+    inv = await _investigation(session, investigation_id)
+    alert = await session.get(Alert, inv.alert_id) if inv.alert_id is not None else None
+    plans_repo = PlanRepository(session)
+    plans = await plans_repo.list_plans(inv.id)
+    steps = await plans_repo.list_steps(inv.id)
+    evidence = await EvidenceRepository(session).list(inv.id)
+    attempts = await ReportRepository(session).list_attempts(inv.id)
+    final = await ReportRepository(session).get_final(inv.id)
+    suggestions = await SuggestionRepository(session).list_with_decisions(inv.id)
+    alert_evidence = next((e.id for e in evidence if e.source == "alertmanager"), None)
+    return InvestigationDetail(
+        investigation=InvestigationInfo(
+            id=inv.id,
+            status=inv.status,
+            trigger=inv.trigger,
+            case_id=inv.case_id,
+            tool_backend=inv.tool_backend,
+            llm_mode=inv.llm_mode,
+            llm_model=inv.llm_model,
+            token_budget=inv.token_budget,
+            tokens_used=inv.tokens_used,
+            started_at=inv.started_at,
+            finished_at=inv.finished_at,
+            error=inv.error,
+        ),
+        alert=None
+        if alert is None
+        else AlertView(
+            name=_label(alert, "alertname"),
+            status=alert.status,
+            fingerprint=alert.fingerprint,
+            labels=alert.labels,
+            annotations=alert.annotations,
+            starts_at=alert.starts_at,
+            received_at=alert.received_at,
+            evidence_id=alert_evidence,
+        ),
+        plans=[
+            PlanView(
+                id=plan.id,
+                version=plan.version,
+                source=plan.source,
+                rationale=plan.rationale,
+                created_at=plan.created_at,
+                steps=[
+                    StepView(
+                        id=step.id,
+                        seq=step.seq,
+                        domain=step.domain,
+                        goal=step.goal,
+                        agent=step.agent,
+                        suggested_tools=[str(tool) for tool in step.suggested_tools],
+                        expected_evidence=[str(item) for item in step.expected_evidence],
+                        status=step.status,
+                        findings=[FindingView.model_validate(f) for f in step.findings or []],
+                        started_at=step.started_at,
+                        finished_at=step.finished_at,
+                    )
+                    for step in steps
+                    if step.plan_id == plan.id
+                ],
+            )
+            for plan in plans
+        ],
+        assessments=[
+            AssessmentView(
+                round=a.round,
+                sufficient=a.sufficient,
+                reason=a.reason,
+                hypothesis_category=a.hypothesis_category,
+                missing=[str(item) for item in a.missing],
+                rule_override=a.rule_override,
+                created_at=a.created_at,
+            )
+            for a in await AssessmentRepository(session).list(inv.id)
+        ],
+        evidence=[_evidence_view(e) for e in evidence],
+        report=None
+        if final is None
+        else ReportView(
+            id=final.id,
+            attempt=final.attempt,
+            status=_final_status(final.status) or "published",
+            body=final.body,
+            created_at=final.created_at,
+        ),
+        rejected_attempts=[
+            RejectedAttempt(
+                attempt=report.attempt,
+                validators=_validators(report.gate_result),
+                created_at=report.created_at,
+            )
+            for report in attempts
+            if report.status == "rejected"
+        ],
+        suggestions=[
+            SuggestionView(
+                id=item.suggestion.id,
+                seq=item.suggestion.seq,
+                action=item.suggestion.action,
+                command=item.suggestion.command,
+                risk=item.suggestion.risk,
+                citations=[str(c) for c in item.suggestion.citations],
+                state=_state(item.state),
+                decided_by=None if item.confirmation is None else item.confirmation.actor,
+                decided_at=None if item.confirmation is None else item.confirmation.decided_at,
+            )
+            for item in suggestions
+        ],
+    )
+
+
+def _evidence_view(evidence: Evidence) -> EvidenceView:
+    arguments = evidence.meta.get("arguments")
+    return EvidenceView(
+        id=evidence.id,
+        step_id=evidence.step_id,
+        call_id=evidence.call_id,
+        source=evidence.source,
+        tool=evidence.tool,
+        collected_at=evidence.collected_at,
+        redacted_content=evidence.redacted_content,
+        arguments=arguments if isinstance(arguments, dict) else {},
+    )
+
+
+def _state(state: str) -> Literal["pending", "confirmed", "rejected"]:
+    if state == "confirmed":
+        return "confirmed"
+    return "rejected" if state == "rejected" else "pending"
+
+
+def _validators(gate_result: dict[str, Any] | None) -> list[str]:
+    """Return the validator names of a stored gate result, and nothing else of it."""
+    if not gate_result:
+        return []
+    violations = gate_result.get("violations") or []
+    return sorted({str(v.get("validator")) for v in violations if isinstance(v, dict)})
+
+
+@router.get("/{investigation_id}/calls", response_model=CallList)
+async def list_calls(investigation_id: str, session: Session) -> CallList:
+    """Return the call records of one investigation with their totals."""
+    inv = await _investigation(session, investigation_id)
+    records = await CallRecordRepository(session).list_for_investigation(inv.id)
+    produced = await session.execute(
+        select(Evidence.call_id, Evidence.id)
+        .where(Evidence.investigation_id == inv.id, Evidence.call_id.is_not(None))
+        .order_by(Evidence.id)
+    )
+    evidence_by_call: dict[int, list[str]] = {}
+    for call_id, evidence_id in produced.all():
+        if call_id is not None:
+            evidence_by_call.setdefault(call_id, []).append(evidence_id)
+    calls = [_call_view(record, evidence_by_call.get(record.id, [])) for record in records]
+    end = inv.finished_at or max(
+        (r.started_at + timedelta(milliseconds=r.latency_ms or 0) for r in records),
+        default=inv.started_at,
+    )
+    return CallList(
+        calls=calls,
+        totals=CallTotals(
+            calls=len(calls),
+            model_calls=sum(1 for c in calls if c.kind == "model"),
+            tool_calls=sum(1 for c in calls if c.kind == "tool"),
+            tokens_in=sum(c.tokens_in or 0 for c in calls),
+            tokens_out=sum(c.tokens_out or 0 for c in calls),
+            latency_ms=sum(c.latency_ms or 0 for c in calls),
+            elapsed_ms=max(0, int((end - inv.started_at).total_seconds() * 1000)),
+        ),
+    )
+
+
+def _call_view(record: CallRecord, evidence_ids: list[str]) -> CallView:
+    tool = record.kind == "tool"
+    return CallView(
+        id=record.id,
+        agent=record.agent,
+        kind="tool" if tool else "model",
+        name=record.name,
+        caller=record.caller,
+        started_at=record.started_at,
+        latency_ms=record.latency_ms,
+        status=record.status,
+        retries=record.retries,
+        input_summary=record.input_summary if tool else None,
+        output_summary=record.output_summary if tool else None,
+        error=record.error if tool else None,
+        evidence_ids=evidence_ids,
+        tokens_in=record.tokens_in,
+        tokens_out=record.tokens_out,
+        gate=None
+        if tool or record.gate_result is None
+        else GateView(
+            passed=bool(record.gate_result.get("passed")),
+            validators=_validators(record.gate_result),
+        ),
+    )

@@ -1,4 +1,4 @@
-"""Fixtures for tests against a real PostgreSQL.
+"""Shared fixtures: a real PostgreSQL for storage and API tests.
 
 Database constraints, triggers and generated columns can only be proven on a real
 PostgreSQL, so these tests never skip:
@@ -33,7 +33,7 @@ from sqlalchemy.pool import NullPool
 
 from bianque.storage.db import session_factory
 
-BACKEND_DIR = Path(__file__).resolve().parents[2]
+BACKEND_DIR = Path(__file__).resolve().parents[1]
 IMAGE = "pgvector/pgvector:pg16"
 URL_ENV = "BIANQUE_TEST_DATABASE_URL"
 STARTUP_TIMEOUT_SECONDS = 60

@@ -32,6 +32,18 @@ Bianque is an alert-driven root cause analysis agent for Kubernetes: when an ale
 
 注入后 Pod 反复重启，约 1 分钟内（实测 48 至 76 秒）Alertmanager 出现一条 `BianquePodRestarting` 告警；恢复后 1 至 2 分钟内告警解除。所有命令都指定 `kind-bianque-demo` 这个 kubectl context，建集群后会切回原来的当前 context，不会改动其他集群。
 
+## 回放形态
+
+回放形态不需要 kind 集群：Docker Compose 起数据库、后端与前端（nginx 提供页面，并把 `/api` 代理到后端，页面与接口同源）。目前只起服务；自动导入运维手册、用证据包重跑 S1 用例还在开发中。
+
+| 命令 | 作用 |
+| --- | --- |
+| `make replay` | 构建镜像并启动，健康检查通过后打印地址（默认 `http://127.0.0.1:8080`，`BIANQUE_REPLAY_PORT` 可改）。第一次运行时生成数据库口令，写进被忽略的 `.demo/replay.env` |
+| `make replay-down` | 停止并删除容器与数据卷 |
+| `make e2e` | 在回放形态上加载一份 S1-a 调查夹具，跑 Playwright 端到端测试；宽屏与窄屏、浅色与深色的截图写到 `frontend/e2e/screenshots/` |
+
+前端开发：`cd frontend && npm ci && npm run dev`，开发服务器把 `/api` 代理到 `BIANQUE_BACKEND_URL`（默认 `http://127.0.0.1:8000`）；后端用 `uvicorn --factory bianque.api.app:create_app` 启动。`make check` 包含前端的 lint、类型检查、单元测试与构建。
+
 ## 证据包
 
 证据包是故障发生时整个演示命名空间（Pod、事件、Deployment、ReplicaSet、全部容器日志）与清单 Git 仓的快照，外加触发调查的那条告警。扁鹊的每个取证工具都有两种后端：读真实集群与清单仓的真实后端，和读证据包的回放后端；两者接口相同，同一查询返回相同的内容。所以没有 kind 集群也能用证据包重跑调查与评测，回放时把录制时间当作当前时间。
