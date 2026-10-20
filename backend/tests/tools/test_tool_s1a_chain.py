@@ -12,7 +12,7 @@ import json
 from s1_evidence import NAMESPACE, Tools, changed
 from tool_fakes import CASES
 
-from bianque.redaction import redact
+from bianque.redaction import build_engine, redact
 from bianque.tools import registry
 from bianque.tools.backends.pack import open_pack
 from bianque.tools.change import ShowCommitArgs
@@ -63,3 +63,28 @@ async def test_names_survive_from_step_to_step() -> None:
         assert full in raw.text
         assert full not in redact(raw.text)
         assert redact(pod) != pod
+
+
+async def test_container_images_survive_redaction() -> None:
+    """An image reference stays readable, so an image pull failure can name the image."""
+    async with open_pack(CASES / "s1-a" / "pack") as backends:
+        tools = Tools(backends)
+        alert = json.loads((CASES / "s1-a/pack/alert.json").read_text())["alerts"][0]
+        status = await tools.result(
+            "k8s_get_pod_status", namespace=NAMESPACE, pod=alert["labels"]["pod"]
+        )
+        image = json.loads(status.model_view.text)["containers"][0]["image"]
+        assert image == "docker.io/library/bianque-s1-app:dev"
+        assert image in status.identifiers
+        assert redact(image) != image
+
+        deployment = await tools.result("k8s_get_deployment", namespace=NAMESPACE, name="s1-app")
+        spec_image = json.loads(deployment.model_view.text)["containers"][0]["image"]
+        assert spec_image in deployment.identifiers
+
+
+def test_preserved_images_still_pass_the_rule_based_detectors() -> None:
+    """Preserving an image only exempts it from the entropy check, not from the rules."""
+    engine = build_engine(("corp.internal",))
+    image = "registry.corp.internal/team/app-7d9f8c6b5x2k4pqq:dev"
+    assert "corp.internal" not in engine.redact(image, preserve=[image])

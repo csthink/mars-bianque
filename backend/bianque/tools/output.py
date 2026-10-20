@@ -20,9 +20,9 @@ class ToolOutput:
 
     Attributes:
         text: The result before redaction.
-        identifiers: Object names, container names, label values and commit hashes in
-            the result. Redaction keeps them intact so that a later tool call can use
-            them; they are stored with the evidence.
+        identifiers: Object names, container names, container images, label values and
+            commit hashes in the result. Redaction keeps them intact so that a later
+            tool call can use them; they are stored with the evidence.
     """
 
     text: str

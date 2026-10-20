@@ -179,7 +179,8 @@ async def k8s_get_pod_status(args: PodStatusArgs, backends: ToolBackends) -> Too
             for s in _statuses(pod)
         ],
     }
-    return ToolOutput(render(data), _pod_identifiers(pod))
+    images = [str(container["image"]) for container in data["containers"] if container["image"]]
+    return ToolOutput(render(data), collect_identifiers(_pod_identifiers(pod), images))
 
 
 class ListEventsArgs(ToolArgs):
@@ -333,6 +334,7 @@ async def k8s_get_deployment(args: DeploymentArgs, backends: ToolBackends) -> To
     identifiers = collect_identifiers(
         [meta.get("name"), args.namespace],
         [c.get("name") for c in containers],
+        [c.get("image") for c in containers],
         status_words(status.get("conditions") or [], "type", "reason"),
     )
     return ToolOutput(render(data), identifiers)
