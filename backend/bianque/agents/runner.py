@@ -216,7 +216,8 @@ async def execute_investigation(
     """Run a pending investigation to the end.
 
     Args:
-        settings: Process settings: model mode, limits, budget and database.
+        settings: Process settings: model mode, limits, budget and database. The
+            recordings directories are narrowed to the investigation's case.
         investigation_id: The pending investigation.
         alert: The alert under investigation.
         sessions: Database sessions.
@@ -230,6 +231,9 @@ async def execute_investigation(
     Returns:
         The investigation ID and its final status.
     """
+    async with sessions() as session:
+        case_id = (await InvestigationRepository(session).get(investigation_id)).case_id
+    settings = settings.for_case(case_id)
     engine = build_redaction_engine(settings)
     recorder = DatabaseCallRecorder(sessions)
     events = EventWriter(sessions, notifier)

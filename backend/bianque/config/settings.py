@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, m
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from bianque.auth.passwords import BCRYPT_HASH
+from bianque.config.manifest import MANIFEST_FILE, ManifestError, load_manifest
 
 #: The one environment variable prefix in the repository. ``check_env_prefix.py``
 #: asserts this value statically.
@@ -124,12 +125,12 @@ class Settings(BaseSettings):
     #: for a provider whose default thinking mode rejects a forced tool choice.
     llm_extra_body: Annotated[dict[str, Any], NoDecode] = {}
 
-    #: Directory searched for recorded responses in ``recorded`` mode
-    #: (``BIANQUE_LLM_RECORDINGS_DIR``).
+    #: Recorded responses for ``recorded`` mode (``BIANQUE_LLM_RECORDINGS_DIR``): one
+    #: directory per case, and the recording manifest (``bianque.config.manifest``).
     llm_recordings_dir: Path = Path("eval/recordings")
 
     #: When set in ``live`` mode, every successful call is recorded into this directory
-    #: (``BIANQUE_LLM_RECORD_DIR``).
+    #: (``BIANQUE_LLM_RECORD_DIR``), in a subdirectory per case.
     llm_record_dir: Path | None = None
 
     #: Token budget of one investigation (``BIANQUE_INVESTIGATION_TOKEN_BUDGET``). It is
@@ -273,6 +274,20 @@ class Settings(BaseSettings):
             raise ValueError("BIANQUE_DEMO_USERS needs BIANQUE_SESSION_SECRET")
         return self
 
+    def for_case(self, case: str | None) -> Settings:
+        """Return the settings of a run on ``case``: its recordings directories.
+
+        ``recorded`` mode looks up only the case's directory: two cases with the same
+        alert make the same first request, and each has its own recording of it. A run
+        without a case keeps the root, which holds no recordings.
+        """
+        if case is None:
+            return self
+        update: dict[str, Path] = {"llm_recordings_dir": self.llm_recordings_dir / case}
+        if self.llm_record_dir is not None:
+            update["llm_record_dir"] = self.llm_record_dir / case
+        return self.model_copy(update=update)
+
     @field_validator("llm_extra_body", mode="before")
     @classmethod
     def _parse_extra_body(cls, value: Any) -> Any:
@@ -282,10 +297,43 @@ class Settings(BaseSettings):
         return value
 
 
+def with_recorded_model(settings: Settings) -> Settings:
+    """Take the model name and ``extra_body`` of ``recorded`` mode from the manifest.
+
+    Both are part of the request key, so a replay must use what the recordings were made
+    with. Values configured explicitly must agree with the manifest.
+
+    Raises:
+        ManifestError: The manifest is invalid, or disagrees with configured values.
+    """
+    if settings.llm_mode != "recorded":
+        return settings
+    manifest = load_manifest(settings.llm_recordings_dir)
+    if manifest is None:
+        return settings
+    path = settings.llm_recordings_dir / MANIFEST_FILE
+    if settings.llm_model and settings.llm_model != manifest.model:
+        raise ManifestError(
+            f"BIANQUE_LLM_MODEL is {settings.llm_model!r}, but {path} was recorded with "
+            f"{manifest.model!r}; unset it to replay"
+        )
+    if settings.llm_extra_body and settings.llm_extra_body != manifest.extra_body:
+        raise ManifestError(
+            f"BIANQUE_LLM_EXTRA_BODY differs from the extra_body {path} was recorded with; "
+            "unset it to replay"
+        )
+    return settings.model_copy(
+        update={"llm_model": manifest.model, "llm_extra_body": manifest.extra_body}
+    )
+
+
 def get_settings() -> Settings:
     """Build a settings instance from the current environment.
+
+    In ``recorded`` mode the model name and ``extra_body`` come from the recording
+    manifest (``with_recorded_model``).
 
     Returns:
         A frozen settings instance.
     """
-    return Settings()
+    return with_recorded_model(Settings())

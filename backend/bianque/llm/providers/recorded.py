@@ -23,7 +23,7 @@ class RecordedProvider:
         """Remember the recordings directory.
 
         Args:
-            root: Directory searched recursively for recording files.
+            root: The directory of one case's recording files.
         """
         self._root = root
         self._index: dict[str, Recording] | None = None
@@ -51,8 +51,10 @@ class RecordedProvider:
         if recording is None:
             raise RecordingNotFoundError(
                 f"no recorded response for request key {key} (agent {request.agent!r}, "
-                f"operation {request.operation!r}) under {self._root}; the prompt, tool "
-                "schemas or model changed since recording, so record again in live mode"
+                f"operation {request.operation!r}) in {self._root}; the prompt, tool "
+                "schemas or model changed since recording, so record again in live mode "
+                "(recorded mode replays the case of an investigation; one without a case "
+                "has no recordings)"
             )
         return recording.completion
 

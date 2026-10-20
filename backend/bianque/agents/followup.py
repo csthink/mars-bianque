@@ -204,6 +204,8 @@ class _Context:
     """What one answer is generated from, read from the database."""
 
     investigation_id: str
+    #: The evaluation case of the investigation; its recordings answer in ``recorded`` mode.
+    case_id: str | None
     evidence: tuple[EvidenceView, ...]
     report: dict[str, Any]
     suggestions: tuple[SuggestionView, ...]
@@ -249,12 +251,9 @@ class FollowupService:
         self._sessions = sessions
         self._engine: RedactionEngine = build_redaction_engine(settings)
         self._recorder = DatabaseCallRecorder(sessions)
-        self._gateway: LLMGateway = build_gateway(
-            settings,
-            recorder=self._recorder,
-            scripted_rules=[*rules, *ROLE_RULES],
-            sleep=model_sleep,
-        )
+        self._rules = [*rules, *ROLE_RULES]
+        self._model_sleep = model_sleep
+        self._gateways: dict[str | None, LLMGateway] = {}
         self._knowledge = knowledge or KnowledgeRetriever(sessions, build_embedder(settings))
         self._busy: set[int] = set()
         self._tasks: set[asyncio.Task[None]] = set()
@@ -327,6 +326,19 @@ class FollowupService:
         task.add_done_callback(finished)
         return self._events(run, task)
 
+    def _gateway(self, case_id: str | None) -> LLMGateway:
+        """Return the gateway for questions about an investigation of ``case_id``."""
+        gateway = self._gateways.get(case_id)
+        if gateway is None:
+            gateway = build_gateway(
+                self._settings.for_case(case_id),
+                recorder=self._recorder,
+                scripted_rules=self._rules,
+                sleep=self._model_sleep,
+            )
+            self._gateways[case_id] = gateway
+        return gateway
+
     async def close(self) -> None:
         """Cancel the questions being answered: the process is shutting down."""
         tasks = list(self._tasks)
@@ -389,7 +401,7 @@ class FollowupService:
         run.progress("generating")
         try:
             gated = await generate_gated(
-                self._gateway,
+                self._gateway(context.case_id),
                 self._recorder,
                 prompt,
                 context=CallContext(agent=FOLLOWUP, operation=ANSWER, session_id=session_id),
@@ -439,6 +451,7 @@ class FollowupService:
             messages = await FollowupRepository(session).list_messages(session_id)
         return _Context(
             investigation_id=investigation_id,
+            case_id=investigation.case_id,
             evidence=tuple(
                 EvidenceView(e.id, e.source, e.tool, e.redacted_content, tuple(e.identifiers))
                 for e in evidence

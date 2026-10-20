@@ -6,6 +6,7 @@
   the agent and the call site; there is no fallback to another mode.
 - A recording with another schema version, a broken file, or two files with the same
   key raise ``RecordingFormatError`` naming the file.
+- A case reads only its own directory of recordings.
 - The recordings directory is read on the first call, not when the gateway is built.
 """
 
@@ -13,6 +14,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from llm_fakes import (
@@ -27,6 +29,7 @@ from llm_fakes import (
     status,
 )
 
+from bianque.config.manifest import ManifestError, RecordingManifest, write_manifest
 from bianque.llm import (
     CallContext,
     LLMCompletion,
@@ -107,6 +110,20 @@ async def _record_one(monkeypatch: pytest.MonkeyPatch, record_dir: Path) -> LLMC
     return completion
 
 
+def _manifest(**changes: Any) -> RecordingManifest:
+    fields: dict[str, Any] = {
+        "schema_version": 1,
+        "model": MODEL,
+        "extra_body": json.loads(_EXTRA_BODY),
+        "endpoint_host": "llm.example.test",
+        "recorded_at": "2026-10-20T12:00:00+00:00",
+        "cases": ["s1-a", "s1-d"],
+        "prompts": {"plan.md": "0" * 64},
+        "tool_schemas_sha256": "1" * 64,
+    }
+    return RecordingManifest.model_validate({**fields, **changes})
+
+
 def _expected_key(text: str = "why did checkout restart") -> str:
     """The request key of ``_ask(text)`` under the replay settings."""
     return request_key(
@@ -172,12 +189,11 @@ async def test_failed_live_call_writes_no_recording(
 async def test_recorded_mode_replays_the_recorded_completion(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    root = tmp_path / "recordings"
-    # The file is written one level down; the replay indexes the root recursively.
-    recorded = await _record_one(monkeypatch, root / "case-oom")
+    case = tmp_path / "recordings" / "case-oom"
+    recorded = await _record_one(monkeypatch, case)
 
     endpoint = FakeEndpoint()
-    gateway = _replay_gateway(monkeypatch, root, endpoint)
+    gateway = _replay_gateway(monkeypatch, case, endpoint)
     assert gateway.provider_name == "recorded"
     assert gateway.endpoint_host is None
 
@@ -277,10 +293,9 @@ async def test_recording_with_missing_field_raises_format_error(
 async def test_duplicate_request_key_raises_format_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    await _record_one(monkeypatch, tmp_path / "case-a")
-    [original] = list((tmp_path / "case-a").iterdir())
-    copy = tmp_path / "case-b" / original.name
-    copy.parent.mkdir()
+    await _record_one(monkeypatch, tmp_path)
+    [original] = list(tmp_path.iterdir())
+    copy = tmp_path / "copy.json"
     copy.write_text(original.read_text(encoding="utf-8"), encoding="utf-8")
 
     gateway = _replay_gateway(monkeypatch, tmp_path)
@@ -293,6 +308,27 @@ async def test_duplicate_request_key_raises_format_error(
     assert str(copy) in message
 
 
+async def test_a_case_reads_only_its_own_directory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Two cases record the same first request; each replays its own recording."""
+    await _record_one(monkeypatch, tmp_path / "s1-a")
+    await _record_one(monkeypatch, tmp_path / "s1-d")
+    write_manifest(tmp_path, _manifest())
+
+    # The model and the extra body come from the manifest.
+    settings = settings_from_env(
+        monkeypatch, {"BIANQUE_LLM_MODE": "recorded", "BIANQUE_LLM_RECORDINGS_DIR": tmp_path}
+    )
+    assert settings.llm_model == MODEL
+    replayed = await _ask(build_gateway(settings.for_case("s1-d"), sleep=SleepLog()))
+    assert replayed.text == "checking logs"
+
+    # The root holds case directories and the manifest, never a recording.
+    with pytest.raises(RecordingNotFoundError, match="one without a case has no recordings"):
+        await _ask(build_gateway(settings.for_case(None), sleep=SleepLog()))
+
+
 async def test_recordings_are_read_on_first_call_not_at_construction(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -303,3 +339,58 @@ async def test_recordings_are_read_on_first_call_not_at_construction(
 
     with pytest.raises(RecordingFormatError, match="broken.json"):
         await _ask(gateway)
+
+
+# -- The recording manifest ------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("env", "message"),
+    [
+        ({"BIANQUE_LLM_MODEL": "another-model"}, "unset it to replay"),
+        ({"BIANQUE_LLM_EXTRA_BODY": "{}"}, None),
+        ({"BIANQUE_LLM_EXTRA_BODY": '{"thinking": {"type": "enabled"}}'}, "unset it to replay"),
+        ({"BIANQUE_LLM_MODEL": MODEL, "BIANQUE_LLM_EXTRA_BODY": _EXTRA_BODY}, None),
+    ],
+)
+def test_configured_values_must_agree_with_the_manifest(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, env: dict[str, str], message: str | None
+) -> None:
+    write_manifest(tmp_path, _manifest())
+    full: dict[str, str | Path] = {
+        "BIANQUE_LLM_MODE": "recorded",
+        "BIANQUE_LLM_RECORDINGS_DIR": tmp_path,
+        **env,
+    }
+    if message is None:
+        settings = settings_from_env(monkeypatch, full)
+        assert (settings.llm_model, settings.llm_extra_body) == (MODEL, json.loads(_EXTRA_BODY))
+    else:
+        with pytest.raises(ManifestError, match=message):
+            settings_from_env(monkeypatch, full)
+
+
+def test_other_modes_ignore_the_manifest(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    write_manifest(tmp_path, _manifest())
+    settings = settings_from_env(
+        monkeypatch, {"BIANQUE_LLM_MODE": "scripted", "BIANQUE_LLM_RECORDINGS_DIR": tmp_path}
+    )
+    assert settings.llm_model == ""
+
+
+@pytest.mark.parametrize(
+    ("content", "message"),
+    [
+        ('{"schema_version": 2}', "schema_version is 2, expected 1"),
+        ("not json", "cannot read the recording manifest"),
+        ('{"schema_version": 1, "model": "m"}', "manifest.json"),
+    ],
+)
+def test_a_malformed_manifest_fails_naming_the_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, content: str, message: str
+) -> None:
+    (tmp_path / "manifest.json").write_text(content, encoding="utf-8")
+    with pytest.raises(ManifestError, match=message):
+        settings_from_env(
+            monkeypatch, {"BIANQUE_LLM_MODE": "recorded", "BIANQUE_LLM_RECORDINGS_DIR": tmp_path}
+        )

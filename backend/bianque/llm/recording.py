@@ -2,7 +2,8 @@
 
 A recording file holds one normalized request and the response the model gave to it.
 Files are written by ``live`` mode when a record directory is configured, committed
-under ``eval/recordings/``, and read by ``recorded`` mode.
+under ``eval/recordings/<case>/``, and read by ``recorded`` mode, one case directory at a
+time (``Settings.for_case``).
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from bianque.config.manifest import MANIFEST_FILE
 from bianque.llm.errors import RecordingFormatError
 from bianque.llm.request import ModelRequest, normalize_request, request_key
 from bianque.llm.types import LLMCompletion, LLMUsage, ToolCall
@@ -123,21 +125,25 @@ def load_recording(path: Path) -> Recording:
         raise RecordingFormatError(f"{path}: invalid recording file: {exc}") from exc
 
 
-def iter_recording_files(root: Path) -> Iterator[Path]:
-    """Yield every recording file under ``root`` in a stable order."""
-    if root.is_dir():
-        yield from sorted(root.rglob("*.json"))
+def iter_recording_files(directory: Path) -> Iterator[Path]:
+    """Yield the recording files of one directory in a stable order.
+
+    Subdirectories are not searched: they hold other cases. The recording manifest is
+    not a recording.
+    """
+    if directory.is_dir():
+        yield from sorted(p for p in directory.glob("*.json") if p.name != MANIFEST_FILE)
 
 
-def index_recordings(root: Path) -> dict[str, Recording]:
-    """Load every recording under ``root``, keyed by request key.
+def index_recordings(directory: Path) -> dict[str, Recording]:
+    """Load the recordings of one directory, keyed by request key.
 
     Raises:
         RecordingFormatError: A file is invalid, or two files record the same key.
     """
     index: dict[str, Recording] = {}
     origin: dict[str, Path] = {}
-    for path in iter_recording_files(root):
+    for path in iter_recording_files(directory):
         recording = load_recording(path)
         if recording.key in index:
             raise RecordingFormatError(

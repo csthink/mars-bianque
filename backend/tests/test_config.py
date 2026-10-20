@@ -102,3 +102,12 @@ def test_unknown_mode_is_rejected(monkeypatch: pytest.MonkeyPatch, env_name: str
     monkeypatch.setenv(env_name, "no-such-mode")
     with pytest.raises(ValidationError):
         get_settings()
+
+
+def test_a_case_narrows_the_recordings_directories(tmp_path: Path) -> None:
+    settings = Settings(llm_recordings_dir=tmp_path / "rec", llm_record_dir=tmp_path / "new")
+    narrowed = settings.for_case("s1-b")
+    assert narrowed.llm_recordings_dir == tmp_path / "rec" / "s1-b"
+    assert narrowed.llm_record_dir == tmp_path / "new" / "s1-b"
+    assert settings.for_case(None) is settings
+    assert Settings(llm_recordings_dir=tmp_path).for_case("s1-a").llm_record_dir is None
