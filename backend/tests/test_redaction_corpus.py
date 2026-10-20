@@ -16,6 +16,8 @@ fragments, so no complete secret literal appears in the source.
 from __future__ import annotations
 
 import json
+import random
+import string
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +28,7 @@ from bianque.redaction.engine import RedactionEngine
 from bianque.redaction.entropy import (
     MIN_HIGH_ENTROPY_LEN,
     is_high_entropy,
+    is_word_shaped,
     shannon_entropy,
 )
 from bianque.redaction.patterns import PLACEHOLDER_PREFIX
@@ -187,6 +190,59 @@ def test_short_or_low_entropy_not_high_entropy() -> None:
     assert not is_high_entropy("a" * (MIN_HIGH_ENTROPY_LEN + 5))
     # Random hex has higher entropy than a repeated character.
     assert shannon_entropy("9f8e7d6c5b4a3021ffee") > shannon_entropy("a" * 20)
+
+
+# -- Word-shaped text is not high entropy -----------------------------------------
+# Kubernetes field names and status reasons pass the entropy threshold, but they are
+# words; masking them hid diagnosis and made the gate reject model outputs that named
+# them.
+@pytest.mark.parametrize(
+    "token",
+    [
+        "ProgressDeadlineExceeded",
+        "maxUnavailable/maxSurge",
+        "Running/CrashLoopBackOff/Error",
+        "ReplicaSetUpdated/NewReplicaSetAvailable",
+        "MinimumReplicasUnavailable",
+        "terminationMessagePolicy",
+        "FailedCreatePodSandBox",
+        "OOMKilled/CrashLoopBackOff",
+    ],
+)
+def test_word_shaped_tokens_are_not_high_entropy(token: str) -> None:
+    assert is_word_shaped(token)
+    assert detect(f"the pod reported {token} twice") == []
+
+
+@pytest.mark.parametrize(
+    "token",
+    [
+        "aVeryLongOpaqueSessionValue1234",  # a digit
+        "xQzRtPlKmNbVcXzLkJhGfDsA",  # words without vowels
+        "AbCdEfGhIjKlMnOpQrStUvWx",  # two-letter words
+        "4bf92f3577b34da6a3ce929d0e0e4736",  # hex
+        "",
+    ],
+)
+def test_tokens_that_are_not_word_shaped(token: str) -> None:
+    assert not is_word_shaped(token)
+
+
+def test_random_tokens_are_rarely_word_shaped() -> None:
+    # The exemption must not let random keys through: none of length 24 or more, and
+    # at most a few in ten thousand of length 20 (about 5 in 100,000 measured).
+    rng = random.Random(13)
+    alphabet = string.ascii_letters + string.digits + "+/-_"
+    for length, allowed in ((20, 10), (24, 0), (32, 0)):
+        tokens = ("".join(rng.choices(alphabet, k=length)) for _ in range(20000))
+        assert sum(is_word_shaped(token) for token in tokens) <= allowed
+
+
+def test_secret_joined_to_words_is_still_masked() -> None:
+    secret = "".join(["Zx9Qw", "7Rt2Lm", "4Np8Vb"])
+    text = f"maxUnavailable/maxSurge/{secret}"
+    assert [finding.matched for finding in detect(text)] == [text]
+    assert secret not in redact(text)
 
 
 # -- Detection and rewriting are separate: detect is read-only, empty after redact --

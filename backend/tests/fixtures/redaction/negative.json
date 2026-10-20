@@ -59,7 +59,9 @@
       "class": "internal-domain",
       "input": "public site www.example.com resolved fine",
       "must_equal": "public site www.example.com resolved fine",
-      "internal_domain_suffixes": ["corp.internal"],
+      "internal_domain_suffixes": [
+        "corp.internal"
+      ],
       "_why": "A public domain outside the suffix list does not match and is not generalized."
     },
     {
@@ -73,6 +75,24 @@
       "input": "req trace_id=4bf92f3577b34da6a3ce929d0e0e4736 handled",
       "must_equal": "req trace_id=4bf92f3577b34da6a3ce929d0e0e4736 handled",
       "_why": "A 32-hex trace id exceeds the entropy threshold, but the trace_id= label marks it as diagnosable structure (it links traces), so the entropy fallback must not mask it."
+    },
+    {
+      "class": "high-entropy",
+      "input": "deployment status: reason ProgressDeadlineExceeded, then NewReplicaSetAvailable",
+      "must_equal": "deployment status: reason ProgressDeadlineExceeded, then NewReplicaSetAvailable",
+      "_why": "Long Kubernetes condition reasons are words, not random tokens: the entropy fallback must not mask them."
+    },
+    {
+      "class": "high-entropy",
+      "input": "strategy RollingUpdate with maxUnavailable/maxSurge at 25%; pod phase Running/CrashLoopBackOff/Error",
+      "must_equal": "strategy RollingUpdate with maxUnavailable/maxSurge at 25%; pod phase Running/CrashLoopBackOff/Error",
+      "_why": "Field names and states joined by / form one base64-shaped candidate of ordinary words: not masked."
+    },
+    {
+      "class": "high-entropy",
+      "input": "container spec terminationMessagePolicy: File, terminationGracePeriodSeconds: 30",
+      "must_equal": "container spec terminationMessagePolicy: File, terminationGracePeriodSeconds: 30",
+      "_why": "Kubernetes field names are camel-case words: not masked."
     }
   ]
 }

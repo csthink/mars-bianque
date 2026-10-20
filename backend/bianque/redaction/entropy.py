@@ -27,6 +27,16 @@ remaining piece is checked on its own (see ``iter_high_entropy_spans``). So
 secret glued before or after them (with ``_`` or ``-``) is still masked and still
 reported by ``detect()``. A secret cannot hide behind a digest.
 
+**Exemption for word-shaped text**: Kubernetes field names and status reasons such as
+``ProgressDeadlineExceeded`` or ``maxUnavailable/maxSurge`` (``/`` is a base64
+character, so words joined by it form one candidate) are long and varied enough to pass
+the entropy threshold. A piece made only of words is not high entropy (see
+``is_word_shaped``): split at ``/ _ - + =`` and at camel-case boundaries, every word
+must be a capitalized or lowercase word of at least three letters, or an acronym of two
+to five capitals, every non-acronym word must contain a vowel, and the mean word length
+must be at least four. A piece with any digit is never word-shaped. Of random base64
+tokens, about 5 in 100,000 of length 20 and none of length 24 or more pass as words.
+
 Detection and rewriting are separate: this module only exposes detection primitives
 (is this high-entropy, and where are the tokens). Rewriting into placeholders is done
 in ``engine``.
@@ -89,6 +99,40 @@ _LABELED_TRACE_RE = re.compile(
     r"(?<![A-Za-z0-9])(?:trace|span)[_-]?id\s*[=:]\s*(?P<hex>[0-9a-fA-F]{16,32})(?![0-9A-Za-z])",
     re.IGNORECASE,
 )
+
+
+#: Separators between the words of a word-shaped piece.
+_WORD_SEPARATOR_RE = re.compile(r"[/_+=-]+")
+#: Camel-case word boundaries: ``maxSurge`` -> ``max|Surge``, ``OOMKilled`` -> ``OOM|Killed``.
+_CAMEL_BOUNDARY_RE = re.compile(r"(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
+#: One word: capitalized or lowercase with at least three letters, or a short acronym.
+_WORD_RE = re.compile(r"[A-Z]?[a-z]{2,}|(?P<acronym>[A-Z]{2,5})")
+_VOWEL_RE = re.compile(r"[aeiouyAEIOUY]")
+#: Minimum mean length of the words of a word-shaped piece.
+_MIN_MEAN_WORD_LEN = 4
+
+
+def is_word_shaped(token: str) -> bool:
+    """Return whether a token is made only of words, like a field name or status reason.
+
+    ``ProgressDeadlineExceeded``, ``maxUnavailable/maxSurge`` and
+    ``Running/CrashLoopBackOff/Error`` are word-shaped; anything with a digit, a word
+    without a vowel or mostly short words is not.
+    """
+    words: list[str] = []
+    for part in _WORD_SEPARATOR_RE.split(token):
+        if not part:
+            continue
+        if not (part.isascii() and part.isalpha()):
+            return False
+        words.extend(_CAMEL_BOUNDARY_RE.split(part))
+    if not words:
+        return False
+    for word in words:
+        match = _WORD_RE.fullmatch(word)
+        if match is None or (match.group("acronym") is None and not _VOWEL_RE.search(word)):
+            return False
+    return sum(map(len, words)) / len(words) >= _MIN_MEAN_WORD_LEN
 
 
 def iter_diagnostic_structure_spans(text: str) -> list[tuple[int, int]]:
@@ -213,7 +257,8 @@ def iter_high_entropy_spans(
     replacement.
 
     Occurrences of ``preserve`` identifiers are subtracted the same way as diagnostic
-    structures (see ``iter_preserved_spans``).
+    structures (see ``iter_preserved_spans``). Word-shaped pieces (see
+    ``is_word_shaped``) are not reported.
     """
     diagnostic = iter_diagnostic_structure_spans(text) + iter_preserved_spans(
         text, preserve, min_len=min_len
@@ -230,6 +275,8 @@ def iter_high_entropy_spans(
                 continue
             off = seg.index(stripped)
             s0, e0 = seg_start + off, seg_start + off + len(stripped)
-            if is_high_entropy(stripped, threshold=threshold, min_len=min_len):
+            if is_high_entropy(
+                stripped, threshold=threshold, min_len=min_len
+            ) and not is_word_shaped(stripped):
                 spans.append((s0, e0, stripped))
     return spans

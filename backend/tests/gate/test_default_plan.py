@@ -66,7 +66,7 @@ def test_change_evidence_is_required_for_configuration_categories() -> None:
     }
 
 
-def test_tool_names_must_be_preserved() -> None:
-    """Long tool names look like high-entropy text; the investigation preserves them."""
+def test_tool_names_are_not_redaction_residue() -> None:
+    """Tool names are words joined by ``_``: the entropy check passes them even unpreserved."""
     result = validate(OutputType.PLAN, default_plan(first_round=False), GateContext())
-    assert {v.validator for v in result.violations} == {"redaction_residue"}
+    assert result.passed, result.validators()
