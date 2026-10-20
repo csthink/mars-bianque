@@ -34,15 +34,25 @@ Bianque is an alert-driven root cause analysis agent for Kubernetes: when an ale
 
 ## 回放形态
 
-回放形态不需要 kind 集群：Docker Compose 起数据库、后端与前端（nginx 提供页面，并把 `/api` 代理到后端，页面与接口同源）。目前只起服务；自动导入运维手册、用证据包重跑 S1 用例还在开发中。
+回放形态不需要 kind 集群：Docker Compose 起数据库、后端与前端（nginx 提供页面，并把 `/api` 代理到后端，页面与接口同源）。后端启动后导入 `knowledge/runbooks/` 的运维手册，并对 `eval/cases/` 下每个有证据包的用例各跑一次调查；已经跑过的用例不再重跑，`make replay-down` 删除数据卷后重新开始。
+
+模型模式由 `LLM_MODE` 选择：
+
+- `recorded`（默认）：用 `eval/recordings/` 里录制的真实模型响应回放，不需要模型密钥。全部用例的录制还在制作中，没有录制时调查以失败结束，原因是查不到录制。
+- `scripted`：规则响应器代替模型，用于测试。
+- `live`：调用真实模型，追问可以自由提问。`LLM_API_KEY_FILE` 指向保存密钥的文件，密钥不进环境变量与镜像；模型默认 DeepSeek `deepseek-v4-pro`，可用 `LLM_MODEL`、`LLM_BASE_URL`、`LLM_EXTRA_BODY` 改。启动前把本地嵌入模型下载到模型卷，运行时不访问外部的嵌入服务。
 
 | 命令 | 作用 |
 | --- | --- |
 | `make replay` | 构建镜像并启动，健康检查通过后打印地址（默认 `http://127.0.0.1:8080`，`BIANQUE_REPLAY_PORT` 可改）与演示账号的口令。第一次运行时生成数据库口令，写进被忽略的 `.demo/replay.env` |
+| `make replay LLM_MODE=scripted` | 同上，规则响应器代替模型 |
+| `make replay LLM_MODE=live LLM_API_KEY_FILE=<密钥文件>` | 同上，调用真实模型 |
 | `make replay-down` | 停止并删除容器与数据卷 |
 | `make e2e` | 从空数据库起回放形态，加载一份 S1-a 调查夹具，跑 Playwright 端到端测试；宽屏与窄屏、浅色与深色的截图写到 `frontend/e2e/screenshots/` |
 
-演示账号是 `demo`，口令由 `make replay`（与 `make e2e`）每次随机生成，启动后打印，并保存在被忽略的 `.demo/demo-password`；仓里没有默认口令。每次启动也换会话签名密钥，上一次的登录随之失效。查看调查不需要登录；对修复建议确认或驳回需要登录，决定只记录，不执行任何操作，每条建议只能决定一次。
+演示账号是 `demo`，口令由 `make replay`（与 `make e2e`）每次随机生成，启动后打印，并保存在被忽略的 `.demo/demo-password`；仓里没有默认口令。每次启动也换会话签名密钥，上一次的登录随之失效。查看调查不需要登录；手动触发调查、追问、对修复建议确认或驳回需要登录，决定只记录，不执行任何操作，每条建议只能决定一次。
+
+追问的回答先经证据门校验，通过后才分段推送给页面，校验期间只推送进度；回放（`recorded`）模式下只能按顺序提问用例 `questions.yaml` 里录制过的问题。后端重启时正在进行的调查标为中断，不会续跑；告警再次送达或手动触发会新建调查。
 
 前端开发：`cd frontend && npm ci && npm run dev`，开发服务器把 `/api` 代理到 `BIANQUE_BACKEND_URL`（默认 `http://127.0.0.1:8000`）；后端用 `uvicorn --factory bianque.api.app:create_app` 启动。`make check` 包含前端的 lint、类型检查、单元测试与构建。
 

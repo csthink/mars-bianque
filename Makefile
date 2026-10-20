@@ -81,9 +81,29 @@ replay-login:
 	demo/scripts/demo-login.sh $(REPLAY_LOGIN_ENV) $(DEMO_PASSWORD) \
 		docker run --rm -i "$$(docker build -q backend)" bianque auth hash-password
 
+# LLM_MODE picks the model mode: recorded (the default) replays recorded responses;
+# scripted answers with the scripted rules; live calls a real model and needs
+# LLM_API_KEY_FILE, the path of a file holding the key. The live defaults are DeepSeek's.
+LLM_MODE ?= recorded
+LLM_MODEL ?= deepseek-v4-pro
+LLM_BASE_URL ?= https://api.deepseek.com
+LLM_EXTRA_BODY ?= {"thinking": {"type": "disabled"}}
+COMPOSE_MODE := $(COMPOSE_REPLAY) $(if $(filter live,$(LLM_MODE)),-f deploy/compose/live.yaml)
+
 replay: $(REPLAY_ENV) replay-login
-	$(COMPOSE_REPLAY) up --detach --build --wait
-	@echo "Bianque (replay profile): $(REPLAY_URL)"
+	@case '$(LLM_MODE)' in recorded|scripted|live) ;; \
+		*) echo "LLM_MODE must be recorded, scripted or live" >&2; exit 2 ;; esac
+ifeq ($(LLM_MODE),live)
+	@test -n '$(LLM_API_KEY_FILE)' && test -r '$(LLM_API_KEY_FILE)' || \
+		{ echo "LLM_MODE=live needs LLM_API_KEY_FILE, a readable file holding the key" >&2; exit 2; }
+endif
+	export BIANQUE_LLM_MODE='$(LLM_MODE)' LLM_API_KEY_FILE='$(LLM_API_KEY_FILE)' \
+		LLM_MODEL='$(LLM_MODEL)' LLM_BASE_URL='$(LLM_BASE_URL)' LLM_EXTRA_BODY='$(LLM_EXTRA_BODY)' && \
+	$(COMPOSE_MODE) build && \
+	$(if $(filter live,$(LLM_MODE)),$(COMPOSE_MODE) run --rm --no-deps backend \
+		bianque knowledge download-model &&) \
+	$(COMPOSE_MODE) up --detach --wait
+	@echo "Bianque (replay profile, $(LLM_MODE) model mode): $(REPLAY_URL)"
 	@echo "Demo login: demo / $$(cat $(DEMO_PASSWORD))"
 
 # Compose checks every variable of the file even to stop it; the login values are not

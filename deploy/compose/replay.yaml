@@ -1,6 +1,9 @@
 # Replay profile: Bianque without a cluster, reading evidence packs and recorded model
 # responses. Started by `make replay`; the database password comes from .demo/replay.env
-# and the demo login from .demo/replay-login.env.
+# and the demo login from .demo/replay-login.env. Once started, the backend imports the
+# runbooks and investigates every case with an evidence pack once.
+# `make replay LLM_MODE=scripted` answers with the scripted rules instead; `LLM_MODE=live`
+# adds live.yaml.
 name: bianque-replay
 
 services:
@@ -21,8 +24,9 @@ services:
     environment:
       BIANQUE_DATABASE_URL: postgresql+psycopg://postgres:${BIANQUE_DB_PASSWORD}@db:5432/postgres
       BIANQUE_TOOL_BACKEND: pack
-      BIANQUE_LLM_MODE: recorded
+      BIANQUE_LLM_MODE: ${BIANQUE_LLM_MODE:-recorded}
       BIANQUE_EMBEDDING_MODE: fixture
+      BIANQUE_REPLAY_SEED: "true"
       BIANQUE_DEMO_USERS: ${BIANQUE_DEMO_USERS:?run make replay, which generates it}
       BIANQUE_SESSION_SECRET: ${BIANQUE_SESSION_SECRET:?run make replay, which generates it}
       # Pages are served over plain http on the workstation, where a browser would not
@@ -30,6 +34,10 @@ services:
       BIANQUE_SESSION_COOKIE_SECURE: "false"
     volumes:
       - models:/models
+      # Evidence packs, recorded responses, the embedding fixture, question sets and
+      # runbooks, read from the repository; the replay image does not hold them.
+      - ../../eval:/app/eval:ro
+      - ../../knowledge:/app/knowledge:ro
     depends_on:
       db:
         condition: service_healthy

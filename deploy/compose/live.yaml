@@ -1,0 +1,17 @@
+# Laid over replay.yaml by `make replay LLM_MODE=live`: a real model answers, and the local
+# embedding model embeds free questions that the embedding fixture does not hold. The
+# model key is a file outside the repository, mounted read-only and read through a
+# `file:` reference; it never enters the environment or the image. On Docker Desktop the
+# container user can read a file of mode 600; on a Linux host, make it readable by the
+# backend's user (uid 10001).
+services:
+  backend:
+    environment:
+      BIANQUE_LLM_MODE: live
+      BIANQUE_LLM_API_KEY: file:/run/secrets/bianque-llm-key
+      BIANQUE_LLM_BASE_URL: ${LLM_BASE_URL:?run make replay LLM_MODE=live}
+      BIANQUE_LLM_MODEL: ${LLM_MODEL:?run make replay LLM_MODE=live}
+      BIANQUE_LLM_EXTRA_BODY: ${LLM_EXTRA_BODY:-}
+      BIANQUE_EMBEDDING_MODE: local
+    volumes:
+      - ${LLM_API_KEY_FILE:?set LLM_API_KEY_FILE to the model key file}:/run/secrets/bianque-llm-key:ro
