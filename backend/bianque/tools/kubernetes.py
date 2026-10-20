@@ -179,7 +179,7 @@ async def k8s_get_pod_status(args: PodStatusArgs, backends: ToolBackends) -> Too
             for s in _statuses(pod)
         ],
     }
-    images = [str(container["image"]) for container in data["containers"] if container["image"]]
+    images = [str(s["image"]) for s in _statuses(pod) if s.get("image")]
     return ToolOutput(render(data), collect_identifiers(_pod_identifiers(pod), images))
 
 

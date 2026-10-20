@@ -283,6 +283,17 @@ class PlanRepository:
             values["finished_at"] = finished_at
         await self._session.execute(update(Step).where(Step.id == step_id).values(**values))
 
+    async def get_step(self, step_id: int) -> Step:
+        """Return a step by ID.
+
+        Raises:
+            NotFoundError: No such step.
+        """
+        step = await self._session.get(Step, step_id)
+        if step is None:
+            raise NotFoundError(f"step {step_id} not found")
+        return step
+
     async def list_plans(self, investigation_id: str) -> Sequence[Plan]:
         """Return the plan versions of an investigation, oldest first."""
         result = await self._session.scalars(
@@ -459,6 +470,14 @@ class CallRecordRepository:
         self._session.add(record)
         await self._session.flush()
         return record
+
+    async def set_gate_result(self, record_id: int, gate_result: Mapping[str, Any]) -> None:
+        """Store the evidence gate result of a model call, known only after the call."""
+        await self._session.execute(
+            update(CallRecord)
+            .where(CallRecord.id == record_id)
+            .values(gate_result=dict(gate_result))
+        )
 
     async def list_for_investigation(self, investigation_id: str) -> Sequence[CallRecord]:
         """Return the calls of an investigation in the order they started."""

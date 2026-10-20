@@ -15,7 +15,7 @@ import json
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from pydantic import SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 #: The one environment variable prefix in the repository. ``check_env_prefix.py``
@@ -96,8 +96,21 @@ class Settings(BaseSettings):
     #: (``BIANQUE_LLM_RECORD_DIR``).
     llm_record_dir: Path | None = None
 
-    #: Token budget of one investigation (``BIANQUE_INVESTIGATION_TOKEN_BUDGET``).
+    #: Token budget of one investigation (``BIANQUE_INVESTIGATION_TOKEN_BUDGET``). It is
+    #: checked once after each round of evidence collection; once exceeded, the
+    #: investigation stops replanning and writes its report.
     investigation_token_budget: int = 120000
+
+    #: Model turns of one step of an evidence sub-agent (``BIANQUE_SUBAGENT_MAX_STEPS``).
+    #: At the limit the sub-agent must submit its findings.
+    subagent_max_steps: int = Field(default=6, ge=1)
+
+    #: Supplementary plans of one investigation (``BIANQUE_MAX_REPLAN_ROUNDS``).
+    max_replan_rounds: int = Field(default=2, ge=0)
+
+    #: Retries after the evidence gate rejects a report (``BIANQUE_REPORT_MAX_RETRIES``);
+    #: when they are used up, a degraded report is published.
+    report_max_retries: int = Field(default=2, ge=0)
 
     #: Kubeconfig context of the real tool backend (``BIANQUE_KUBE_CONTEXT``). Empty
     #: inside a cluster, where the service account is used; on a workstation it names

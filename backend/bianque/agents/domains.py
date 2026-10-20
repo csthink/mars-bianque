@@ -112,6 +112,12 @@ DOMAINS: tuple[EvidenceDomain, ...] = (
 )
 
 
+#: Tools whose evidence is the pod status. Without it the assessment never calls the
+#: evidence sufficient: the state of the restarting container is what everything else
+#: is checked against.
+POD_STATUS_TOOLS: tuple[str, ...] = ("k8s_get_pod_status",)
+
+
 def domain(name: str) -> EvidenceDomain:
     """Return the declaration of one domain.
 
