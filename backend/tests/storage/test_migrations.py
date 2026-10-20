@@ -77,3 +77,38 @@ def test_vector_extension_and_gin_index_exist(migrated: Engine) -> None:
             text("SELECT indexdef FROM pg_indexes WHERE indexname = 'ix_knowledge_chunks_tsv'")
         )
     assert index is not None and "USING gin" in index
+
+
+def test_answers_stored_before_0003_keep_their_text_and_have_no_segments(empty: Any) -> None:
+    engine = empty.engine
+    empty.upgrade("0002")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO investigations (id, trigger, tool_backend, llm_mode, token_budget) "
+                "VALUES ('inv_old', 'manual', 'pack', 'scripted', 1)"
+            )
+        )
+        session_id = connection.scalar(
+            text(
+                "INSERT INTO followup_sessions (investigation_id, created_by) "
+                "VALUES ('inv_old', 'demo') RETURNING id"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO followup_messages (session_id, seq, role, content, citations) "
+                "VALUES (:session, 1, 'assistant', 'An earlier answer.', '[\"ev_0123456789\"]')"
+            ),
+            {"session": session_id},
+        )
+    empty.upgrade("0003")
+    with engine.connect() as connection:
+        row = connection.execute(
+            text("SELECT content, segments, citations FROM followup_messages")
+        ).one()
+    assert row == ("An earlier answer.", [], ["ev_0123456789"])
+    empty.downgrade("0002")
+    with engine.connect() as connection:
+        columns = {c["name"] for c in inspect(connection).get_columns("followup_messages")}
+    assert "segments" not in columns

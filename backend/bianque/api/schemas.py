@@ -275,3 +275,106 @@ class AlreadyDecided(BaseModel):
 
     detail: Literal["suggestion already decided"] = "suggestion already decided"
     state: Literal["confirmed", "rejected"]
+
+
+class DeliveredAlertView(BaseModel):
+    """What the webhook did with one alert."""
+
+    fingerprint: str
+    status: str
+    investigation_id: str | None
+    deduplicated: bool
+
+
+class WebhookResult(BaseModel):
+    """The alerts of one webhook delivery, in their order."""
+
+    alerts: list[DeliveredAlertView]
+
+
+class TriggerRequest(BaseModel):
+    """A manual investigation: replay a case's evidence pack, or an alert received before."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    case_id: str | None = Field(default=None, max_length=64)
+    alert_id: int | None = None
+
+
+class TriggerResult(BaseModel):
+    """The investigation started; it runs in the background."""
+
+    investigation_id: str
+
+
+class FollowupSessionView(BaseModel):
+    """A follow-up session."""
+
+    id: int
+    investigation_id: str
+    created_by: str
+    created_at: datetime
+
+
+class AnswerSegmentView(BaseModel):
+    """One paragraph of an answer that passed the evidence gate."""
+
+    text: str
+    citations: list[str]
+    insufficient_evidence: bool
+
+
+class FollowupMessageView(BaseModel):
+    """A question, or the answer to it. Only answers that passed the gate exist."""
+
+    id: int
+    seq: int
+    role: Literal["user", "assistant"]
+    content: str
+    segments: list[AnswerSegmentView]
+    citations: list[str]
+    references: list[str]
+    unknown: bool
+    created_at: datetime
+
+
+class FollowupSessionDetail(BaseModel):
+    """A follow-up session with its messages in order."""
+
+    session: FollowupSessionView
+    messages: list[FollowupMessageView]
+
+
+#: The longest follow-up question.
+MAX_QUESTION_CHARS = 2000
+
+
+class QuestionRequest(BaseModel):
+    """A follow-up question."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    question: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_QUESTION_CHARS)
+    ]
+
+
+class RecordedQuestionView(BaseModel):
+    """A question of the case's question set."""
+
+    id: str
+    question: str
+
+
+class QuestionList(BaseModel):
+    """The questions of the case; when ``recorded_only``, only these, in this order."""
+
+    recorded_only: bool
+    questions: list[RecordedQuestionView]
+
+
+class NotRecorded(BaseModel):
+    """The 422 answer in ``recorded`` mode: the question the session may ask next."""
+
+    detail: Literal["question not recorded"] = "question not recorded"
+    expected: str | None

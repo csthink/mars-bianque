@@ -1,6 +1,6 @@
 """Generate a structured model output and pass it through the evidence gate.
 
-Plans, assessments and findings share one flow: get the output
+Plans, assessments, findings and follow-up answers share one flow: get the output
 by a forced function call, validate it, and when the gate rejects it, show the model its
 call and the violations and ask once more. When the retry is rejected too, the caller
 falls back (default plan, deterministic rule, no findings); a rejected output is never
@@ -12,8 +12,9 @@ never text of the output, so the feedback holds nothing the gate rejected.
 
 from __future__ import annotations
 
-from collections.abc import Collection
+from collections.abc import Awaitable, Callable, Collection
 from dataclasses import dataclass, field
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -39,6 +40,16 @@ SCHEMA_FAILURE = Violation("schema", "(root)", "invalid_arguments")
 
 #: The violation recorded when the model could not be called.
 MODEL_UNAVAILABLE = Violation("model", "(root)", "model_unavailable")
+
+#: What a gated generation is doing: checking an output, or asking again after a rejection.
+Stage = Literal["validating", "retrying"]
+
+#: Told about each stage as it begins; the follow-up flow reports it to the client.
+StageCallback = Callable[[Stage], Awaitable[None]]
+
+
+async def _no_stage(stage: Stage) -> None:
+    return None
 
 
 @dataclass(frozen=True)
@@ -93,6 +104,7 @@ async def generate_gated(
     gate_context: GateContext,
     preserve: Collection[str],
     retries: int = 1,
+    on_stage: StageCallback = _no_stage,
 ) -> GatedOutput:
     """Generate an output of ``output_type`` and validate it, retrying after rejections.
 
@@ -100,22 +112,24 @@ async def generate_gated(
         gateway: The model gateway.
         recorder: Receives the gate result of each call.
         prompt: The redacted prompt.
-        context: Who makes the call; ``investigation_id`` must be set.
+        context: Who makes the call: an investigation's agent or a follow-up session.
         output_type: The output type and with it the schema and the checklist.
         function_name: The function the model is forced to call.
         description: The function's description.
         gate_context: What the output is checked against.
         preserve: Identifiers the redaction of the feedback keeps.
         retries: Further attempts after a rejection.
+        on_stage: Awaited when validation begins and when a retry begins.
 
     Returns:
         The passed output, or ``None`` with the gate results of the failed attempts.
     """
-    assert context.investigation_id is not None
     engine = gate_context.engine
     conversation = prompt
     results: list[GateResult] = []
-    for _ in range(retries + 1):
+    for attempt in range(retries + 1):
+        if attempt:
+            await on_stage("retrying")
         try:
             structured = await gateway.complete_structured(
                 conversation,
@@ -127,9 +141,7 @@ async def generate_gated(
         except StructuredOutputError:
             result = GateResult(output_type.value, (SCHEMA_FAILURE,))
             results.append(result)
-            await recorder.set_gate_result(
-                context.investigation_id, context.agent, context.operation, result.to_json()
-            )
+            await recorder.set_gate_result(context, result.to_json())
             conversation = conversation + (
                 RedactedMessage(
                     "user",
@@ -146,11 +158,10 @@ async def generate_gated(
             # recording, a rejected request) ends the investigation.
             results.append(GateResult(output_type.value, (MODEL_UNAVAILABLE,)))
             break
+        await on_stage("validating")
         result = validate(output_type, structured.value, gate_context)
         results.append(result)
-        await recorder.set_gate_result(
-            context.investigation_id, context.agent, context.operation, result.to_json()
-        )
+        await recorder.set_gate_result(context, result.to_json())
         if result.passed:
             return GatedOutput(result.output, tuple(results))
         call = next(c for c in structured.completion.tool_calls if c.name == function_name)

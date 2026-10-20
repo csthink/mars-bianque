@@ -361,6 +361,8 @@ class FollowupMessage(Base):
     seq: Mapped[int] = mapped_column(Integer)
     role: Mapped[str] = mapped_column(Text)
     content: Mapped[str] = mapped_column(Text)
+    #: The paragraphs of an answer: ``{text, citations, insufficient_evidence}`` each.
+    segments: Mapped[list[Any]] = _json_list()
     citations: Mapped[list[Any]] = _json_list()
     references: Mapped[list[Any]] = _json_list()
     unknown: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))

@@ -1,16 +1,30 @@
-"""Investigations: list, detail and calls (read, no login), and decisions on suggestions."""
+"""Investigations: reads, manual triggers, follow-up sessions and decisions.
+
+Reading needs no login: the list, the detail, the calls, the progress events and the
+recorded questions. Writing needs a login: manual triggers, opening a follow-up session
+and deciding on a suggestion.
+"""
 
 from __future__ import annotations
 
+import time
 from collections.abc import AsyncIterator
 from datetime import timedelta
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from bianque.agents.events import TERMINAL_EVENTS, EventNotifier
+from bianque.agents.followup import FollowupService, NoReportError
+from bianque.agents.service import (
+    CaseNotFoundError,
+    InvestigationService,
+    PackBackendRequiredError,
+)
+from bianque.api import sse
 from bianque.api.auth import CurrentUser
 from bianque.api.schemas import (
     AlertView,
@@ -22,16 +36,21 @@ from bianque.api.schemas import (
     DecisionRequest,
     EvidenceView,
     FindingView,
+    FollowupSessionView,
     GateView,
     InvestigationDetail,
     InvestigationInfo,
     InvestigationList,
     InvestigationSummary,
     PlanView,
+    QuestionList,
+    RecordedQuestionView,
     RejectedAttempt,
     ReportView,
     StepView,
     SuggestionView,
+    TriggerRequest,
+    TriggerResult,
 )
 from bianque.storage.errors import AlreadyDecidedError, NotFoundError
 from bianque.storage.models import Alert, CallRecord, Evidence, Investigation, Report
@@ -39,6 +58,7 @@ from bianque.storage.repositories import (
     AssessmentRepository,
     CallRecordRepository,
     ConfirmationRepository,
+    EventRepository,
     EvidenceRepository,
     InvestigationRepository,
     PlanRepository,
@@ -48,6 +68,12 @@ from bianque.storage.repositories import (
 )
 
 router = APIRouter(prefix="/api/investigations", tags=["investigations"])
+
+#: Seconds an event stream waits for a wake-up before it reads the table again.
+EVENT_POLL_SECONDS = 1.0
+
+#: Seconds without events after which an event stream sends a keep-alive comment.
+KEEPALIVE_SECONDS = 15.0
 
 
 async def _session(request: Request) -> AsyncIterator[AsyncSession]:
@@ -374,4 +400,143 @@ def _call_view(record: CallRecord, evidence_ids: list[str]) -> CallView:
             passed=bool(record.gate_result.get("passed")),
             validators=_validators(record.gate_result),
         ),
+    )
+
+
+@router.post("", status_code=202, response_model=TriggerResult)
+async def trigger(body: TriggerRequest, user: CurrentUser, request: Request) -> TriggerResult:
+    """Start an investigation by hand: replay a case, or investigate a stored alert again.
+
+    It is not deduplicated: a person asked for a new investigation.
+    """
+    service: InvestigationService = request.app.state.investigations
+    if (body.case_id is None) == (body.alert_id is None):
+        raise HTTPException(status_code=422, detail="give either case_id or alert_id")
+    try:
+        if body.case_id is not None:
+            investigation_id = await service.replay_case(body.case_id)
+        else:
+            assert body.alert_id is not None
+            investigation_id = await service.reinvestigate(body.alert_id)
+    except PackBackendRequiredError:
+        raise HTTPException(status_code=409, detail="cases replay with the pack backend") from None
+    except (CaseNotFoundError, NotFoundError):
+        raise HTTPException(status_code=404, detail="case or alert not found") from None
+    return TriggerResult(investigation_id=investigation_id)
+
+
+def _resume_point(after: int, last_event_id: str | None) -> int:
+    """The larger of ``after`` and a numeric ``Last-Event-ID``; malformed IDs count as 0."""
+    try:
+        header = int(last_event_id) if last_event_id is not None else 0
+    except ValueError:
+        header = 0
+    return max(after, header, 0)
+
+
+@router.get(
+    "/{investigation_id}/events",
+    response_class=StreamingResponse,
+    responses={200: {"content": {"text/event-stream": {}}}},
+)
+async def events(
+    investigation_id: str,
+    request: Request,
+    after: Annotated[int, Query(ge=0)] = 0,
+    last_event_id: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
+) -> StreamingResponse:
+    """Stream the progress events of an investigation, resuming after an event number.
+
+    The stream starts after ``Last-Event-ID`` (sent by ``EventSource`` when it reconnects)
+    or after ``after`` (sent by a page that reloads), whichever is larger, and ends after
+    ``investigation_finished`` or ``investigation_interrupted``.
+
+    The endpoint takes no request-scoped database session: one would stay open, idle in
+    a transaction, for as long as the stream lasts, and an open transaction blocks
+    statements that wait for all of them, such as the ``CREATE INDEX CONCURRENTLY`` of
+    the checkpoint tables' setup. Each read of the stream uses a session of its own.
+    """
+    async with request.app.state.sessions() as session:
+        inv_id = (await _investigation(session, investigation_id)).id
+    return sse.stream(
+        _event_frames(
+            request.app.state.sessions,
+            request.app.state.notifier,
+            inv_id,
+            _resume_point(after, last_event_id),
+        )
+    )
+
+
+async def _event_frames(
+    sessions: async_sessionmaker[AsyncSession],
+    notifier: EventNotifier,
+    investigation_id: str,
+    after: int,
+) -> AsyncIterator[str]:
+    """Read the events after ``after`` from the table, waiting for new ones in between.
+
+    The table is the only source of events; a wake-up only makes the next read sooner.
+    The read after each wait also finds events another process wrote.
+    """
+    last = after
+    quiet_since = time.monotonic()
+    while True:
+        async with sessions() as session:
+            rows = await EventRepository(session).list_after(investigation_id, last)
+        for row in rows:
+            last = row.seq
+            data = {
+                "seq": row.seq,
+                "type": row.type,
+                "created_at": row.created_at.isoformat(),
+                **row.payload,
+            }
+            yield sse.frame(row.type, data, event_id=row.seq)
+            if row.type in TERMINAL_EVENTS:
+                return
+        now = time.monotonic()
+        if rows:
+            quiet_since = now
+        elif now - quiet_since >= KEEPALIVE_SECONDS:
+            yield sse.comment("keepalive")
+            quiet_since = now
+        await notifier.wait(investigation_id, EVENT_POLL_SECONDS)
+
+
+@router.post("/{investigation_id}/sessions", status_code=201, response_model=FollowupSessionView)
+async def create_session(
+    investigation_id: str, user: CurrentUser, request: Request
+) -> FollowupSessionView:
+    """Open a follow-up session on an investigation that has a report."""
+    followups: FollowupService = request.app.state.followups
+    try:
+        created = await followups.create_session(investigation_id, created_by=user)
+    except NotFoundError:
+        raise HTTPException(status_code=404, detail="investigation not found") from None
+    except NoReportError:
+        raise HTTPException(status_code=409, detail="no_report") from None
+    return FollowupSessionView(
+        id=created.id,
+        investigation_id=created.investigation_id,
+        created_by=created.created_by,
+        created_at=created.created_at,
+    )
+
+
+@router.get("/{investigation_id}/questions", response_model=QuestionList)
+async def questions(investigation_id: str, request: Request) -> QuestionList:
+    """The questions of the investigation's case, from its ``questions.yaml``.
+
+    In ``recorded`` mode only these can be asked, the n-th turn of a session asking the
+    n-th question, since a recorded answer depends on the turns before it.
+    """
+    followups: FollowupService = request.app.state.followups
+    try:
+        recorded = await followups.questions(investigation_id)
+    except NotFoundError:
+        raise HTTPException(status_code=404, detail="investigation not found") from None
+    return QuestionList(
+        recorded_only=followups.recorded_only,
+        questions=[RecordedQuestionView(id=q.id, question=q.question) for q in recorded],
     )

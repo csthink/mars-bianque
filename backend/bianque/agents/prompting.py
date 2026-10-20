@@ -36,6 +36,8 @@ DOMAINS_HEADING = "Evidence domains"
 ASSESSMENT = "Assessment"
 KNOWLEDGE = "Knowledge"
 REJECTION = "Rejected attempt"
+REPORT = "Report"
+SUGGESTIONS = "Suggestions"
 
 #: Written where a section has no content.
 NONE = "(none)"
@@ -65,6 +67,17 @@ class EvidenceView:
     tool: str | None
     text: str
     identifiers: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class SuggestionView:
+    """A remediation suggestion of the published report, as a prompt shows it."""
+
+    id: str
+    seq: int
+    risk: str
+    action: str
+    command: str | None
 
 
 @dataclass(frozen=True)
@@ -160,6 +173,26 @@ def render_step(goal: str, suggested_tools: Sequence[str], expected: Sequence[st
             f"Expected evidence: {' '.join(expected) or NONE}",
         ]
     )
+
+
+def render_suggestions(items: Iterable[SuggestionView]) -> str:
+    """Render remediation suggestions by position: ID, risk, action and command."""
+    return "\n".join(
+        f"- [{item.id}] risk: {item.risk}; action: {item.action}; command: {item.command or NONE}"
+        for item in sorted(items, key=lambda s: s.seq)
+    )
+
+
+def render_answer(segments: Iterable[Mapping[str, Any]]) -> str:
+    """Render the paragraphs of an earlier answer, each followed by what it cites."""
+    blocks = []
+    for segment in segments:
+        if segment.get("insufficient_evidence"):
+            mark = "(insufficient evidence)"
+        else:
+            mark = f"[{', '.join(segment.get('citations') or [])}]"
+        blocks.append(f"{segment['text']} {mark}")
+    return "\n\n".join(blocks)
 
 
 def render_json(value: Any) -> str:

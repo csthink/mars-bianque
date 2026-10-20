@@ -331,9 +331,7 @@ class InvestigationNodes:
             kept, dropped = check_range(plan, first_round=first_round)
             if dropped:
                 await rt.recorder.set_gate_result(
-                    investigation_id,
-                    INVESTIGATION,
-                    operation,
+                    self._context(investigation_id, operation),
                     {**gated.results[-1].to_json(), "dropped_steps": dropped},
                 )
             plan = plan.model_copy(update={"steps": kept}) if kept else None
@@ -527,7 +525,7 @@ class InvestigationNodes:
             else GateResult(OutputType.REPORT.value, (SCHEMA_FAILURE,))
         )
         await rt.recorder.set_gate_result(
-            investigation_id, INVESTIGATION, "report", result.to_json()
+            self._context(investigation_id, "report"), result.to_json()
         )
         if result.passed and result.output is not None:
             return {

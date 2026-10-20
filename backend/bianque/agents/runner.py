@@ -1,6 +1,8 @@
-"""Run one investigation: assemble the dependencies, execute the graph, record the end.
+"""Run one investigation: record the alert, assemble the dependencies, execute the graph.
 
-The command line uses this module, and the API's background tasks will as well. Every
+Creating an investigation and executing it are two steps: the API creates it while the
+request is answered and executes it in a background task; the command line does both
+in one call (``run_investigation``). Every
 run checkpoints the graph state in PostgreSQL under the investigation ID. The checkpoint
 library has no schema parameter, so it gets its own connection pool whose
 ``search_path`` is the ``langgraph`` schema; migrations leave that schema
@@ -22,11 +24,12 @@ from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from bianque.agents.events import EventNotifier
 from bianque.agents.graph import RECURSION_LIMIT, build_graph
 from bianque.agents.records import DatabaseCallRecorder, EventWriter
 from bianque.agents.scripted_rules import ROLE_RULES
 from bianque.agents.state import Runtime
-from bianque.api.alertmanager import AlertInput
+from bianque.api.alertmanager import AlertInput, parse_alert
 from bianque.config import Settings
 from bianque.knowledge import KnowledgeRetriever
 from bianque.knowledge.embedding import build_embedder
@@ -83,34 +86,44 @@ async def open_checkpointer(settings: Settings) -> AsyncIterator[AsyncPostgresSa
         yield saver
 
 
-async def run_investigation(
+@dataclass(frozen=True)
+class CreatedInvestigation:
+    """The result of recording an alert for investigation.
+
+    Attributes:
+        alert_id: The alert row: a new one, or the one already under investigation.
+        investigation_id: The new pending investigation, or ``None`` when the alert was
+            deduplicated.
+    """
+
+    alert_id: int
+    investigation_id: str | None
+
+    @property
+    def deduplicated(self) -> bool:
+        """``True`` when an investigation of the same fingerprint had not ended yet."""
+        return self.investigation_id is None
+
+
+async def create_investigation(
     settings: Settings,
     alert: AlertInput,
     *,
     sessions: async_sessionmaker[AsyncSession],
-    backends: ToolBackends,
     trigger: str,
     case_id: str | None = None,
-    rules: Sequence[ScriptedRule] = (),
-    tool_sleep: Sleep = asyncio.sleep,
-    model_sleep: Sleep = asyncio.sleep,
-) -> InvestigationOutcome:
-    """Investigate one alert to the end.
+    deduplicate: bool = False,
+) -> CreatedInvestigation:
+    """Record an alert and create a pending investigation of it.
 
     Args:
-        settings: Process settings: model mode, limits, budget and database.
-        alert: The alert to investigate.
+        settings: Process settings: tool backend, model mode and budget.
+        alert: The alert.
         sessions: Database sessions.
-        backends: The tool backends: the cluster and repository, or an evidence pack.
         trigger: ``alert``, ``manual`` or ``replay``.
-        case_id: The evaluation case of a replay.
-        rules: Scripted rules tried before the role rules; tests use them to inject
-            failures. Only ``scripted`` mode reads them.
-        tool_sleep: Waits between tool retries.
-        model_sleep: Waits between model retries.
-
-    Returns:
-        The investigation ID and its final status.
+        case_id: The evaluation case whose evidence pack the tools read.
+        deduplicate: Create nothing when an investigation of the same fingerprint has
+            not ended yet (webhook deliveries); otherwise always create one.
     """
     async with sessions() as session, session.begin():
         recorded = await AlertRepository(session).record(
@@ -121,19 +134,105 @@ async def run_investigation(
             starts_at=alert.starts_at,
             payload=alert.payload,
         )
-        investigation = await InvestigationRepository(session).create(
-            trigger=trigger,
-            tool_backend=backends.kind,
-            llm_mode=settings.llm_mode,
-            llm_model=settings.llm_model or None,
-            token_budget=settings.investigation_token_budget,
-            alert_id=recorded.alert.id,
-            case_id=case_id,
+        if deduplicate and recorded.under_investigation:
+            return CreatedInvestigation(recorded.alert.id, None)
+        investigation_id = await _create(session, settings, recorded.alert.id, trigger, case_id)
+    return CreatedInvestigation(recorded.alert.id, investigation_id)
+
+
+async def create_reinvestigation(
+    settings: Settings,
+    alert_id: int,
+    *,
+    sessions: async_sessionmaker[AsyncSession],
+    case_id: str | None = None,
+) -> tuple[str, AlertInput]:
+    """Create a pending manual investigation of an alert received earlier.
+
+    Returns:
+        The investigation ID and the alert as it was received.
+
+    Raises:
+        NotFoundError: No such alert.
+    """
+    async with sessions() as session, session.begin():
+        alert = await AlertRepository(session).get(alert_id)
+        investigation_id = await _create(session, settings, alert.id, "manual", case_id)
+        return investigation_id, parse_alert(alert.payload)
+
+
+async def _create(
+    session: AsyncSession,
+    settings: Settings,
+    alert_id: int,
+    trigger: str,
+    case_id: str | None,
+) -> str:
+    investigation = await InvestigationRepository(session).create(
+        trigger=trigger,
+        tool_backend=settings.tool_backend,
+        llm_mode=settings.llm_mode,
+        llm_model=settings.llm_model or None,
+        token_budget=settings.investigation_token_budget,
+        alert_id=alert_id,
+        case_id=case_id,
+    )
+    return investigation.id
+
+
+async def fail_investigation(
+    sessions: async_sessionmaker[AsyncSession],
+    events: EventWriter,
+    investigation_id: str,
+    exc: BaseException,
+) -> None:
+    """Record that a run ended with ``exc``: the investigation and its open steps fail.
+
+    The stored error names the exception class only: it is shown by the API, and an
+    exception message may quote unredacted data. The log has the details.
+    """
+    logger.error("investigation %s failed", investigation_id, exc_info=exc)
+    finished_at = datetime.now(UTC)
+    async with sessions() as session, session.begin():
+        await InvestigationRepository(session).set_status(
+            investigation_id, "failed", finished_at=finished_at, error=type(exc).__name__
         )
-    investigation_id = investigation.id
+        await PlanRepository(session).fail_unfinished_steps(investigation_id, finished_at)
+    await events.emit(investigation_id, "investigation_finished", status="failed")
+
+
+async def execute_investigation(
+    settings: Settings,
+    investigation_id: str,
+    alert: AlertInput,
+    *,
+    sessions: async_sessionmaker[AsyncSession],
+    backends: ToolBackends,
+    rules: Sequence[ScriptedRule] = (),
+    notifier: EventNotifier | None = None,
+    tool_sleep: Sleep = asyncio.sleep,
+    model_sleep: Sleep = asyncio.sleep,
+) -> InvestigationOutcome:
+    """Run a pending investigation to the end.
+
+    Args:
+        settings: Process settings: model mode, limits, budget and database.
+        investigation_id: The pending investigation.
+        alert: The alert under investigation.
+        sessions: Database sessions.
+        backends: The tool backends: the cluster and repository, or an evidence pack.
+        rules: Scripted rules tried before the role rules; tests use them to inject
+            failures. Only ``scripted`` mode reads them.
+        notifier: Wakes the event stream readers of this process.
+        tool_sleep: Waits between tool retries.
+        model_sleep: Waits between model retries.
+
+    Returns:
+        The investigation ID and its final status.
+    """
     engine = build_redaction_engine(settings)
     recorder = DatabaseCallRecorder(sessions)
-    events = EventWriter(sessions)
+    events = EventWriter(sessions, notifier)
     runtime = Runtime(
         sessions=sessions,
         gateway=build_gateway(
@@ -164,19 +263,47 @@ async def run_investigation(
                 },
             )
     except Exception as exc:
-        # The stored error names the exception class only: it is shown by the API, and
-        # an exception message may quote unredacted data. The log has the details.
-        logger.exception("investigation %s failed", investigation_id)
         # A failed run leaves no step pending or running: the sub-agents of the round
         # were cancelled with it.
-        finished_at = datetime.now(UTC)
-        async with sessions() as session, session.begin():
-            await InvestigationRepository(session).set_status(
-                investigation_id, "failed", finished_at=finished_at, error=type(exc).__name__
-            )
-            await PlanRepository(session).fail_unfinished_steps(investigation_id, finished_at)
-        await events.emit(investigation_id, "investigation_finished", status="failed")
+        await fail_investigation(sessions, events, investigation_id, exc)
         return InvestigationOutcome(investigation_id, "failed")
     async with sessions() as session:
         status = (await InvestigationRepository(session).get(investigation_id)).status
     return InvestigationOutcome(investigation_id, status)
+
+
+async def run_investigation(
+    settings: Settings,
+    alert: AlertInput,
+    *,
+    sessions: async_sessionmaker[AsyncSession],
+    backends: ToolBackends,
+    trigger: str,
+    case_id: str | None = None,
+    rules: Sequence[ScriptedRule] = (),
+    tool_sleep: Sleep = asyncio.sleep,
+    model_sleep: Sleep = asyncio.sleep,
+) -> InvestigationOutcome:
+    """Investigate one alert to the end: create the investigation, then execute it.
+
+    The command line uses this; the API creates and executes in two steps, so that the
+    response can carry the investigation ID while the run continues in the background.
+    The arguments are those of ``create_investigation`` and ``execute_investigation``.
+
+    Returns:
+        The investigation ID and its final status.
+    """
+    created = await create_investigation(
+        settings, alert, sessions=sessions, trigger=trigger, case_id=case_id
+    )
+    assert created.investigation_id is not None
+    return await execute_investigation(
+        settings,
+        created.investigation_id,
+        alert,
+        sessions=sessions,
+        backends=backends,
+        rules=rules,
+        tool_sleep=tool_sleep,
+        model_sleep=model_sleep,
+    )

@@ -173,6 +173,20 @@ def test_unknown_investigation_is_404(client: TestClient) -> None:
 async def test_elapsed_runs_to_the_last_call_while_running(
     session: AsyncSession, loaded: str, pg_url: str
 ) -> None:
+    # The application starts first: at startup it marks investigations that are still
+    # running as interrupted, and this one runs in another process.
+    with TestClient(create_app(Settings(database_url=pg_url))) as client:
+        await _running_with_one_call(session)
+        running_id = await _running_id(session)
+        totals = client.get(f"/api/investigations/{running_id}/calls").json()["totals"]
+    assert totals["elapsed_ms"] == 5500
+
+
+async def _running_id(session: AsyncSession) -> str:
+    return (await InvestigationRepository(session).list_unfinished())[0]
+
+
+async def _running_with_one_call(session: AsyncSession) -> None:
     running = await InvestigationRepository(session).create(
         trigger="manual", tool_backend="pack", llm_mode="scripted", token_budget=1000
     )
@@ -190,9 +204,6 @@ async def test_elapsed_runs_to_the_last_call_while_running(
         tokens_out=5,
     )
     await session.commit()
-    with TestClient(create_app(Settings(database_url=pg_url))) as client:
-        totals = client.get(f"/api/investigations/{running.id}/calls").json()["totals"]
-    assert totals["elapsed_ms"] == 5500
     assert start.tzinfo is not None and start < datetime.now(UTC)
 
 

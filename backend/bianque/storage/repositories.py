@@ -38,6 +38,9 @@ from bianque.storage.models import (
     Suggestion,
 )
 
+#: Prefix of the advisory lock key of an alert fingerprint.
+ALERT_LOCK_PREFIX = "bianque:alert:"
+
 #: Call summaries are cut to this many characters before they are stored.
 SUMMARY_LIMIT = 2000
 
@@ -93,10 +96,16 @@ class AlertRepository:
 
         When an alert with the same fingerprint has an investigation that has not ended,
         only that alert's ``received_at`` is updated; otherwise a new alert row is added.
+        A transaction-scoped advisory lock on the fingerprint makes concurrent deliveries
+        of one alert wait for each other, so the second one sees the investigation the
+        first one created in the same transaction.
 
         Returns:
             The alert row and whether it is already under investigation.
         """
+        await self._session.execute(
+            select(func.pg_advisory_xact_lock(func.hashtext(ALERT_LOCK_PREFIX + fingerprint)))
+        )
         open_alert = await self._session.scalar(
             select(Alert)
             .join(Investigation, Investigation.alert_id == Alert.id)
@@ -190,6 +199,24 @@ class InvestigationRepository:
             .limit(limit)
         )
         return result.all()
+
+    async def list_unfinished(self) -> Sequence[str]:
+        """Return the IDs of the investigations that are pending or running, oldest first."""
+        result = await self._session.scalars(
+            select(Investigation.id)
+            .where(Investigation.status.in_(OPEN_INVESTIGATION_STATUSES))
+            .order_by(Investigation.started_at, Investigation.id)
+        )
+        return result.all()
+
+    async def has_replay(self, case_id: str) -> bool:
+        """Return whether a replay investigation of ``case_id`` exists, in any status."""
+        found = await self._session.scalar(
+            select(Investigation.id)
+            .where(Investigation.case_id == case_id, Investigation.trigger == "replay")
+            .limit(1)
+        )
+        return found is not None
 
     async def set_status(
         self,
@@ -490,6 +517,21 @@ class CallRecordRepository:
             .values(gate_result=dict(gate_result))
         )
 
+    async def tokens_of_session(self, session_id: int) -> int:
+        """Return the tokens of every call of a follow-up session, input and output."""
+        total = await self._session.scalar(
+            select(
+                func.coalesce(
+                    func.sum(
+                        func.coalesce(CallRecord.tokens_in, 0)
+                        + func.coalesce(CallRecord.tokens_out, 0)
+                    ),
+                    0,
+                )
+            ).where(CallRecord.session_id == session_id)
+        )
+        return int(total or 0)
+
     async def list_for_investigation(self, investigation_id: str) -> Sequence[CallRecord]:
         """Return the calls of an investigation in the order they started."""
         result = await self._session.scalars(
@@ -758,11 +800,15 @@ class FollowupRepository:
         *,
         role: str,
         content: str,
+        segments: Sequence[Mapping[str, Any]] = (),
         citations: Sequence[str] = (),
         references: Sequence[str] = (),
         unknown: bool = False,
     ) -> FollowupMessage:
         """Append a message with the next sequence number of the session.
+
+        ``segments`` holds the paragraphs of an answer with their own citations; a
+        question has none.
 
         The session row is locked for the rest of the transaction, so concurrent appends
         get distinct sequence numbers.
@@ -778,6 +824,7 @@ class FollowupRepository:
             seq=seq,
             role=role,
             content=content,
+            segments=[dict(segment) for segment in segments],
             citations=list(citations),
             references=list(references),
             unknown=unknown,

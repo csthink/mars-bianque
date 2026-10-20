@@ -327,9 +327,7 @@ class EvidenceAgent:
                 result = GateResult(OutputType.FINDINGS.value, (SCHEMA_FAILURE,))
             else:
                 result = validate(OutputType.FINDINGS, arguments, gate)
-            await rt.recorder.set_gate_result(
-                context.investigation_id, context.agent, context.operation, result.to_json()
-            )
+            await rt.recorder.set_gate_result(context, result.to_json())
             if result.passed and isinstance(result.output, Findings):
                 return [finding.model_dump(mode="json") for finding in result.output.findings]
             conversation = conversation + rejection_feedback(

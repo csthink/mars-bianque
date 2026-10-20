@@ -14,6 +14,9 @@ tools. They never read the database and never name an evaluation case.
 - ``report``: a root cause when a change diff and the pod status support the category
   the evidence points to; unknown otherwise. Every failed call is listed as missing
   evidence, and a failed logs call lowers the confidence.
+- ``followup``: one paragraph on the change evidence and one on the pod status, each
+  citing it; a paragraph citing the first suggestion when the report has suggestions;
+  insufficient evidence when there is no evidence beyond the alert.
 
 Plans and reports refer to the knowledge chunk with the smallest ID when the request
 offers any, so replays cover knowledge in its one allowed place.
@@ -35,6 +38,7 @@ from bianque.agents.prompting import (
     FAILED_CALLS,
     KNOWLEDGE,
     STEP,
+    SUGGESTIONS,
 )
 from bianque.gate import SCHEMA_VERSION
 from bianque.llm import ScriptedReply, ScriptedRule
@@ -48,6 +52,7 @@ _KNOWLEDGE_ENTRY = re.compile(r"^(?:\[(kn_[0-9a-f]{12})\] |- (kn_[0-9a-f]{12}): 
 _FAILURE = re.compile(r"^- (.+?) \((\w+) domain\): (.+)$")
 _REPLICASET_POD = re.compile(r"^(?P<workload>.+)-[0-9a-f]{6,10}-[0-9a-z]{5}$")
 _EVIDENCE_ID = re.compile(r"^Evidence ID: (ev_[0-9a-f]{10}(?:, ev_[0-9a-f]{10})*)$", re.M)
+_SUGGESTION = re.compile(r"^- \[(sg_[0-9a-f]{10})\] ", re.M)
 
 
 @dataclass(frozen=True)
@@ -530,6 +535,54 @@ def report_rule(request: ModelRequest) -> ScriptedReply | None:
     return _call("submit_report", body)
 
 
+def followup_rule(request: ModelRequest) -> ScriptedReply | None:
+    """An answer that cites the change and pod status evidence and the first suggestion."""
+    if request.agent != "followup":
+        return None
+    sections = _sections(request)
+    evidence = [item for item in _evidence(sections) if item.source != "alertmanager"]
+    change = [item.id for item in evidence if _domain_of(item.tool) == "change"]
+    status = [item.id for item in evidence if item.tool in POD_STATUS_TOOLS]
+    segments: list[dict[str, Any]] = []
+    if change:
+        segments.append(
+            {
+                "text": "The change evidence shows what was modified and when.",
+                "citations": change[:3],
+                "insufficient_evidence": False,
+            }
+        )
+    if status:
+        segments.append(
+            {
+                "text": "The pod status shows how the workload is failing now.",
+                "citations": status[:1],
+                "insufficient_evidence": False,
+            }
+        )
+    suggestions = _SUGGESTION.findall(sections.get(SUGGESTIONS, ""))
+    if suggestions:
+        segments.append(
+            {
+                "text": "The first remediation suggestion addresses it.",
+                "citations": suggestions[:1],
+                "insufficient_evidence": False,
+            }
+        )
+    if not segments:
+        segments.append(
+            {
+                "text": "The evidence collected does not answer this question.",
+                "citations": [],
+                "insufficient_evidence": True,
+            }
+        )
+    return _call(
+        "submit_answer",
+        {"segments": segments, "references": [k for k, _ in _knowledge(sections)[:1]]},
+    )
+
+
 #: The role rules, tried after any rules a test injects.
 ROLE_RULES: tuple[ScriptedRule, ...] = (
     plan_rule,
@@ -537,4 +590,5 @@ ROLE_RULES: tuple[ScriptedRule, ...] = (
     evidence_agent_rule,
     assess_rule,
     report_rule,
+    followup_rule,
 )

@@ -17,9 +17,15 @@ from demo_login import (
     settings,
 )
 from fastapi.testclient import TestClient
+from sqlalchemy import Engine
 
 from bianque.api.app import create_app
 from bianque.auth.sessions import COOKIE_NAME, issue_token
+
+
+@pytest.fixture(autouse=True)
+def _schema(migrated: Engine) -> None:
+    """The application marks unfinished investigations at startup, so it needs the schema."""
 
 
 @pytest.fixture
