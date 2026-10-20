@@ -187,3 +187,90 @@ export interface CallList {
   calls: CallView[];
   totals: CallTotals;
 }
+
+// Login, follow-up sessions and suggestion decisions.
+
+export interface SessionUser {
+  username: string;
+}
+
+export interface FollowupSessionView {
+  id: number;
+  investigation_id: string;
+  created_by: string;
+  created_at: string;
+}
+
+export interface FollowupSessionSummary extends FollowupSessionView {
+  turns: number;
+}
+
+export interface AnswerSegment {
+  text: string;
+  citations: string[];
+  insufficient_evidence: boolean;
+}
+
+export interface FollowupMessage {
+  id: number;
+  seq: number;
+  role: "user" | "assistant";
+  content: string;
+  segments: AnswerSegment[];
+  citations: string[];
+  references: string[];
+  unknown: boolean;
+  created_at: string;
+}
+
+export interface FollowupSessionDetail {
+  session: FollowupSessionView;
+  messages: FollowupMessage[];
+}
+
+export interface QuestionList {
+  recorded_only: boolean;
+  questions: { id: string; question: string }[];
+}
+
+// Server-sent events. Progress events carry IDs, states and validator
+// names only; the page reads the content from the detail interface.
+
+export const TERMINAL_EVENTS = ["investigation_finished", "investigation_interrupted"] as const;
+
+export type InvestigationEvent = { seq: number; created_at: string } & (
+  | { type: "investigation_started"; trigger: string }
+  | { type: "plan_created"; plan_id: number; version: number; source: string }
+  | { type: "step_started" | "step_finished"; step_id: number; domain: string; status: string }
+  | { type: "evidence_added"; evidence_id: string; source: string; tool: string | null }
+  | { type: "assessment_recorded"; round: number; sufficient: boolean; rule_override: boolean }
+  | { type: "report_rejected"; attempt: number; violations: string[] }
+  | { type: "report_published" | "report_degraded"; report_id: number }
+  | { type: (typeof TERMINAL_EVENTS)[number]; status: string }
+);
+
+export type InvestigationEventType = InvestigationEvent["type"];
+
+export const INVESTIGATION_EVENT_TYPES: readonly InvestigationEventType[] = [
+  "investigation_started",
+  "plan_created",
+  "step_started",
+  "step_finished",
+  "evidence_added",
+  "assessment_recorded",
+  "report_rejected",
+  "report_published",
+  "report_degraded",
+  ...TERMINAL_EVENTS,
+];
+
+export type ProgressStage = "retrieving" | "generating" | "validating" | "retrying";
+
+export type FailureReason = "gate_rejected" | "model_unavailable" | "model_error" | "budget_exhausted";
+
+/** An event of a follow-up answer stream. No event but ``content`` carries model text. */
+export type FollowupEvent =
+  | { event: "progress"; stage: ProgressStage; elapsed_ms: number }
+  | { event: "content"; segment_index: number; text: string; citations: string[] }
+  | { event: "done"; message_id: number; validated: true }
+  | { event: "failed"; reason: FailureReason; violations: string[] };

@@ -1,10 +1,10 @@
 import type { CallTotals, InvestigationDetail } from "../api/types";
-import { formatClock, formatDuration, formatTokens, statusLabel, triggerLabel } from "../lib/format";
+import { formatClock, formatDuration, formatTokens, isOpenStatus, statusLabel, triggerLabel } from "../lib/format";
 import { Citation } from "./Citation";
 import { Badge } from "./ui";
 
 export function AlertCard({ detail, totals }: { detail: InvestigationDetail; totals?: CallTotals }) {
-  const { investigation, alert, report, assessments } = detail;
+  const { investigation, alert, report } = detail;
   const labels = alert?.labels ?? {};
   const facts = [
     alert ? `${labels.namespace ?? "-"} / ${labels.pod ?? "-"}` : null,
@@ -14,7 +14,7 @@ export function AlertCard({ detail, totals }: { detail: InvestigationDetail; tot
     investigation.case_id ? `用例 ${investigation.case_id}` : null,
   ].filter((fact): fact is string => fact !== null);
   const stats = [
-    `${assessments.length} 轮`,
+    `${detail.plans.length} 轮`,
     totals ? `${totals.calls} 次调用` : null,
     `${formatTokens(investigation.tokens_used)} token`,
     totals ? formatDuration(totals.elapsed_ms) : null,
@@ -32,7 +32,12 @@ export function AlertCard({ detail, totals }: { detail: InvestigationDetail; tot
             {alert?.name ?? "手动触发的调查"}
           </h1>
           {alert && <Badge tone={alert.status === "firing" ? "danger" : "success"}>{alert.status}</Badge>}
-          <Badge>{statusLabel(investigation.status)}</Badge>
+          <Badge tone={isOpenStatus(investigation.status) ? "info" : "neutral"}>
+            <span data-testid="investigation-status" data-status={investigation.status}>
+              {statusLabel(investigation.status)}
+              {isOpenStatus(investigation.status) && detail.plans.length > 0 && ` · 第 ${detail.plans.length} 轮`}
+            </span>
+          </Badge>
         </div>
         <ReportBadge status={report?.status ?? null} />
       </div>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { AssessmentView, PlanView } from "../api/types";
 import { categoryLabel } from "../lib/format";
 import { Citations } from "./Citation";
@@ -12,8 +12,32 @@ const STEP_STATUS: Record<string, { label: string; className: string }> = {
   pending: { label: "等待", className: "text-slate-500 dark:text-slate-400" },
 };
 
-export function PlanPanel({ plans, assessments }: { plans: PlanView[]; assessments: AssessmentView[] }) {
+/** A step picked in the flow graph; ``at`` makes picking the same step again count. */
+export interface StepFocus {
+  stepId: number;
+  version: number;
+  at: number;
+}
+
+export function PlanPanel({
+  plans,
+  assessments,
+  focus = null,
+}: {
+  plans: PlanView[];
+  assessments: AssessmentView[];
+  focus?: StepFocus | null;
+}) {
   const [version, setVersion] = useState(plans[0]?.version ?? 1);
+  // A newly picked step shows its version; picking a tab afterwards still works.
+  const [shownFocus, setShownFocus] = useState(focus);
+  if (focus !== shownFocus) {
+    setShownFocus(focus);
+    if (focus) setVersion(focus.version);
+  }
+  useEffect(() => {
+    if (focus) document.getElementById(`plan-step-${focus.stepId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [focus]);
   const plan = plans.find((item) => item.version === version);
   const nextPlan = plans.find((item) => item.version === version + 1);
 
@@ -53,7 +77,15 @@ export function PlanPanel({ plans, assessments }: { plans: PlanView[]; assessmen
               {plan.steps.map((step) => {
                 const status = STEP_STATUS[step.status] ?? { label: step.status, className: "" };
                 return (
-                  <li key={step.id} data-testid="plan-step" className="text-sm">
+                  <li
+                    key={step.id}
+                    id={`plan-step-${step.id}`}
+                    data-testid="plan-step"
+                    data-focused={focus?.stepId === step.id ? "true" : undefined}
+                    className={`scroll-mt-4 text-sm ${
+                      focus?.stepId === step.id ? "-mx-2 rounded-lg bg-blue-50 px-2 py-1 ring-2 ring-blue-400 dark:bg-blue-950/60" : ""
+                    }`}
+                  >
                     {/* Narrow screens: domain and status on one row, the goal below at full
                         width. From sm up: domain column, goal, status. */}
                     <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-2 gap-y-1 sm:grid-cols-[5.5rem_minmax(0,1fr)_auto]">

@@ -14,7 +14,7 @@ export function EvidenceList({ evidence, highlighted }: { evidence: EvidenceView
   const ordered = byCollection(evidence);
   return (
     <Section
-      title="证据列表（默认显示脱敏文本）"
+      title="证据列表（脱敏文本）"
       aside={<span className="text-xs text-slate-500 dark:text-slate-400">{evidence.length} 条，按采集时间排列</span>}
       testId="evidence-list"
     >

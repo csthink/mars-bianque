@@ -38,6 +38,9 @@ const STATUS: Record<string, string> = {
 
 export const statusLabel = (status: string) => STATUS[status] ?? status;
 
+/** Whether an investigation has not ended yet. */
+export const isOpenStatus = (status: string) => status === "pending" || status === "running";
+
 const TRIGGER: Record<string, string> = { alert: "告警", manual: "手动", replay: "回放" };
 
 export const triggerLabel = (trigger: string) => TRIGGER[trigger] ?? trigger;

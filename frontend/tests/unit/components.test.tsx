@@ -6,13 +6,13 @@ import { describe, expect, it } from "vitest";
 import { CallTable } from "../../src/components/CallTable";
 import { CallTimeline } from "../../src/components/CallTimeline";
 import { Citation } from "../../src/components/Citation";
-import { EvidenceIds } from "../../src/components/evidenceContext";
+import { CitableIds } from "../../src/components/citableContext";
 import { callList } from "./fixtures";
 
 function withEvidence(ids: string[], node: ReactNode) {
   return (
     <MemoryRouter>
-      <EvidenceIds.Provider value={new Set(ids)}>{node}</EvidenceIds.Provider>
+      <CitableIds.Provider value={new Set(ids)}>{node}</CitableIds.Provider>
     </MemoryRouter>
   );
 }
@@ -21,6 +21,13 @@ describe("Citation", () => {
   it("links a known evidence ID to its anchor", () => {
     render(withEvidence(["ev_0000000002"], <Citation id="ev_0000000002" />));
     expect(screen.getByRole("link", { name: "ev_0000000002" })).toHaveAttribute("href", "/#ev_0000000002");
+  });
+
+  it("links a suggestion a follow-up answer cites to the suggestion", () => {
+    render(withEvidence(["sg_a710355d0c"], <Citation id="sg_a710355d0c" />));
+    const link = screen.getByRole("link", { name: "sg_a710355d0c" });
+    expect(link).toHaveAttribute("href", "/#sg_a710355d0c");
+    expect(link).toHaveAttribute("title", "修复建议");
   });
 
   it("shows an unknown ID without a link", () => {

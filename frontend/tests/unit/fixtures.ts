@@ -1,4 +1,4 @@
-import type { CallList, CallView, EvidenceView } from "../../src/api/types";
+import type { CallList, CallView, EvidenceView, PlanView, StepView } from "../../src/api/types";
 
 export function call(overrides: Partial<CallView>): CallView {
   return {
@@ -78,3 +78,24 @@ export const callList: CallList = {
     elapsed_ms: 84000,
   },
 };
+
+export function step(overrides: Partial<StepView>): StepView {
+  return {
+    id: 1,
+    seq: 1,
+    domain: "kubernetes",
+    goal: "Read the status of the restarting pod.",
+    agent: "kubernetes",
+    suggested_tools: [],
+    expected_evidence: [],
+    status: "done",
+    findings: [],
+    started_at: null,
+    finished_at: null,
+    ...overrides,
+  };
+}
+
+export function plan(version: number, steps: StepView[], source = "model"): PlanView {
+  return { id: version, version, source, rationale: "", created_at: "2026-10-19T22:34:00Z", steps };
+}

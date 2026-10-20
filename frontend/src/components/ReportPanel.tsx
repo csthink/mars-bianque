@@ -44,7 +44,8 @@ function ReportBody({ report }: { report: ReportView }) {
   const { body } = report;
   const cause = body.root_cause;
   return (
-    <div className="space-y-5 text-sm text-slate-700 dark:text-slate-300">
+    // Model text may hold long unbroken names, such as a field path: they wrap anywhere.
+    <div className="space-y-5 text-sm [overflow-wrap:anywhere] text-slate-700 dark:text-slate-300">
       <p className="leading-relaxed text-slate-800 dark:text-slate-200">{body.summary}</p>
 
       <div

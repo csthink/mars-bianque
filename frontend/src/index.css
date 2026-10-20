@@ -12,3 +12,26 @@
 html {
   scroll-padding-top: 1rem;
 }
+
+/* The flow graph is only looked at: a touch on it scrolls the page, and its edges take
+   the colors of the page. */
+.bq-flow .react-flow__pane {
+  touch-action: pan-x pan-y;
+  cursor: default;
+}
+
+.bq-flow {
+  --xy-edge-stroke: var(--color-slate-400);
+  --xy-edge-stroke-width: 1.5;
+  --xy-attribution-background-color: transparent;
+}
+
+.bq-flow .react-flow__attribution a {
+  color: var(--color-slate-400);
+}
+
+@media (prefers-color-scheme: dark) {
+  .bq-flow {
+    --xy-edge-stroke: var(--color-slate-500);
+  }
+}
