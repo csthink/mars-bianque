@@ -10,6 +10,8 @@ Subcommands:
 - ``bianque knowledge ingest``: import a directory of runbooks.
 - ``bianque knowledge embed-fixtures``: write or check the embedding fixture.
 - ``bianque eval retrieval``: evaluate the fused retrieval on annotated queries.
+- ``bianque eval run``: replay every case, ask its questions, write the evaluation report.
+- ``bianque eval compare``: check that a recorded replay reproduced the live run.
 - ``bianque auth hash-password``: print the bcrypt hash of a password read from stdin.
 """
 
@@ -283,6 +285,49 @@ async def _eval_retrieval(args: argparse.Namespace) -> int:
     return 0
 
 
+async def _eval_run(args: argparse.Namespace) -> int:
+    from bianque.config.settings import Settings, with_recorded_model
+    from bianque.evals.report import write_report
+    from bianque.evals.run import evaluate, load_cases
+
+    settings = Settings()
+    if args.llm_mode:
+        settings = settings.model_copy(update={"llm_mode": args.llm_mode})
+    settings = with_recorded_model(settings.model_copy(update={"cases_dir": Path(args.cases)}))
+    cases = load_cases(settings.cases_dir, args.case)
+    report = await evaluate(
+        settings,
+        cases,
+        queries=Path(args.queries),
+        record=Path(args.record) if args.record else None,
+        check_network=args.check_network_isolation,
+    )
+    write_report(Path(args.out), report)
+    s = report.summary
+    print(
+        f"{s.cases} cases, {report.llm.mode} mode ({report.llm.model or 'no model'}): "
+        f"root cause {s.root_cause_correct.count}/{s.root_cause_correct.total}, "
+        f"{s.model_calls} model calls, {s.tokens} tokens; report in {args.out}"
+    )
+    for gate in report.hard_gates:
+        if not gate.passed:
+            print(f"hard gate {gate.name} failed: {'; '.join(gate.details)}", file=sys.stderr)
+    return 0 if report.passed else 1
+
+
+def _eval_compare(args: argparse.Namespace) -> int:
+    from bianque.evals.report import EvalReport, compare_reports
+
+    live = EvalReport.model_validate_json(Path(args.live).read_text())
+    replay = EvalReport.model_validate_json(Path(args.replay).read_text())
+    problems = compare_reports(live, replay)
+    for problem in problems:
+        print(problem, file=sys.stderr)
+    if not problems:
+        print(f"the replay reproduced all {len(live.cases)} cases of the live run")
+    return 1 if problems else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Return the argument parser of the ``bianque`` command."""
     parser = argparse.ArgumentParser(prog="bianque")
@@ -351,6 +396,27 @@ def build_parser() -> argparse.ArgumentParser:
     )
     retrieval.add_argument("--queries", required=True, help="the annotated queries")
     retrieval.add_argument("--out", required=True, help="directory for retrieval.json and .md")
+    run = eval_commands.add_parser(
+        "run", help="replay every case and ask its questions; write report.json and report.md"
+    )
+    run.add_argument("--cases", required=True, help="the evaluation case directory")
+    run.add_argument("--queries", required=True, help="the annotated retrieval queries")
+    run.add_argument("--out", required=True, help="directory for report.json and report.md")
+    run.add_argument(
+        "--llm-mode", choices=["live", "recorded", "scripted"], help="BIANQUE_LLM_MODE by default"
+    )
+    run.add_argument("--case", action="append", default=[], help="only this case; repeatable")
+    run.add_argument("--record", help="live mode: record every response into this directory")
+    run.add_argument(
+        "--check-network-isolation",
+        action="store_true",
+        help="fail when a public address is reachable",
+    )
+    compare = eval_commands.add_parser(
+        "compare", help="check that a recorded replay reproduced the live run it recorded"
+    )
+    compare.add_argument("live", help="report.json of the live run")
+    compare.add_argument("replay", help="report.json of the recorded replay")
     return parser
 
 
@@ -395,12 +461,19 @@ def _hash_password() -> int:
 
 
 def _knowledge(args: argparse.Namespace) -> int:
+    from bianque.config.manifest import ManifestError
+    from bianque.evals.cases import CaseFileError
     from bianque.evals.retrieval import RetrievalEvalError
+    from bianque.evals.run import EvaluationError
     from bianque.knowledge.chunking import ChunkingError
     from bianque.knowledge.embedding import EmbeddingError
     from bianque.knowledge.fixtures import EmbeddingFixtureError
 
     try:
+        if args.command == "eval" and args.eval_command == "run":
+            return asyncio.run(_eval_run(args))
+        if args.command == "eval" and args.eval_command == "compare":
+            return _eval_compare(args)
         if args.command == "eval":
             return asyncio.run(_eval_retrieval(args))
         if args.knowledge_command == "download-model":
@@ -408,7 +481,15 @@ def _knowledge(args: argparse.Namespace) -> int:
         if args.knowledge_command == "ingest":
             return asyncio.run(_ingest(args))
         return asyncio.run(_embed_fixtures(args))
-    except (RetrievalEvalError, ChunkingError, EmbeddingError, EmbeddingFixtureError) as exc:
+    except (
+        RetrievalEvalError,
+        ChunkingError,
+        EmbeddingError,
+        EmbeddingFixtureError,
+        CaseFileError,
+        EvaluationError,
+        ManifestError,
+    ) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
