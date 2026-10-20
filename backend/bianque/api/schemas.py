@@ -338,6 +338,18 @@ class FollowupMessageView(BaseModel):
     created_at: datetime
 
 
+class FollowupSessionSummary(FollowupSessionView):
+    """A follow-up session in the list of an investigation's sessions."""
+
+    turns: int
+
+
+class FollowupSessionList(BaseModel):
+    """The follow-up sessions of an investigation, newest first."""
+
+    sessions: list[FollowupSessionSummary]
+
+
 class FollowupSessionDetail(BaseModel):
     """A follow-up session with its messages in order."""
 

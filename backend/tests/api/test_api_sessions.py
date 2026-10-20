@@ -6,6 +6,7 @@ from typing import Any
 
 import httpx
 import yaml
+from demo_login import USERNAME
 from live_server import CASES, Frame, Hold, Server, read_frames, scripted, serve
 from sqlalchemy import Engine, func, select, text
 
@@ -209,3 +210,26 @@ def test_scripted_mode_takes_any_question(migrated: Engine, pg_url: str) -> None
         investigation_id = finished(server)
         listed = server.client.get(f"/api/investigations/{investigation_id}/questions").json()
     assert listed["recorded_only"] is False and len(listed["questions"]) == 3
+
+
+def test_the_sessions_of_an_investigation_are_listed_newest_first(
+    migrated: Engine, pg_url: str
+) -> None:
+    with serve(scripted(pg_url)) as server:
+        investigation_id = finished(server)
+        other = finished(server, "s1-b")
+        path = f"/api/investigations/{investigation_id}/sessions"
+        anonymous = httpx.Client(base_url=server.url)
+        assert anonymous.get(path).json() == {"sessions": []}
+        first = open_session(server, investigation_id)
+        ask_raw(server, first, "Why this commit?")
+        ask_raw(server, first, "What else changed?")
+        second = open_session(server, investigation_id)
+        open_session(server, other)
+        # Reading needs no login.
+        listed = anonymous.get(path).json()["sessions"]
+        missing = anonymous.get("/api/investigations/inv_missing/sessions")
+    assert [(s["id"], s["turns"]) for s in listed] == [(second, 0), (first, 2)]
+    assert all(s["created_by"] == USERNAME for s in listed)
+    assert all(s["investigation_id"] == investigation_id for s in listed)
+    assert missing.status_code == 404

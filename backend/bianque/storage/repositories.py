@@ -769,6 +769,14 @@ class ConfirmationRepository:
         return confirmation
 
 
+@dataclass(frozen=True)
+class SessionTurns:
+    """A follow-up session with the number of its turns."""
+
+    session: FollowupSession
+    turns: int
+
+
 class FollowupRepository:
     """Follow-up sessions and their messages."""
 
@@ -832,6 +840,24 @@ class FollowupRepository:
         self._session.add(message)
         await self._session.flush()
         return message
+
+    async def list_sessions(self, investigation_id: str) -> list[SessionTurns]:
+        """Return the sessions of an investigation, newest first, with their turn counts.
+
+        A turn is a question and its answer, which are stored together.
+        """
+        turns = (
+            select(func.count())
+            .where(FollowupMessage.session_id == FollowupSession.id, FollowupMessage.role == "user")
+            .correlate(FollowupSession)
+            .scalar_subquery()
+        )
+        rows = await self._session.execute(
+            select(FollowupSession, turns)
+            .where(FollowupSession.investigation_id == investigation_id)
+            .order_by(FollowupSession.created_at.desc(), FollowupSession.id.desc())
+        )
+        return [SessionTurns(session=followup, turns=count) for followup, count in rows.all()]
 
     async def list_messages(self, session_id: int) -> Sequence[FollowupMessage]:
         """Return the messages of a session in order."""

@@ -1,8 +1,8 @@
 """Investigations: reads, manual triggers, follow-up sessions and decisions.
 
-Reading needs no login: the list, the detail, the calls, the progress events and the
-recorded questions. Writing needs a login: manual triggers, opening a follow-up session
-and deciding on a suggestion.
+Reading needs no login: the list, the detail, the calls, the progress events, the
+follow-up sessions and the recorded questions. Writing needs a login: manual triggers,
+opening a follow-up session and deciding on a suggestion.
 """
 
 from __future__ import annotations
@@ -36,6 +36,8 @@ from bianque.api.schemas import (
     DecisionRequest,
     EvidenceView,
     FindingView,
+    FollowupSessionList,
+    FollowupSessionSummary,
     FollowupSessionView,
     GateView,
     InvestigationDetail,
@@ -60,6 +62,7 @@ from bianque.storage.repositories import (
     ConfirmationRepository,
     EventRepository,
     EvidenceRepository,
+    FollowupRepository,
     InvestigationRepository,
     PlanRepository,
     ReportRepository,
@@ -521,6 +524,24 @@ async def create_session(
         investigation_id=created.investigation_id,
         created_by=created.created_by,
         created_at=created.created_at,
+    )
+
+
+@router.get("/{investigation_id}/sessions", response_model=FollowupSessionList)
+async def list_sessions(investigation_id: str, session: Session) -> FollowupSessionList:
+    """The follow-up sessions of an investigation, newest first, with their turn counts."""
+    inv_id = (await _investigation(session, investigation_id)).id
+    return FollowupSessionList(
+        sessions=[
+            FollowupSessionSummary(
+                id=item.session.id,
+                investigation_id=item.session.investigation_id,
+                created_by=item.session.created_by,
+                created_at=item.session.created_at,
+                turns=item.turns,
+            )
+            for item in await FollowupRepository(session).list_sessions(inv_id)
+        ]
     )
 
 
