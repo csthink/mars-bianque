@@ -22,8 +22,8 @@ from bianque.agents.records import DatabaseCallRecorder
 from bianque.gate import SCHEMAS, GateContext, GateResult, OutputType, Violation, validate
 from bianque.llm import (
     CallContext,
-    LLMError,
     LLMGateway,
+    LLMUnavailableError,
     RedactedMessage,
     RedactedPrompt,
     StructuredOutputError,
@@ -141,7 +141,9 @@ async def generate_gated(
                 ),
             )
             continue
-        except LLMError:
+        except LLMUnavailableError:
+            # Only an unavailable model falls back; any other model error (a missing
+            # recording, a rejected request) ends the investigation.
             results.append(GateResult(output_type.value, (MODEL_UNAVAILABLE,)))
             break
         result = validate(output_type, structured.value, gate_context)

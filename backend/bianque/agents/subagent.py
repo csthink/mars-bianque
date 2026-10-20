@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Collection, Sequence
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -39,6 +40,7 @@ from bianque.gate import Findings, GateResult, OutputType, validate
 from bianque.llm import (
     CallContext,
     LLMError,
+    LLMUnavailableError,
     RedactedMessage,
     RedactedPrompt,
     ToolCall,
@@ -73,9 +75,19 @@ def _now() -> datetime:
 
 def failure_category(error: BaseException) -> str:
     """Return a run-independent description of a sub-agent failure."""
-    if isinstance(error, LLMError):
+    if isinstance(error, LLMUnavailableError):
         return "model_unavailable"
     return f"failed: {type(error).__name__}"
+
+
+def is_fatal(error: BaseException) -> bool:
+    """Whether an error must end the investigation instead of failing one sub-agent.
+
+    A model error other than an unavailable model is a configuration or replay defect: a
+    missing or broken recording, a rejected request, or redaction residue. Hiding it
+    behind a missing-evidence entry would let a broken replay pass as an investigation.
+    """
+    return isinstance(error, LLMError) and not isinstance(error, LLMUnavailableError)
 
 
 class EvidenceAgent:
@@ -96,6 +108,8 @@ class EvidenceAgent:
                 await self._step(task["investigation_id"], task["domain"], remaining[0], failures)
                 remaining.pop(0)
         except Exception as exc:
+            if is_fatal(exc):
+                raise
             failures.append(Failure(domain=task["domain"], tool=None, error=failure_category(exc)))
             await self._fail_steps(task["investigation_id"], task["domain"], remaining)
         return {"failures": failures}
@@ -157,12 +171,14 @@ class EvidenceAgent:
             preserve=preserve,
         )
         context = CallContext(agent=domain, operation=OPERATION, investigation_id=investigation_id)
-        conversation, collected, errors, submitted = await self._react(
-            prompt, context, domain, step_id, preserve
+        # Failed calls go straight into ``failures``, so they are reported even when a
+        # later turn of this step raises.
+        before = len(failures)
+        conversation, collected, submitted = await self._react(
+            prompt, context, domain, step_id, preserve, failures
         )
-        failures += errors
-        findings = await self._findings(conversation, context, submitted, preserve)
-        status = "failed" if errors and not collected else "done"
+        findings = await self._findings(conversation, context, domain, submitted, preserve)
+        status = "failed" if len(failures) > before and not collected else "done"
         async with rt.sessions() as session, session.begin():
             await PlanRepository(session).update_step(
                 step_id, status=status, findings=findings, finished_at=_now()
@@ -178,19 +194,19 @@ class EvidenceAgent:
         domain: str,
         step_id: int,
         preserve: set[str],
-    ) -> tuple[RedactedPrompt, list[str], list[Failure], tuple[ToolCall, str] | None]:
-        """Run the tool loop of one step.
+        failures: list[Failure],
+    ) -> tuple[RedactedPrompt, list[str], tuple[ToolCall, str] | None]:
+        """Run the tool loop of one step; failed tool calls are appended to ``failures``.
 
         Returns:
-            The conversation, the evidence IDs collected, the failed calls, and the
-            ``submit_findings`` call with the text of its turn, when the model made one.
+            The conversation, the evidence IDs collected, and the ``submit_findings`` call
+            with the text of its turn, when the model made one.
         """
         rt = self._rt
         assert context.investigation_id is not None
         specs = [*rt.tools.specs(domain=domain), self._submit]
         conversation = prompt
         collected: list[str] = []
-        errors: list[Failure] = []
         for _ in range(rt.subagent_max_steps):
             completion = await rt.gateway.complete(
                 conversation, context=context, tools=specs, tool_choice="auto"
@@ -200,7 +216,7 @@ class EvidenceAgent:
             if not tool_calls:
                 submit = next((call for call in calls if call.name == SUBMIT_FINDINGS), None)
                 if submit is not None:
-                    return conversation, collected, errors, (submit, completion.text)
+                    return conversation, collected, (submit, completion.text)
                 conversation = conversation + (
                     assistant_message(completion.text, engine=rt.engine, preserve=preserve),
                 )
@@ -236,9 +252,9 @@ class EvidenceAgent:
                     await self._announce(context.investigation_id, call.name, outcome)
                 elif outcome.status == "error":
                     category = (outcome.error or "failed").split(":", 1)[0]
-                    errors.append(Failure(domain=domain, tool=call.name, error=category))
+                    failures.append(Failure(domain=domain, tool=call.name, error=category))
             conversation = conversation + tuple(messages)
-        return conversation, collected, errors, None
+        return conversation, collected, None
 
     def _tool_message(
         self, call: ToolCall, result: ToolResult | None, preserve: Collection[str]
@@ -274,6 +290,7 @@ class EvidenceAgent:
         self,
         conversation: RedactedPrompt,
         context: CallContext,
+        domain: str,
         submitted: tuple[ToolCall, str] | None,
         preserve: Collection[str],
     ) -> list[dict[str, Any]]:
@@ -281,11 +298,23 @@ class EvidenceAgent:
 
         A ``submit_findings`` call the model made on its own is validated first; after a
         rejection, or when the model made none, the call is forced, with one retry.
+
+        The gate sees what the conversation saw: the alert and this domain's evidence, and
+        the identifiers the conversation preserved. Evidence other sub-agents collect at
+        the same time must not decide whether a finding passes.
         """
         rt = self._rt
         assert context.investigation_id is not None
         snapshot = await load_snapshot(rt.sessions, context.investigation_id)
-        gate = gate_context(snapshot, rt)
+        domain_tools = {spec.name for spec in rt.tools.specs(domain=domain)}
+        visible = frozenset(
+            item.id
+            for item in snapshot.evidence
+            if item.source == "alertmanager" or item.tool in domain_tools
+        )
+        gate = replace(
+            gate_context(snapshot, rt), evidence_ids=visible, preserved=frozenset(preserve)
+        )
         retries = 1
         if submitted is not None:
             call, text = submitted

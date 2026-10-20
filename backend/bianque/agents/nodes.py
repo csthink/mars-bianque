@@ -56,7 +56,7 @@ from bianque.gate import (
     build_degraded_report,
     validate,
 )
-from bianque.llm import CallContext, LLMError, StructuredOutputError, redact_for_llm
+from bianque.llm import CallContext, LLMUnavailableError, StructuredOutputError, redact_for_llm
 from bianque.storage.ids import alert_evidence_id
 from bianque.storage.repositories import (
     AssessmentRepository,
@@ -414,12 +414,13 @@ class InvestigationNodes:
             )
         except StructuredOutputError:
             return {"report_attempt": attempt, "report_body": None}
-        except LLMError:
+        except LLMUnavailableError:
+            # The degraded report names every validator that rejected an earlier attempt.
             return {
                 "report_attempt": attempt,
                 "report_body": None,
                 "model_failed": True,
-                "rejection": [MODEL_UNAVAILABLE.to_json()],
+                "rejection": [*state.get("rejection", []), MODEL_UNAVAILABLE.to_json()],
             }
         return {"report_attempt": attempt, "report_body": structured.value.model_dump(mode="json")}
 

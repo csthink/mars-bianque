@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from investigation_harness import investigate
@@ -10,6 +11,7 @@ from sqlalchemy import Engine, text
 
 from bianque.agents.nodes import BUDGET_EXHAUSTED, RULE_REASON
 from bianque.llm import ScriptedReply
+from bianque.llm.errors import RetryableProviderError
 from bianque.llm.request import ModelRequest
 
 #: A text no role rule writes; it marks model output that must not be stored.
@@ -254,3 +256,50 @@ async def test_an_exhausted_budget_stops_after_the_first_round(
     assert len(result.assessments) == 1
     assert result.assessments[0].reason.endswith(BUDGET_EXHAUSTED)
     assert result.investigation.status in ("reported", "degraded")
+
+
+async def test_a_missing_recording_fails_the_investigation(
+    migrated: Engine, pg_url: str, tmp_path: Path
+) -> None:
+    """A recorded replay that misses a recording must fail, not fall back."""
+    result = await investigate(pg_url, "s1-a", llm_mode="recorded", llm_recordings_dir=tmp_path)
+
+    assert result.investigation.status == "failed"
+    assert result.investigation.error == "RecordingNotFoundError"
+    assert result.plans == [] and result.final is None
+    assert [e.type for e in result.events][-1] == "investigation_finished"
+
+
+async def test_an_unavailable_model_falls_back_to_the_default_plan(
+    migrated: Engine, pg_url: str
+) -> None:
+    """Retries used up on the plan call: the default plan replaces the model's plan."""
+
+    def unavailable(request: ModelRequest) -> ScriptedReply | None:
+        if request.operation == "plan":
+            raise RetryableProviderError("timeout", "the model did not answer")
+        return None
+
+    result = await investigate(pg_url, "s1-a", rules=[unavailable])
+
+    assert result.plans[0].source == "default"
+    assert result.investigation.status == "reported"
+
+
+async def test_a_tool_failure_survives_a_later_sub_agent_failure(
+    migrated: Engine, pg_url: str
+) -> None:
+    """The logs tool times out, then the logs sub-agent breaks; both count."""
+
+    def break_after_results(request: ModelRequest) -> ScriptedReply | None:
+        if request.agent == "logs" and any(m.role == "tool" for m in request.prompt.messages):
+            raise RuntimeError("the logs sub-agent broke")
+        return None
+
+    result = await investigate(pg_url, "s1-d", rules=[break_after_results])
+
+    assert result.final is not None
+    missing = " ".join(m["what"] for m in result.final.body["missing_evidence"])
+    assert "logs_get_container_logs" in missing
+    assert "logs evidence agent" in missing
+    assert result.final.body["root_cause"]["confidence"] != "high"

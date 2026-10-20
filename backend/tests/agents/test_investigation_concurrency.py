@@ -18,7 +18,8 @@ RUNS = 20
 async def test_first_round_sub_agents_overlap(migrated: Engine, pg_url: str) -> None:
     """The first calls of both sub-agents wait for each other at a barrier.
 
-    Run one after the other, the first call would wait alone until the timeout and fail.
+    Run one after the other, the first call would wait alone until the timeout, and its
+    retry would start only after that, so the two calls would not overlap in time.
     """
     barrier = asyncio.Barrier(2)
     waiting = {"list_pods", "read_log"}
