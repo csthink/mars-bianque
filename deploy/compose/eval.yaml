@@ -1,0 +1,49 @@
+# Evaluation profile: the database and the evaluation process on one internal Docker
+# network, which has no route out. The process replays every case
+# with the recorded model responses and the embedding fixture, so it needs no model
+# service and no model download; it also checks that a public address is unreachable.
+# Started by `make eval`, which copies the report out of the stopped container: the
+# image's user cannot write to a directory mounted from a Linux host.
+name: bianque-eval
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      # A throwaway database with no published port, reachable only on the internal
+      # network.
+      POSTGRES_HOST_AUTH_METHOD: trust
+    networks: [eval]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  eval:
+    build: ../../backend
+    environment:
+      BIANQUE_DATABASE_URL: postgresql+psycopg://postgres@db:5432/postgres
+      BIANQUE_TOOL_BACKEND: pack
+      BIANQUE_LLM_MODE: recorded
+      BIANQUE_EMBEDDING_MODE: fixture
+    volumes:
+      # Cases, evidence packs, recordings, the embedding fixture and the runbooks, read
+      # from the repository; the image does not hold them.
+      - ../../eval:/app/eval:ro
+      - ../../knowledge:/app/knowledge:ro
+    command:
+      - sh
+      - -c
+      - >-
+        alembic upgrade head &&
+        bianque eval run --cases eval/cases --queries eval/retrieval/queries.yaml
+        --llm-mode recorded --out /tmp/report --check-network-isolation
+    networks: [eval]
+    depends_on:
+      db:
+        condition: service_healthy
+
+networks:
+  eval:
+    internal: true

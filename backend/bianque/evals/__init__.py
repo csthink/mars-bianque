@@ -1,1 +1,1 @@
-"""Evaluation: the retrieval evaluation now, the case evaluation later."""
+"""Evaluation: the case files, the case evaluation and the retrieval evaluation."""

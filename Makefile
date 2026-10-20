@@ -1,6 +1,6 @@
 .PHONY: check lint test frontend-check public-safety hooks demo demo-down demo-alerts inject-s1 \
 	restore-s1 record-pack derive-packs replay-login replay replay-down e2e knowledge-fixtures \
-	eval-retrieval
+	eval record
 
 UV := cd backend && uv run --locked
 
@@ -135,6 +135,25 @@ knowledge-fixtures:
 	$(UV) bianque knowledge embed-fixtures --runbooks ../knowledge/runbooks --cases ../eval/cases \
 		--queries ../eval/retrieval/queries.yaml --out $(EMBEDDING_FIXTURE)
 
-# Retrieval evaluation in a throwaway database; the report lands in .demo/eval.
-eval-retrieval:
-	backend/tools/eval_retrieval.sh .demo/eval
+# Evaluation: every case replayed with the recorded model responses and its questions
+# asked, the retrieval evaluated, in a database and a process on an internal Docker
+# network with no route out. The report lands in .demo/eval; the target
+# fails when a hard gate fails. The report is copied out of the stopped container.
+EVAL_OUT := .demo/eval
+COMPOSE_EVAL := docker compose -f deploy/compose/eval.yaml
+
+eval:
+	$(COMPOSE_EVAL) down --volumes
+	rm -rf $(EVAL_OUT) && mkdir -p .demo
+	$(COMPOSE_EVAL) build
+	status=0; $(COMPOSE_EVAL) run --name bianque-eval-run eval || status=$$?; \
+	docker cp bianque-eval-run:/tmp/report $(EVAL_OUT) || true; \
+	docker rm bianque-eval-run >/dev/null; $(COMPOSE_EVAL) down --volumes; \
+	echo "report: $(EVAL_OUT)/report.md"; exit $$status
+
+# Recording: every case investigated and asked by a real model, each response recorded,
+# then replayed and compared before it replaces eval/recordings. Needs
+# LLM_API_KEY_FILE; the model defaults are those of `make replay LLM_MODE=live`.
+record:
+	LLM_API_KEY_FILE='$(LLM_API_KEY_FILE)' LLM_MODEL='$(LLM_MODEL)' LLM_BASE_URL='$(LLM_BASE_URL)' \
+		LLM_EXTRA_BODY='$(LLM_EXTRA_BODY)' backend/tools/record.sh .demo/record-$$(date +%Y%m%d-%H%M%S)

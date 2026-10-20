@@ -47,22 +47,23 @@ jobs:
         run: make lint
       - name: Tests
         run: make test
-      - name: Retrieval evaluation with the embedding fixture
-        working-directory: backend
-        env:
-          BIANQUE_DATABASE_URL: postgresql+psycopg://postgres:ci-only@localhost:5432/postgres
-          BIANQUE_EMBEDDING_MODE: fixture
-          BIANQUE_EMBEDDING_FIXTURE: ../eval/embeddings/bge-small-en-v1.5.json
-        run: |
-          uv run --locked alembic upgrade head
-          uv run --locked bianque knowledge ingest ../knowledge/runbooks
-          uv run --locked bianque eval retrieval --queries ../eval/retrieval/queries.yaml \
-            --out ../eval-report
-      - name: Upload the retrieval evaluation report
+
+  # The replay evaluation of every case: recorded model responses, the embedding fixture,
+  # and a database and a process on an internal Docker network with no route out. A
+  # failed hard gate fails the job; the report is uploaded either way.
+  eval:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Evaluate every case
+        run: make eval
+      - name: Upload the evaluation report
+        if: always()
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: retrieval-eval
-          path: eval-report
+          name: eval
+          path: .demo/eval
+          if-no-files-found: ignore
 
   public-safety:
     runs-on: ubuntu-24.04
