@@ -1,0 +1,26 @@
+# Follow-up questions of case S1-f,
+# asked in this order in one session. Replays can only ask them in this order: the recorded
+# answer of a turn depends on the turns before it.
+#
+# expected_evidence: evidence a good answer cites at least one of, named by tool and
+#   identity arguments (string arguments are fnmatch patterns); annotated from the
+#   evidence pack, before any answer was read.
+# depends_on: the earlier question this one refers back to.
+# expected_suggestions: a good answer cites a remediation suggestion.
+# expect_unknown: the evidence holds no answer; a good answer says so.
+schema_version: 2
+questions:
+  - id: q1
+    question: 目前能确定的事实有哪些？
+    # Only the pods were collected.
+    expected_evidence:
+      - {tool: k8s_list_pods, args: {namespace: demo-s1}}
+      - {tool: k8s_get_pod_status, args: {namespace: demo-s1}}
+  - id: q2
+    question: 是哪次提交引入的问题？
+    # The pack holds no manifest repository.
+    expect_unknown: true
+  - id: q3
+    question: Deployment 当前的环境变量是什么？
+    # The pack holds no Deployment.
+    expect_unknown: true

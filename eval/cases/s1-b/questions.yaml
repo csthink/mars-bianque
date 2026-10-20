@@ -1,0 +1,27 @@
+# Follow-up questions of case S1-b,
+# asked in this order in one session. Replays can only ask them in this order: the recorded
+# answer of a turn depends on the turns before it.
+#
+# expected_evidence: evidence a good answer cites at least one of, named by tool and
+#   identity arguments (string arguments are fnmatch patterns); annotated from the
+#   evidence pack, before any answer was read.
+# depends_on: the earlier question this one refers back to.
+# expected_suggestions: a good answer cites a remediation suggestion.
+# expect_unknown: the evidence holds no answer; a good answer says so.
+schema_version: 2
+questions:
+  - id: q1
+    question: 为什么判断是内存不足，而不是应用自身的错误？
+    # The pod's last termination reason and the Deployment's limits.
+    expected_evidence:
+      - {tool: k8s_get_pod_status, args: {namespace: demo-s1, pod: s1-app-6867fdfbd4-bpv2m}}
+      - {tool: k8s_get_deployment, args: {namespace: demo-s1, name: s1-app}}
+  - id: q2
+    question: 内存限制是在哪次修订里改小的？
+    expected_evidence:
+      - {tool: change_get_rollout_history, args: {namespace: demo-s1, deployment: s1-app}}
+      - {tool: change_show_commit, args: {commit: cedbfbb*}}
+  - id: q3
+    question: 容器被杀之前内存实际用到了多少？
+    # The pack holds no memory metrics.
+    expect_unknown: true

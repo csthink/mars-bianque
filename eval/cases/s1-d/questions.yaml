@@ -1,0 +1,24 @@
+# Follow-up questions of case S1-d,
+# asked in this order in one session. Replays can only ask them in this order: the recorded
+# answer of a turn depends on the turns before it.
+#
+# expected_evidence: evidence a good answer cites at least one of, named by tool and
+#   identity arguments (string arguments are fnmatch patterns); annotated from the
+#   evidence pack, before any answer was read.
+# depends_on: the earlier question this one refers back to.
+# expected_suggestions: a good answer cites a remediation suggestion.
+# expect_unknown: the evidence holds no answer; a good answer says so.
+schema_version: 2
+questions:
+  - id: q1
+    question: 根因的依据有哪些？
+    expected_evidence:
+      - {tool: change_show_commit, args: {commit: 9b9a6ea*}}
+      - {tool: k8s_get_deployment, args: {namespace: demo-s1, name: s1-app}}
+  - id: q2
+    question: 容器退出前的日志里写了什么？
+    # The log tool timed out; no log was collected.
+    expect_unknown: true
+  - id: q3
+    question: 回滚之后怎么确认服务恢复了？
+    expected_suggestions: true

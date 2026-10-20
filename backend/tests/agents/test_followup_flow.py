@@ -29,8 +29,8 @@ from bianque.agents.followup import (
     Progress,
     QuestionNotRecordedError,
     SessionBusyError,
-    load_questions,
 )
+from bianque.evals.cases import load_question_set
 from bianque.knowledge.search import SearchResult
 from bianque.llm import ScriptedReply, ScriptedRule
 from bianque.llm.errors import RetryableProviderError
@@ -356,7 +356,7 @@ def _questions(tmp_path: Path, *questions: str) -> Path:
     (cases / "s1-a").mkdir(parents=True)
     items = [{"id": f"q{i}", "question": q} for i, q in enumerate(questions, start=1)]
     (cases / "s1-a" / "questions.yaml").write_text(
-        yaml.safe_dump({"schema_version": 1, "questions": items}, allow_unicode=True)
+        yaml.safe_dump({"schema_version": 2, "questions": items}, allow_unicode=True)
     )
     return cases
 
@@ -385,23 +385,23 @@ async def test_recorded_mode_takes_the_next_recorded_question_only(
 
 
 def test_the_s1a_question_set_is_well_formed() -> None:
-    questions = load_questions(CASES, "s1-a")
-    assert [q.id for q in questions] == ["q1", "q2", "q3"]
-    data = yaml.safe_load((CASES / "s1-a" / "questions.yaml").read_text())
-    by_id = {item["id"]: item for item in data["questions"]}
-    assert by_id["q2"]["depends_on"] == "q1"
-    assert all(
-        item["expected_evidence"] or item.get("expected_suggestions") for item in by_id.values()
-    )
+    questions = load_question_set(CASES / "s1-a").questions
+    assert [q.id for q in questions] == ["q1", "q2", "q3", "q4"]
+    by_id = {q.id: q for q in questions}
+    assert by_id["q2"].depends_on == "q1"
+    assert all(q.expected_evidence or q.expected_suggestions or q.expect_unknown for q in questions)
 
 
 async def test_the_s1a_annotations_name_evidence_of_the_scripted_investigation(
     s1a: Investigated,
 ) -> None:
-    """The annotated evidence IDs exist: IDs are derived from the evidence pack's content."""
-    data = yaml.safe_load((CASES / "s1-a" / "questions.yaml").read_text())
-    annotated = {e for item in data["questions"] for e in item.get("expected_evidence", [])}
-    assert annotated and annotated <= {e.id for e in s1a.evidence}
+    """Each annotated evidence of the S1-a questions is evidence the investigation collects."""
+    annotated = [
+        spec for q in load_question_set(CASES / "s1-a").questions for spec in q.expected_evidence
+    ]
+    assert annotated
+    for spec in annotated:
+        assert any(spec.matches(e.tool, e.meta.get("arguments", {})) for e in s1a.evidence), spec
 
 
 async def test_a_message_count_matches_the_turns(

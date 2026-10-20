@@ -1,23 +1,33 @@
-# Follow-up questions of case S1-a, asked in this order in one session. Replays can only
-# ask them in this order: the recorded answer of a turn depends on the turns before it.
+# Follow-up questions of case S1-a,
+# asked in this order in one session. Replays can only ask them in this order: the recorded
+# answer of a turn depends on the turns before it.
 #
-# expected_evidence: evidence IDs an answer should cite. Evidence IDs are derived from
-# the evidence pack's content and the tool arguments, so they hold for every replay of
-# this pack; they were annotated from the evidence, before any answer was read.
-# depends_on: the turn this question refers back to ("it" is the commit of q1).
-# expected_suggestions: the answer should cite a remediation suggestion ID.
-schema_version: 1
+# expected_evidence: evidence a good answer cites at least one of, named by tool and
+#   identity arguments (string arguments are fnmatch patterns); annotated from the
+#   evidence pack, before any answer was read.
+# depends_on: the earlier question this one refers back to.
+# expected_suggestions: a good answer cites a remediation suggestion.
+# expect_unknown: the evidence holds no answer; a good answer says so.
+schema_version: 2
 questions:
   - id: q1
     question: 为什么认定是这次提交，而不是更早的改动？
     # The commit list, the commit's diff and the rollout history's template diff.
-    expected_evidence: [ev_bc44a24667, ev_9cfa6c69db, ev_d7fd206133]
+    expected_evidence:
+      - {tool: change_list_commits}
+      - {tool: change_show_commit, args: {commit: 9b9a6ea*}}
+      - {tool: change_get_rollout_history, args: {namespace: demo-s1, deployment: s1-app}}
   - id: q2
     question: 它具体改了 Deployment 的哪一项？
+    # "It" is the commit of q1.
     depends_on: q1
-    # The commit's diff and the rollout history's template diff.
-    expected_evidence: [ev_9cfa6c69db, ev_d7fd206133]
+    expected_evidence:
+      - {tool: change_show_commit, args: {commit: 9b9a6ea*}}
+      - {tool: change_get_rollout_history, args: {namespace: demo-s1, deployment: s1-app}}
   - id: q3
     question: 回滚之后怎么确认服务恢复了？
-    expected_evidence: []
     expected_suggestions: true
+  - id: q4
+    question: 这次故障影响了多少用户请求？
+    # The pack holds no request metrics.
+    expect_unknown: true

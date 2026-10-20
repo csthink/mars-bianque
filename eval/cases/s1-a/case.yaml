@@ -1,0 +1,25 @@
+# Case S1-a: a commit in the manifest repository sets APP_MODE to an invalid value, and
+# the new pod's container exits at start.
+#
+# Annotated from the evidence pack before any model output was read. Expected evidence
+# is named by tool and identity arguments; string arguments are fnmatch patterns.
+schema_version: 1
+case: s1-a
+title: A commit sets APP_MODE to an invalid value
+expected:
+  root_cause:
+    status: identified
+    category: config_error
+    object: {kind: Deployment, namespace: demo-s1, name: s1-app}
+  required_evidence:
+    # Pod status: CrashLoopBackOff and the exit code.
+    - {tool: k8s_get_pod_status, args: {namespace: demo-s1, pod: s1-app-5468546b65-dvgq5}}
+    # The previous container's log: invalid APP_MODE.
+    - tool: logs_get_container_logs
+      args: {namespace: demo-s1, pod: s1-app-5468546b65-dvgq5, previous: true}
+    # The Deployment's current environment.
+    - {tool: k8s_get_deployment, args: {namespace: demo-s1, name: s1-app}}
+    # The diff of commit 9b9a6ea "Update app mode configuration".
+    - {tool: change_show_commit, args: {commit: 9b9a6ea*}}
+  root_cause_evidence:
+    - {tool: change_show_commit, args: {commit: 9b9a6ea*}}

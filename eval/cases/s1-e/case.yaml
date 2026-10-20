@@ -1,0 +1,23 @@
+# Case S1-e: two commits; the earlier one sets APP_MODE to an invalid value, the later
+# one only edits the README. The root cause must cite the earlier commit.
+#
+# Annotated from the evidence pack before any model output was read. Expected evidence
+# is named by tool and identity arguments; string arguments are fnmatch patterns.
+schema_version: 1
+case: s1-e
+title: The faulty commit is the earlier of two
+expected:
+  root_cause:
+    status: identified
+    category: config_error
+    object: {kind: Deployment, namespace: demo-s1, name: s1-app}
+  required_evidence:
+    - {tool: k8s_get_pod_status, args: {namespace: demo-s1, pod: s1-app-5468546b65-gjkcl}}
+    - tool: logs_get_container_logs
+      args: {namespace: demo-s1, pod: s1-app-5468546b65-gjkcl, previous: true}
+    - {tool: k8s_get_deployment, args: {namespace: demo-s1, name: s1-app}}
+    # The earlier commit 617e33d "Update app mode configuration", not 0b11d9f
+    # "Update deployment notes".
+    - {tool: change_show_commit, args: {commit: 617e33d*}}
+  root_cause_evidence:
+    - {tool: change_show_commit, args: {commit: 617e33d*}}

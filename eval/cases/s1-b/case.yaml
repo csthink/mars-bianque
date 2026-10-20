@@ -1,0 +1,19 @@
+# Case S1-b: a commit lowers the memory limit and the container is OOMKilled.
+#
+# Annotated from the evidence pack before any model output was read. Expected evidence
+# is named by tool and identity arguments; string arguments are fnmatch patterns.
+schema_version: 1
+case: s1-b
+title: A commit lowers the memory limit
+expected:
+  root_cause:
+    status: identified
+    category: resource_limit
+    object: {kind: Deployment, namespace: demo-s1, name: s1-app}
+  required_evidence:
+    # Pod status: the last termination reason is OOMKilled.
+    - {tool: k8s_get_pod_status, args: {namespace: demo-s1, pod: s1-app-6867fdfbd4-bpv2m}}
+    # The Deployment's resource limits.
+    - {tool: k8s_get_deployment, args: {namespace: demo-s1, name: s1-app}}
+    # The rollout history: the pod template diff between the last two revisions.
+    - {tool: change_get_rollout_history, args: {namespace: demo-s1, deployment: s1-app}}

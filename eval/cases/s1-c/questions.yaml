@@ -1,0 +1,29 @@
+# Follow-up questions of case S1-c,
+# asked in this order in one session. Replays can only ask them in this order: the recorded
+# answer of a turn depends on the turns before it.
+#
+# expected_evidence: evidence a good answer cites at least one of, named by tool and
+#   identity arguments (string arguments are fnmatch patterns); annotated from the
+#   evidence pack, before any answer was read.
+# depends_on: the earlier question this one refers back to.
+# expected_suggestions: a good answer cites a remediation suggestion.
+# expect_unknown: the evidence holds no answer; a good answer says so.
+schema_version: 2
+questions:
+  - id: q1
+    question: 为什么认为是探针配置的问题？
+    # The liveness probe failure events and the Deployment's probes.
+    expected_evidence:
+      - {tool: k8s_list_events, args: {namespace: demo-s1}}
+      - {tool: k8s_get_deployment, args: {namespace: demo-s1, name: s1-app}}
+  - id: q2
+    question: 它的路径是从什么改成什么的？
+    # "It" is the liveness probe of q1.
+    depends_on: q1
+    expected_evidence:
+      - {tool: change_show_commit, args: {commit: 5ee1c22*}}
+      - {tool: change_get_rollout_history, args: {namespace: demo-s1, deployment: s1-app}}
+  - id: q3
+    question: 探针失败时 /status 接口的响应时间是多少？
+    # The pack holds no latency measurements.
+    expect_unknown: true

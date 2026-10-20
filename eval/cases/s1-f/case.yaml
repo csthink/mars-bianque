@@ -1,0 +1,8 @@
+# Case S1-f: S1-a with only the alert and the pods in the evidence pack. The evidence
+# does not establish a cause, so the report says unknown.
+schema_version: 1
+case: s1-f
+title: Only the alert and the pods are available
+expected:
+  root_cause:
+    status: unknown

@@ -1,0 +1,22 @@
+# Case S1-c: a commit points the liveness probe at a path the app does not serve, and
+# the kubelet restarts the container.
+#
+# Annotated from the evidence pack before any model output was read. Expected evidence
+# is named by tool and identity arguments; string arguments are fnmatch patterns.
+schema_version: 1
+case: s1-c
+title: A commit points the liveness probe at a wrong path
+expected:
+  root_cause:
+    status: identified
+    category: probe_misconfig
+    object: {kind: Deployment, namespace: demo-s1, name: s1-app}
+  required_evidence:
+    # Events: "Liveness probe failed: HTTP probe failed with statuscode: 404".
+    - {tool: k8s_list_events, args: {namespace: demo-s1}}
+    # The Deployment's probe configuration.
+    - {tool: k8s_get_deployment, args: {namespace: demo-s1, name: s1-app}}
+    # The diff of commit 5ee1c22 "Move liveness check to the status endpoint".
+    - {tool: change_show_commit, args: {commit: 5ee1c22*}}
+  root_cause_evidence:
+    - {tool: change_show_commit, args: {commit: 5ee1c22*}}

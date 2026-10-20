@@ -209,7 +209,9 @@ def test_scripted_mode_takes_any_question(migrated: Engine, pg_url: str) -> None
     with serve(scripted(pg_url)) as server:
         investigation_id = finished(server)
         listed = server.client.get(f"/api/investigations/{investigation_id}/questions").json()
-    assert listed["recorded_only"] is False and len(listed["questions"]) == 3
+    recorded = yaml.safe_load((CASES / "s1-a" / "questions.yaml").read_text())["questions"]
+    assert listed["recorded_only"] is False
+    assert [q["id"] for q in listed["questions"]] == [q["id"] for q in recorded]
 
 
 def test_the_sessions_of_an_investigation_are_listed_newest_first(

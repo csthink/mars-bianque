@@ -1,0 +1,22 @@
+# Case S1-d: S1-a, but the log tool times out during the replay (pack/faults.yaml). The
+# root cause is still the commit; the confidence must not be high, and the missing
+# evidence names the logs.
+#
+# Annotated from the evidence pack before any model output was read. Expected evidence
+# is named by tool and identity arguments; string arguments are fnmatch patterns.
+schema_version: 1
+case: s1-d
+title: S1-a while the log tool times out
+expected:
+  root_cause:
+    status: identified
+    category: config_error
+    object: {kind: Deployment, namespace: demo-s1, name: s1-app}
+  required_evidence:
+    - {tool: k8s_get_pod_status, args: {namespace: demo-s1, pod: s1-app-5468546b65-dvgq5}}
+    - {tool: k8s_get_deployment, args: {namespace: demo-s1, name: s1-app}}
+    - {tool: change_show_commit, args: {commit: 9b9a6ea*}}
+  root_cause_evidence:
+    - {tool: change_show_commit, args: {commit: 9b9a6ea*}}
+  confidence_not: [high]
+  missing_evidence_mentions: [log, 日志]

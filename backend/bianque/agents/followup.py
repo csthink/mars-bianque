@@ -28,7 +28,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-import yaml
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bianque.agents.gated import MODEL_UNAVAILABLE, Stage, generate_gated
@@ -52,6 +51,7 @@ from bianque.agents.scripted_rules import ROLE_RULES
 from bianque.agents.snapshot import preserved_identifiers
 from bianque.api.alertmanager import parse_alert
 from bianque.config import Settings
+from bianque.evals.cases import load_question_set
 from bianque.gate import FollowupAnswer, GateContext, OutputType
 from bianque.knowledge import KnowledgeRetriever
 from bianque.knowledge.embedding import build_embedder
@@ -99,9 +99,6 @@ HISTORY_TURNS = 10
 
 #: Seconds between progress events while the stage does not change.
 PROGRESS_INTERVAL = 2.0
-
-#: The schema version of ``questions.yaml``.
-QUESTIONS_SCHEMA_VERSION = 1
 
 FailureReason = Literal["gate_rejected", "model_unavailable", "model_error", "budget_exhausted"]
 ProgressStage = Literal["retrieving", "generating", "validating", "retrying"]
@@ -176,19 +173,13 @@ def load_questions(cases_dir: Path, case_id: str | None) -> list[RecordedQuestio
     """Return the follow-up questions of a case, in order; none when it has no file.
 
     Raises:
-        ValueError: The file has another schema version or a malformed question.
+        CaseFileError: The file has another schema version or a malformed question.
     """
     if case_id is None:
         return []
-    path = cases_dir / case_id / "questions.yaml"
-    if not path.is_file():
-        return []
-    data = yaml.safe_load(path.read_text()) or {}
-    if data.get("schema_version") != QUESTIONS_SCHEMA_VERSION:
-        raise ValueError(f"{path}: schema_version must be {QUESTIONS_SCHEMA_VERSION}")
     return [
-        RecordedQuestion(id=str(item["id"]), question=str(item["question"]))
-        for item in data.get("questions") or []
+        RecordedQuestion(id=item.id, question=item.question)
+        for item in load_question_set(cases_dir / case_id).questions
     ]
 
 
