@@ -102,6 +102,8 @@ def test_every_registered_tool_is_read_only() -> None:
             "change_get_rollout_history",
             "change_list_commits",
             "change_show_commit",
+            "investigation_get_report",
+            "investigation_list",
             "k8s_get_deployment",
             "k8s_get_pod_status",
             "k8s_list_events",
@@ -115,7 +117,9 @@ def test_every_registered_tool_is_read_only() -> None:
     assert {item.domain for item in evidence} == {"kubernetes", "logs", "change"}
     auxiliary = [item for item in tools if item.kind == "auxiliary"]
     assert [(item.name, item.domain, item.source) for item in auxiliary] == [
-        ("knowledge_search", None, None)
+        ("investigation_get_report", None, None),
+        ("investigation_list", None, None),
+        ("knowledge_search", None, None),
     ]
 
 

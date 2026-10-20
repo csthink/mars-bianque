@@ -1,0 +1,283 @@
+"""The MCP service, seen by the MCP Python SDK's client over HTTP.
+
+Each test serves the application on a local port with the evidence pack backend and
+talks to ``/mcp`` with the SDK's Streamable HTTP client, as an external MCP client does.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import secrets
+from collections.abc import Awaitable, Callable
+from pathlib import Path
+from typing import Any
+
+import httpx
+import httpx2
+import pytest
+from live_server import Server, scripted, serve
+from mcp import Client
+from mcp.client.streamable_http import streamable_http_client
+from mcp_types import CallToolResult
+from sqlalchemy import Engine, text
+
+from bianque.api.app import create_app
+from bianque.mcp import token_sha256
+from bianque.tools import registry
+from bianque.tools.pack.format import PackError
+
+NAMESPACE = "demo-s1"
+
+
+def client_config(name: str, tools: list[str], namespaces: list[str]) -> tuple[str, dict[str, Any]]:
+    """A fresh token and the configuration entry of a client holding it."""
+    token = secrets.token_hex(16)
+    entry = {
+        "name": name,
+        "token_sha256": token_sha256(token),
+        "tools": tools,
+        "namespaces": namespaces,
+    }
+    return token, entry
+
+
+def with_mcp[T](server: Server, token: str, work: Callable[[Client], Awaitable[T]]) -> T:
+    """Connect an MCP client with ``token`` and run ``work`` with it."""
+
+    async def run() -> T:
+        headers = {"Authorization": f"Bearer {token}"}
+        async with (
+            httpx2.AsyncClient(headers=headers, timeout=60) as http,
+            Client(streamable_http_client(f"{server.url}/mcp", http_client=http)) as client,
+        ):
+            return await work(client)
+
+    return asyncio.run(run())
+
+
+def error_of(result: CallToolResult) -> dict[str, Any]:
+    assert result.is_error, result
+    structured: dict[str, Any] = result.structured_content or {}
+    assert json.loads(result.content[0].text) == structured  # type: ignore[union-attr]
+    error: dict[str, Any] = structured["error"]
+    return error
+
+
+def mcp_calls(engine: Engine) -> list[dict[str, Any]]:
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                "SELECT agent, kind, name, caller, status, retries, investigation_id, error"
+                " FROM call_records WHERE agent = 'mcp' ORDER BY id"
+            )
+        )
+        return [dict(row._mapping) for row in rows]
+
+
+def evidence_count(engine: Engine) -> int:
+    with engine.connect() as connection:
+        return int(connection.execute(text("SELECT count(*) FROM evidence")).scalar_one())
+
+
+def test_a_client_lists_its_tools_and_calls_one_through_the_executor(
+    migrated: Engine, pg_url: str
+) -> None:
+    token, entry = client_config("claude-code", ["*"], [NAMESPACE])
+    with serve(scripted(pg_url, mcp_clients=[entry])) as server:
+
+        async def work(client: Client) -> tuple[list[Any], str, CallToolResult]:
+            tools = (await client.list_tools()).tools
+            pods = await client.call_tool("k8s_list_pods", {"namespace": NAMESPACE})
+            pod = json.loads(pods.content[0].text)["pods"][0]["name"]  # type: ignore[union-attr]
+            status = await client.call_tool(
+                "k8s_get_pod_status", {"namespace": NAMESPACE, "pod": pod}
+            )
+            return tools, pod, status
+
+        tools, pod, status = with_mcp(server, token, work)
+
+    expected = {definition.name: definition.spec() for definition in registry}
+    assert sorted(tool.name for tool in tools) == sorted(expected)
+    for tool in tools:
+        assert tool.input_schema == expected[tool.name].parameters
+        assert tool.description == expected[tool.name].description
+        assert tool.annotations is not None and tool.annotations.read_only_hint is True
+    assert not status.is_error
+    assert json.loads(status.content[0].text)["name"] == pod  # type: ignore[union-attr]
+    calls = mcp_calls(migrated)
+    assert [(c["name"], c["status"], c["caller"]) for c in calls] == [
+        ("k8s_list_pods", "ok", "claude-code"),
+        ("k8s_get_pod_status", "ok", "claude-code"),
+    ]
+    assert all(c["kind"] == "tool" and c["investigation_id"] is None for c in calls)
+    # MCP calls belong to no investigation and store no evidence.
+    assert evidence_count(migrated) == 0
+
+
+def test_requests_without_a_valid_token_are_refused(migrated: Engine, pg_url: str) -> None:
+    _, entry = client_config("claude-code", ["*"], [NAMESPACE])
+    initialize = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2025-06-18",
+            "capabilities": {},
+            "clientInfo": {"name": "test", "version": "1"},
+        },
+    }
+    accept = {"Accept": "application/json, text/event-stream"}
+    with serve(scripted(pg_url, mcp_clients=[entry])) as server:
+        anonymous = httpx.Client(base_url=server.url)
+        statuses = [
+            anonymous.post("/mcp", json=initialize, headers=accept),
+            anonymous.post(
+                "/mcp", json=initialize, headers={**accept, "Authorization": "Bearer wrong"}
+            ),
+            anonymous.post(
+                "/mcp",
+                json=initialize,
+                headers={**accept, "Authorization": f"Basic {entry['name']}"},
+            ),
+        ]
+    assert [response.status_code for response in statuses] == [401, 401, 401]
+    assert all(response.headers["www-authenticate"] == "Bearer" for response in statuses)
+    assert mcp_calls(migrated) == []
+
+
+def test_a_client_sees_and_calls_only_its_tools(migrated: Engine, pg_url: str) -> None:
+    token, entry = client_config("pods-only", ["k8s_*"], [NAMESPACE])
+    with serve(scripted(pg_url, mcp_clients=[entry])) as server:
+
+        async def work(client: Client) -> tuple[list[str], CallToolResult]:
+            names = [tool.name for tool in (await client.list_tools()).tools]
+            denied = await client.call_tool("change_list_commits", {})
+            return names, denied
+
+        names, denied = with_mcp(server, token, work)
+
+    assert sorted(names) == sorted(d.name for d in registry if d.name.startswith("k8s_"))
+    assert error_of(denied) == {
+        "code": "rejected",
+        "message": "rejected: change_list_commits is not allowed for this client",
+    }
+    assert [(c["name"], c["status"], c["caller"]) for c in mcp_calls(migrated)] == [
+        ("change_list_commits", "rejected", "pods-only")
+    ]
+
+
+def test_namespaces_outside_the_range_are_refused(migrated: Engine, pg_url: str) -> None:
+    token, entry = client_config("demo-only", ["*"], [NAMESPACE])
+    outside = [
+        ("k8s_list_pods", {"namespace": "kube-system"}),
+        ("logs_get_container_logs", {"namespace": "kube-system", "pod": "p", "container": "c"}),
+        ("change_get_rollout_history", {"namespace": "kube-system", "deployment": "s1-app"}),
+        ("investigation_list", {"namespace": "kube-system"}),
+    ]
+    with serve(scripted(pg_url, mcp_clients=[entry])) as server:
+
+        async def work(client: Client) -> list[CallToolResult]:
+            return [await client.call_tool(name, args) for name, args in outside]
+
+        results = with_mcp(server, token, work)
+
+    for result in results:
+        assert error_of(result) == {
+            "code": "rejected",
+            "message": "rejected: namespace kube-system is not allowed for this client",
+        }
+    calls = mcp_calls(migrated)
+    assert [(c["name"], c["status"], c["caller"]) for c in calls] == [
+        (name, "rejected", "demo-only") for name, _ in outside
+    ]
+
+
+def test_a_timeout_is_a_structured_error_and_recorded_with_its_caller(
+    migrated: Engine, pg_url: str
+) -> None:
+    # The S1-d evidence pack injects a timeout of the log tool.
+    token, entry = client_config("claude-code", ["logs_*"], [NAMESPACE])
+    with serve(scripted(pg_url, mcp_clients=[entry], pack_case="s1-d")) as server:
+
+        async def work(client: Client) -> CallToolResult:
+            return await client.call_tool(
+                "logs_get_container_logs",
+                {"namespace": NAMESPACE, "pod": "s1-app-5468546b65-dvgq5", "container": "app"},
+            )
+
+        result = with_mcp(server, token, work)
+
+    error = error_of(result)
+    assert error["code"] == "timeout"
+    assert error["message"].startswith("timeout: logs_get_container_logs")
+    [call] = mcp_calls(migrated)
+    assert (call["name"], call["status"], call["retries"], call["caller"]) == (
+        "logs_get_container_logs",
+        "error",
+        2,
+        "claude-code",
+    )
+
+
+def test_investigations_are_listed_and_read_within_the_namespace(
+    migrated: Engine, pg_url: str
+) -> None:
+    token, entry = client_config("claude-code", ["investigation_*"], [NAMESPACE, "other"])
+    with serve(scripted(pg_url, mcp_clients=[entry])) as server:
+        investigation_id = server.replay("s1-a")
+        detail = server.wait_until(investigation_id, "reported")
+
+        async def work(client: Client) -> list[CallToolResult]:
+            report = {"investigation_id": investigation_id}
+            return [
+                await client.call_tool("investigation_list", {"namespace": NAMESPACE}),
+                await client.call_tool("investigation_list", {"namespace": "other"}),
+                await client.call_tool(
+                    "investigation_get_report", {**report, "namespace": NAMESPACE}
+                ),
+                await client.call_tool(
+                    "investigation_get_report", {**report, "namespace": "other"}
+                ),
+            ]
+
+        listed, elsewhere, report, mismatched = with_mcp(server, token, work)
+
+    rows = json.loads(listed.content[0].text)["investigations"]  # type: ignore[union-attr]
+    assert [(row["investigation_id"], row["case"], row["report_status"]) for row in rows] == [
+        (investigation_id, "s1-a", "published")
+    ]
+    assert json.loads(elsewhere.content[0].text)["investigations"] == []  # type: ignore[union-attr]
+    body = json.loads(report.content[0].text)  # type: ignore[union-attr]
+    assert body["report"] == detail["report"]["body"]
+    assert body["report_status"] == "published"
+    assert error_of(mismatched) == {
+        "code": "not_found",
+        "message": f"not_found: investigation {investigation_id} in other",
+    }
+
+
+def test_without_clients_nothing_is_opened_and_every_request_is_refused(
+    migrated: Engine, pg_url: str, tmp_path: Path
+) -> None:
+    # No evidence pack exists under tmp_path: the application starts all the same.
+    with serve(scripted(pg_url, cases_dir=tmp_path)) as server:
+        refused = httpx.post(
+            f"{server.url}/mcp", json={}, headers={"Authorization": "Bearer anything"}
+        )
+        assert server.client.get("/healthz").status_code == 200
+    assert refused.status_code == 401
+
+
+def test_a_client_with_an_unusable_backend_stops_the_start(
+    migrated: Engine, pg_url: str, tmp_path: Path
+) -> None:
+    _, entry = client_config("claude-code", ["*"], [NAMESPACE])
+    app = create_app(scripted(pg_url, cases_dir=tmp_path, mcp_clients=[entry]))
+
+    async def start() -> None:
+        async with app.router.lifespan_context(app):
+            pass
+
+    with pytest.raises(PackError):
+        asyncio.run(start())

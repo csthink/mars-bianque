@@ -12,6 +12,7 @@ dependencies = [
     "kubernetes-asyncio>=36",
     "langgraph>=1.2,<1.3",
     "langgraph-checkpoint-postgres>=3.0,<4",
+    "mcp>=2.3,<2.4",
     "openai>=1.40",
     "pgvector>=0.3",
     "psycopg-pool>=3.2",
@@ -114,6 +115,19 @@ name = "The evidence gate does not import the model gateway"
 type = "forbidden"
 source_modules = ["bianque.gate"]
 forbidden_modules = ["bianque.llm"]
+
+[[tool.importlinter.contracts]]
+name = "Only the MCP package imports the MCP SDK"
+type = "forbidden"
+source_modules = ["bianque"]
+forbidden_modules = ["mcp", "mcp_types"]
+unmatched_ignore_imports_alerting = "none"
+ignore_imports = [
+    "bianque.mcp.* -> mcp",
+    "bianque.mcp.* -> mcp.*",
+    "bianque.mcp.* -> mcp_types",
+    "bianque.mcp.* -> mcp_types.*",
+]
 
 [[tool.importlinter.contracts]]
 name = "Only the API package imports FastAPI"

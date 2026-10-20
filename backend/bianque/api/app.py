@@ -7,6 +7,7 @@ previous process are marked ``interrupted``. Investigations and follow-up
 answers run in background tasks of this process and are cancelled at shutdown; the
 next start marks the cancelled investigations interrupted. With ``BIANQUE_REPLAY_SEED``
 the replay profile's startup runs once the application serves requests.
+The MCP service is served at ``/mcp``.
 """
 
 from __future__ import annotations
@@ -17,6 +18,8 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from starlette.routing import Route
+from starlette.types import Receive, Scope, Send
 
 from bianque.agents.events import EventNotifier
 from bianque.agents.followup import FollowupService
@@ -25,9 +28,21 @@ from bianque.api import alerts, auth, investigations, sessions
 from bianque.auth.authenticator import Authenticator
 from bianque.config import Settings, get_settings
 from bianque.llm import ScriptedRule
+from bianque.mcp import open_mcp
 from bianque.storage.db import create_engine, session_factory
 
 Sleep = Callable[[float], Awaitable[None]]
+
+
+class _MCPRoute:
+    """Serves ``/mcp`` with the MCP endpoint the lifespan opened.
+
+    An object rather than a function, so that the route passes requests through as an
+    ASGI application instead of wrapping them in a request and response.
+    """
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        await scope["app"].state.mcp(scope, receive, send)
 
 
 def create_app(
@@ -71,20 +86,24 @@ def create_app(
         )
         app.state.investigations = service
         app.state.followups = followups
-        seeding = (
-            asyncio.create_task(seed_replay(resolved, factory, service))
-            if resolved.replay_seed
-            else None
-        )
         try:
-            yield
+            async with open_mcp(resolved, factory, tool_sleep=tool_sleep) as mcp:
+                app.state.mcp = mcp
+                seeding = (
+                    asyncio.create_task(seed_replay(resolved, factory, service))
+                    if resolved.replay_seed
+                    else None
+                )
+                try:
+                    yield
+                finally:
+                    if seeding is not None:
+                        seeding.cancel()
+                        with contextlib.suppress(asyncio.CancelledError):
+                            await seeding
+                    await service.close()
+                    await followups.close()
         finally:
-            if seeding is not None:
-                seeding.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await seeding
-            await service.close()
-            await followups.close()
             await engine.dispose()
 
     app = FastAPI(title="Bianque", lifespan=lifespan, docs_url=None, redoc_url=None)
@@ -94,6 +113,7 @@ def create_app(
     app.include_router(alerts.router)
     app.include_router(investigations.router)
     app.include_router(sessions.router)
+    app.router.routes.append(Route("/mcp", _MCPRoute(), methods=["GET", "POST", "DELETE"]))
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:

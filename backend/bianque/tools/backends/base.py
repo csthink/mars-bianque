@@ -73,6 +73,47 @@ class GitSource(Protocol):
 
 
 @dataclass
+@dataclass(frozen=True)
+class InvestigationRow:
+    """One investigation as the auxiliary tools list it; ``case_id`` names a replayed case."""
+
+    id: str
+    status: str
+    case_id: str | None
+    alert_name: str | None
+    namespace: str | None
+    pod: str | None
+    started_at: datetime
+    finished_at: datetime | None
+    report_status: str | None
+
+
+@dataclass(frozen=True)
+class InvestigationReport:
+    """An investigation with its final report (published or degraded), if it has one.
+
+    ``identifiers`` are the names its evidence preserved (Pod names, commit hashes,
+    images) and its alert labels, which redaction of the report text must keep.
+    """
+
+    investigation: InvestigationRow
+    report: Mapping[str, Any] | None
+    identifiers: tuple[str, ...]
+
+
+class InvestigationSource(Protocol):
+    """Read-only access to stored investigations, for the auxiliary tools."""
+
+    async def list_investigations(self, namespace: str, limit: int) -> list[InvestigationRow]:
+        """Return the latest investigations whose alert is in ``namespace``, newest first."""
+        ...
+
+    async def get_report(self, investigation_id: str) -> InvestigationReport | None:
+        """Return an investigation and its final report; ``None`` when there is none."""
+        ...
+
+
+@dataclass
 class ToolBackends:
     """The data sources of one run, as the tool functions see them.
 
@@ -86,6 +127,8 @@ class ToolBackends:
         faults: Tool name to fault mode, from an evidence pack's ``faults.yaml``.
         knowledge: Runbook retrieval for the auxiliary tool ``knowledge_search``; the
             caller that assembles the backends supplies it (the MCP service).
+        investigations: Stored investigations for the auxiliary tools that read them;
+            supplied by the MCP service as well.
     """
 
     kind: Literal["live", "pack"]
@@ -94,6 +137,7 @@ class ToolBackends:
     now: Callable[[], datetime]
     faults: Mapping[str, FaultMode] = field(default_factory=dict)
     knowledge: KnowledgeSearch | None = None
+    investigations: InvestigationSource | None = None
 
     def injected_fault(self, tool: str) -> ToolError | None:
         """Return the error an evidence pack injects for ``tool``, if any."""
