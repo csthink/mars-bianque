@@ -418,3 +418,29 @@ async def test_a_message_count_matches_the_turns(
             .where(FollowupMessage.session_id == session_id)
         )
     assert count == 6
+
+
+async def test_an_answer_may_refer_to_the_knowledge_the_report_refers_to(
+    s1a: Investigated, pg_url: str, sessions: async_sessionmaker[AsyncSession]
+) -> None:
+    """The prompt shows the report with its references; the answer may list them too."""
+    assert s1a.final is not None
+    referenced = [item["knowledge_id"] for item in s1a.final.body["references"]]
+    assert referenced
+    reply = answer(segment("The commit changed it.", s1a.evidence[0].id), references=referenced)
+
+    class Nothing:
+        async def search(self, query: str, limit: int = 5) -> SearchResult:
+            return SearchResult(hits=[], degraded=None)
+
+    followups = FollowupService(
+        scripted_settings(pg_url),
+        sessions,
+        rules=[followup_only(lambda r: reply)],
+        model_sleep=no_wait,
+        knowledge=Nothing(),
+    )
+    session_id = await open_session(followups, s1a)
+    events = await collect(await followups.ask(session_id, "Why?"))
+    assert isinstance(events[-1], Done)
+    assert (await messages(sessions, session_id))[1].references == referenced

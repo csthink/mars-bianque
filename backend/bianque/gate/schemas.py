@@ -133,8 +133,11 @@ class AnswerSegment(_Output):
     citations: Annotated[
         list[Text], Field(description="IDs of the evidence or suggestions this paragraph rests on.")
     ]
+    #: Models often leave the flag out when it is false. A paragraph without it still has
+    #: to cite evidence (``citation_integrity``), so the default admits nothing uncited.
     insufficient_evidence: bool = Field(
-        description="True when the evidence does not answer this part of the question."
+        default=False,
+        description="True when the evidence does not answer this part of the question.",
     )
 
 

@@ -220,6 +220,15 @@ class _Context:
     history: tuple[tuple[str, list[dict[str, Any]]], ...]
 
     @property
+    def report_references(self) -> set[str]:
+        """The knowledge IDs in the report's references."""
+        return {
+            str(item["knowledge_id"])
+            for item in self.report.get("references") or []
+            if isinstance(item, dict) and item.get("knowledge_id")
+        }
+
+    @property
     def preserve(self) -> frozenset[str]:
         return preserved_identifiers(self.evidence, self.alert_identifiers, registry)
 
@@ -372,11 +381,12 @@ class FollowupService:
             engine=self._engine,
             preserve=preserve,
         )
+        # The model may list as references the knowledge retrieved for this question and
+        # the knowledge the report refers to, which it sees in the report.
+        retrieved = {hit.knowledge_id for hit in knowledge.hits} if knowledge is not None else set()
         gate = GateContext(
             evidence_ids=frozenset(item.id for item in context.evidence),
-            knowledge_ids=frozenset(hit.knowledge_id for hit in knowledge.hits)
-            if knowledge is not None
-            else frozenset(),
+            knowledge_ids=frozenset(retrieved | context.report_references),
             suggestion_ids=frozenset(item.id for item in context.suggestions),
             preserved=preserve,
             engine=self._engine,
