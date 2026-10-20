@@ -33,6 +33,7 @@ from bianque.storage.db import database_url
 from bianque.storage.repositories import (
     AlertRepository,
     InvestigationRepository,
+    PlanRepository,
 )
 from bianque.tools import ToolExecutor, registry
 from bianque.tools.backends.base import ToolBackends
@@ -163,10 +164,14 @@ async def run_investigation(
         # The stored error names the exception class only: it is shown by the API, and
         # an exception message may quote unredacted data. The log has the details.
         logger.exception("investigation %s failed", investigation_id)
+        # A failed run leaves no step pending or running: the sub-agents of the round
+        # were cancelled with it.
+        finished_at = datetime.now(UTC)
         async with sessions() as session, session.begin():
             await InvestigationRepository(session).set_status(
-                investigation_id, "failed", finished_at=datetime.now(UTC), error=type(exc).__name__
+                investigation_id, "failed", finished_at=finished_at, error=type(exc).__name__
             )
+            await PlanRepository(session).fail_unfinished_steps(investigation_id, finished_at)
         await events.emit(investigation_id, "investigation_finished", status="failed")
         return InvestigationOutcome(investigation_id, "failed")
     async with sessions() as session:

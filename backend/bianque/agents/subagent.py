@@ -5,10 +5,13 @@ order. Each step is its own ReAct conversation: the model calls tools of its dom
 executor runs them, the redacted results and their evidence IDs go back into the
 conversation, and the model finally submits findings, which pass the evidence gate.
 
-The node never raises. In LangGraph a failing ``Send`` task fails the whole superstep
-and the results of the other sub-agents are lost, so every exception is caught here:
-the unfinished steps are marked failed and the failure is reported in the state, from
-where it reaches the missing evidence of the report.
+A failing sub-agent does not fail the investigation. In LangGraph a failing ``Send``
+task fails the whole superstep and the results of the other sub-agents are lost, so
+exceptions are caught here: the unfinished steps are marked failed and the failure is
+reported in the state, from where it reaches the missing evidence of the report.
+The exceptions are model errors other than an unavailable model (a missing recording, a
+rejected request, redaction residue): they are configuration or replay defects, so they
+are raised and end the investigation as ``failed``.
 """
 
 from __future__ import annotations
@@ -99,7 +102,7 @@ class EvidenceAgent:
         self._submit = ToolSpec(SUBMIT_FINDINGS, SUBMIT_DESCRIPTION, function_parameters(Findings))
 
     async def run(self, state: AgentTask) -> dict[str, Any]:
-        """Run the task's steps in order; report failures instead of raising."""
+        """Run the task's steps in order; report failures, raise only fatal model errors."""
         task = state
         failures: list[Failure] = []
         remaining = list(task["step_ids"])

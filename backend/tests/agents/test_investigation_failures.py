@@ -11,7 +11,7 @@ from sqlalchemy import Engine, text
 
 from bianque.agents.nodes import BUDGET_EXHAUSTED, RULE_REASON
 from bianque.llm import ScriptedReply
-from bianque.llm.errors import RetryableProviderError
+from bianque.llm.errors import LLMRequestError, RetryableProviderError
 from bianque.llm.request import ModelRequest
 
 #: A text no role rule writes; it marks model output that must not be stored.
@@ -303,3 +303,21 @@ async def test_a_tool_failure_survives_a_later_sub_agent_failure(
     assert "logs_get_container_logs" in missing
     assert "logs evidence agent" in missing
     assert result.final.body["root_cause"]["confidence"] != "high"
+
+
+async def test_a_fatal_model_error_in_a_sub_agent_fails_the_investigation(
+    migrated: Engine, pg_url: str
+) -> None:
+    """A rejected request inside a sub-agent ends the investigation; no step stays running."""
+
+    def rejected(request: ModelRequest) -> ScriptedReply | None:
+        if request.agent == "kubernetes":
+            raise LLMRequestError("the model service rejected the request")
+        return None
+
+    result = await investigate(pg_url, "s1-a", rules=[rejected])
+
+    assert result.investigation.status == "failed"
+    assert result.investigation.error == "LLMRequestError"
+    assert result.steps and {s.status for s in result.steps} <= {"done", "failed"}
+    assert result.final is None

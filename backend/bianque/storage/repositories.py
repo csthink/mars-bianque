@@ -283,6 +283,17 @@ class PlanRepository:
             values["finished_at"] = finished_at
         await self._session.execute(update(Step).where(Step.id == step_id).values(**values))
 
+    async def fail_unfinished_steps(self, investigation_id: str, finished_at: datetime) -> None:
+        """Mark every step of an investigation that is pending or running as failed."""
+        await self._session.execute(
+            update(Step)
+            .where(
+                Step.investigation_id == investigation_id,
+                Step.status.in_(("pending", "running")),
+            )
+            .values(status="failed", finished_at=finished_at)
+        )
+
     async def get_step(self, step_id: int) -> Step:
         """Return a step by ID.
 
