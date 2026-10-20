@@ -57,9 +57,15 @@ async def load(session: AsyncSession, path: Path = FIXTURE) -> str:
     data = read_fixture(path)
     inv = data["investigation"]
     alert_data = data["alert"]
+    # Replace only the earlier copy of the fixture: real investigations of the same alert
+    # may share the database (and the fingerprint) and must stay.
+    earlier_alert = await session.scalar(
+        select(Investigation.alert_id).where(Investigation.id == inv["id"])
+    )
     await session.execute(delete(Suggestion).where(Suggestion.investigation_id == inv["id"]))
     await session.execute(delete(Investigation).where(Investigation.id == inv["id"]))
-    await session.execute(delete(Alert).where(Alert.fingerprint == alert_data["fingerprint"]))
+    if earlier_alert is not None:
+        await session.execute(delete(Alert).where(Alert.id == earlier_alert))
 
     alert = Alert(
         fingerprint=alert_data["fingerprint"],
