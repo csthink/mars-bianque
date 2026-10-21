@@ -36,12 +36,19 @@ async def ingest(
 ) -> IngestSummary:
     """Import every ``*.md`` file under ``directory``.
 
+    Paths with a component starting with ``.`` are skipped: a ConfigMap volume keeps a
+    second copy of every file under a hidden, timestamped directory.
+
     Raises:
         ChunkingError: A runbook does not have one H1 title.
         EmbeddingError: A chunk cannot be embedded; in ``fixture`` mode, the fixture
             has no vector for it.
     """
-    files = {path.relative_to(directory).as_posix(): path for path in directory.rglob("*.md")}
+    files = {
+        relative.as_posix(): directory / relative
+        for relative in (path.relative_to(directory) for path in directory.rglob("*.md"))
+        if not any(part.startswith(".") for part in relative.parts)
+    }
     async with sessions() as session:
         documents = await KnowledgeRepository(session).list_documents()
     stored = {doc.path: doc.sha256 for doc in documents}

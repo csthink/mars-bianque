@@ -88,6 +88,21 @@ async def test_a_changed_runbook_is_replaced_and_a_removed_one_deleted(
         assert await session.scalar(select(func.count()).select_from(KnowledgeDocument)) == 1
 
 
+async def test_hidden_paths_are_not_runbooks(
+    sessions: async_sessionmaker[AsyncSession], tmp_path: Path
+) -> None:
+    # A ConfigMap volume keeps each file under a hidden, timestamped directory and links
+    # the visible name to it; only the visible names are runbooks.
+    runbooks = write_runbooks(tmp_path)
+    data = runbooks / "..2026_10_21_01_00_00.123456789"
+    data.mkdir()
+    (data / "restarts.md").write_text(RUNBOOK_A)
+    (runbooks / ".draft.md").write_text(RUNBOOK_A)
+    summary = await ingest(runbooks, sessions=sessions, embedder=HashEmbedder())
+    assert (summary.added, summary.updated, summary.skipped, summary.deleted) == (2, 0, 0, 0)
+    assert {path for _, path, _ in await _rows(sessions)} == {"images/pull.md", "restarts.md"}
+
+
 async def test_import_in_fixture_mode_fails_for_a_chunk_without_a_vector(
     sessions: async_sessionmaker[AsyncSession], tmp_path: Path
 ) -> None:
