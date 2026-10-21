@@ -92,6 +92,25 @@ from bianque.gate.forbidden import _COMMANDS, find_write_commands
         ("the git push required for origin main --force", ["git push"]),
         ("the kubectl delete needed for pod s1-app-x", ["kubectl delete"]),
         ("The fix: the\nkubectl delete pod x", ["kubectl delete"]),
+        # A verb of need or advice after a command makes it a command to run, and so does
+        # a preposition that introduces what it acts on; a target is not needed for that.
+        ("the git push required for origin main", ["git push"]),
+        ("the git push needed for origin main", ["git push"]),
+        ("the kubectl delete recommended for pod x", ["kubectl delete"]),
+        ("the kubectl delete should fix it", ["kubectl delete"]),
+        ("the git push to origin main", ["git push"]),
+        ("the kubectl delete on pod web", ["kubectl delete"]),
+        ("the kubectl delete in namespace prod", ["kubectl delete"]),
+        ("the helm rollback followed by a restart", ["helm rollback"]),
+        # A predicate or a time preposition does not lift the other conditions.
+        ("Run the kubectl delete at 10:42", ["kubectl delete"]),
+        ("the kubectl delete failed pod s1-app-x", ["kubectl delete"]),
+        ("The helm upgrade failed with --force", ["helm upgrade"]),
+        ("the kubectl apply ran at 10:42 -f fix.yaml", ["kubectl apply"]),
+        (
+            "The helm upgrade failed; the helm upgrade s1 ./chart fixes it.",
+            ["helm upgrade"],
+        ),
     ],
 )
 def test_write_commands_are_found(text: str, expected: list[str]) -> None:
@@ -150,6 +169,18 @@ def test_write_commands_are_found(text: str, expected: list[str]) -> None:
         "The git commit and the v1.2.3 image align.",
         "The git commit and/or the rollout changed the read/write settings.",
         "此次 git commit 的作者已知，但这次 kubectl apply 操作没有留下证据。",
+        # A predicate that describes what happened, or a time preposition, after a command
+        # used as a noun.
+        "The git commit changed APP_MODE",
+        "The helm upgrade failed.",
+        "The git commit at 10:42:07Z is recorded.",
+        "The helm upgrade failed to complete.",
+        "The kubectl apply ran at 10:42.",
+        "The git commit changed APP_MODE from standard to invalid (ev_9cfa6c69db).",
+        "The kubectl apply happened before the restarts began.",
+        "The git commit introduces the invalid value, and the kubectl apply triggers the rollout.",
+        "The helm upgrade succeeded at 10:40, after the git commit landed.",
+        "这次 helm upgrade 失败了。",
     ],
 )
 def test_read_commands_and_prose_are_not_write_commands(text: str) -> None:

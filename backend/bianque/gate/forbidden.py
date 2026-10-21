@@ -14,9 +14,11 @@ get`` or the prose in "use kubectl to delete", are not write commands.
 
 A command that directly follows a determiner on the same line and has no arguments names
 a thing, not a command to run: "the git commit author", "the kubectl apply action",
-"这次 kubectl apply 操作". It has no arguments when the word right after the command
-words, if any, is a conjunction, an auxiliary or a descriptive noun from a fixed list,
-and no word in the rest of the sentence looks like an argument: an option, an
+"The helm upgrade failed.", "这次 kubectl apply 操作". It has no arguments when the word
+right after the command words, if any, is a conjunction, an auxiliary, a descriptive
+noun, a verb that describes what happened (``changed``, ``failed``) or a time preposition
+(``at``, ``before``), each from a fixed list, and no word in the rest of the sentence
+looks like an argument: an option, an
 assignment, a path, a ``kind/name`` with a Kubernetes kind, a YAML or JSON file name, or
 a word that mixes letters and digits such as ``s1-app``. Evidence, knowledge, suggestion
 and investigation IDs are left out first, so a cited ``ev_9cfa6c69db`` does not count,
@@ -26,6 +28,13 @@ origin main", "the kubectl delete of pod x"), and so it does after an imperative
 right before the determiner ("Try the kubectl delete"). A command without a target
 after a determiner ("a git push is needed") is taken as a noun on purpose: it names an
 operation but gives nothing to run.
+
+The verbs are listed one by one rather than recognized by an ``-ed`` ending: a past
+participle has the same form, and right after a command it makes the command one to run,
+with a target that need not look like an argument ("the git push required for origin
+main"). Verbs of need or advice, modal verbs, and prepositions that introduce what a
+command acts on (``of``, ``for``, ``to``, ``on``) are therefore left out, and so is any
+verb not listed: it keeps the command a command.
 
 These patterns are domain knowledge: a new domain changes this table.
 """
@@ -169,6 +178,27 @@ _NOUN_CONTINUATIONS = frozenset(
     }
 )  # fmt: skip
 
+#: Verbs that describe what happened, past and present; they may also follow a command
+#: used as a noun ("The helm upgrade failed").
+_PREDICATES = frozenset(
+    {
+        "failed", "fails", "succeeded", "succeeds", "completed", "completes",
+        "finished", "finishes", "ran", "runs", "happened", "happens", "occurred", "occurs",
+        "started", "starts", "ended", "ends", "changed", "changes", "modified", "modifies",
+        "updated", "updates", "introduced", "introduces", "removed", "removes", "added",
+        "adds", "reverted", "reverts", "triggered", "triggers", "caused", "causes",
+        "broke", "breaks", "created", "creates", "landed", "lands", "showed", "shows",
+        "returned", "returns", "produced", "produces", "appeared", "appears",
+        "contained", "contains", "touched", "touches", "edited", "edits", "timed",
+    }
+)  # fmt: skip
+
+#: Time prepositions, which may also follow a command used as a noun ("The git commit at
+#: 10:42:07Z").
+_TIME_PREPOSITIONS = frozenset({"at", "before", "after", "during", "since", "until", "around"})
+
+_NOUN_FOLLOWERS = _NOUN_CONTINUATIONS | _PREDICATES | _TIME_PREPOSITIONS
+
 #: The last two ASCII words before a command word, on the same line; the first one only
 #: when nothing but whitespace separates the two.
 _PRECEDING = re.compile(r"(?:([A-Za-z]+)[^\S\n]+)?([A-Za-z]+)[^\S\n]+$")
@@ -254,7 +284,7 @@ def _has_arguments(text: str, end: int, hit: str) -> bool:
     """Whether the command ``hit``, whose words follow position ``end``, has arguments.
 
     An option among the command words, a next word that is not in
-    ``_NOUN_CONTINUATIONS``, or a word of the rest of the sentence that
+    ``_NOUN_FOLLOWERS``, or a word of the rest of the sentence that
     ``_is_argument`` accepts is one.
     """
     size = len(hit.split()) - 1
@@ -281,7 +311,7 @@ def _has_arguments(text: str, end: int, hit: str) -> bool:
         english = _ENGLISH_WORD.match(text, following.start(1), stop)
         word = english.group(0) if english else following.group(1).rstrip(_TRAILING)
         word = re.sub(r"['’]s$", "", word.lower())
-        if word and word not in _NOUN_CONTINUATIONS:
+        if word and word not in _NOUN_FOLLOWERS:
             return True
     rest = _IDS.sub(" ", text[position:stop])
     return any(_is_argument(word, hit) for word in rest.split())
