@@ -289,11 +289,13 @@ def iter_high_entropy_spans(
     spans: list[tuple[int, int, str]] = []
     for m in _CANDIDATE_RE.finditer(text):
         for seg_start, seg_end in _subtract_spans(m.start(), m.end(), diagnostic):
-            # A piece may start or end with the glue separator (_ or -). Strip it before
-            # checking so the span covers exactly the secret: the separator stays out of
-            # the placeholder and the head/tail characters are clean.
+            # A piece may start or end with a separator: the glue (_ or -), or the / of a
+            # path or of the // in a URL. Strip it before checking so the span covers
+            # exactly the secret: the separator stays in the text, out of the
+            # placeholder, the head/tail characters are clean, and a piece too short
+            # without it is not checked.
             seg = text[seg_start:seg_end]
-            stripped = seg.strip("_-")
+            stripped = seg.strip("_-/")
             if not stripped:
                 continue
             off = seg.index(stripped)

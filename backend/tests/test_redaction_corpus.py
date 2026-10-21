@@ -183,6 +183,29 @@ def test_high_entropy_base64_masked() -> None:
     assert f"<high-entropy:{b64_value[:2]}…{b64_value[-2:]}>" in out
 
 
+# -- Slashes around a candidate stay in the text ------------------------------------
+# "/" is a base64 character, so the candidate in a URL started at "//"; the slashes are
+# separators, not key material.
+def test_a_host_name_in_a_url_keeps_the_slashes_before_it() -> None:
+    host = "prometheus-server-" + "6fb9768697-w5nrm"
+    out = redact(f"generatorURL: http://{host}:9090/graph")
+    assert out == "generatorURL: http://<high-entropy:pr…rm>:9090/graph"
+    assert [finding.matched for finding in detect(f"http://{host}:9090")] == [host]
+
+
+def test_slashes_on_both_ends_stay_in_the_text() -> None:
+    secret = "".join(["Zx9Qw", "7Rt2Lm", "4Np8Vb", "Kd3Hs"])
+    out = redact(f"path //{secret}/ end")
+    assert out == f"path //<high-entropy:{secret[:2]}…{secret[-2:]}>/ end"
+
+
+def test_a_candidate_too_short_without_its_slashes_is_not_checked() -> None:
+    piece = "".join(["Zx9Qw", "7Rt2Lm", "4Np8V"])  # 16 characters
+    text = f"see ////{piece}"  # 20 characters with the slashes
+    assert detect(text) == []
+    assert redact(text) == text
+
+
 def test_short_or_low_entropy_not_high_entropy() -> None:
     # Shorter than the minimum length: never checked for entropy.
     assert not is_high_entropy("abc123")
