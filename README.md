@@ -6,30 +6,33 @@ Bianque is an alert-driven root cause analysis agent for Kubernetes. When Alertm
 
 ## 架构
 
+组件与数据流：
+
 ```mermaid
 flowchart LR
-  AM["Alertmanager"] -->|"webhook"| API["FastAPI 接口"]
+  AM["Alertmanager"] -->|"webhook"| API["后端<br/>FastAPI"]
   UI["React 前端"] -->|"REST、SSE"| API
-  API --> PLAN
-
-  subgraph GRAPH["调查图（LangGraph）"]
-    direction TB
-    PLAN["plan / replan"] -->|"按证据域分派"| SUB["取证子 Agent<br/>kubernetes、logs、change<br/>同一轮并行"]
-    SUB -->|"发现"| ASSESS["assess"]
-    ASSESS -->|"不充分"| PLAN
-    ASSESS -->|"充分"| REPORT["report"]
-    REPORT --> GATE{"证据门"}
-    GATE -->|"被拒，重试"| REPORT
-    GATE -->|"通过"| PUB["正式报告"]
-    GATE -->|"重试用尽"| DEG["降级报告"]
-  end
-
-  GRAPH -.->|"先脱敏"| LLM["模型网关"]
-  GRAPH --> PG[("PostgreSQL<br/>pgvector")]
-  SUB --> EXEC["工具执行器<br/>与注册表"]
-  MCPC["MCP 客户端"] -->|"/mcp"| EXEC
-  EXEC --> PG
+  MCPC["MCP 客户端"] -->|"/mcp"| API
+  API --> GRAPH["调查图<br/>LangGraph"]
+  GRAPH -->|"先脱敏"| LLM["模型网关"]
+  GRAPH --> EXEC["工具执行器<br/>与注册表"]
+  API --> EXEC
   EXEC --> SRC["只读数据源<br/>Kubernetes API<br/>Pod 日志<br/>清单 Git 仓"]
+  API --> PG[("PostgreSQL<br/>pgvector")]
+```
+
+一次调查在调查图里的流程：
+
+```mermaid
+flowchart TB
+  PLAN["plan / replan<br/>制定计划"] -->|"按证据域分派"| SUB["取证子 Agent<br/>kubernetes、logs、change<br/>同一轮并行"]
+  SUB -->|"证据与发现"| ASSESS["assess<br/>证据是否充分"]
+  ASSESS -->|"不充分，补充计划"| PLAN
+  ASSESS -->|"充分"| REPORT["report<br/>生成报告"]
+  REPORT --> GATE{"证据门"}
+  GATE -->|"被拒，带违规重试"| REPORT
+  GATE -->|"通过"| PUB["发布正式报告"]
+  GATE -->|"重试用尽"| DEG["发布降级报告"]
 ```
 
 - 调查图在 `backend/bianque/agents/graph.py`，节点在 `nodes.py`，取证子 Agent 在 `subagent.py`。三个取证子 Agent 是同一份实现，区别只在证据域。
