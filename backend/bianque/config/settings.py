@@ -145,6 +145,15 @@ class Settings(BaseSettings):
     #: Supplementary plans of one investigation (``BIANQUE_MAX_REPLAN_ROUNDS``).
     max_replan_rounds: int = Field(default=2, ge=0)
 
+    #: The skills directory (``BIANQUE_SKILLS_DIR``): one directory per skill with its
+    #: ``SKILL.md``. The image holds it at ``/app/.agents/skills``.
+    skills_dir: Path = Path(".agents/skills")
+
+    #: ``activate_skill`` calls of one plan or supplementary plan
+    #: (``BIANQUE_PLAN_MAX_SKILL_ACTIVATIONS``); at the limit only ``submit_plan`` is
+    #: offered. 0 plans without skills: no catalog and no ``activate_skill``.
+    plan_max_skill_activations: int = Field(default=3, ge=0)
+
     #: Retries after the evidence gate rejects a report (``BIANQUE_REPORT_MAX_RETRIES``);
     #: when they are used up, a degraded report is published.
     report_max_retries: int = Field(default=2, ge=0)

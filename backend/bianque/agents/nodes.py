@@ -8,6 +8,7 @@ never reaches a business table or an event.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from collections.abc import Iterable, Sequence
@@ -18,7 +19,12 @@ from langgraph.types import Send
 
 from bianque.agents.default_plan import default_plan
 from bianque.agents.domains import DOMAINS, POD_STATUS_TOOLS
-from bianque.agents.gated import MODEL_UNAVAILABLE, SCHEMA_FAILURE, generate_gated
+from bianque.agents.gated import (
+    MODEL_UNAVAILABLE,
+    SCHEMA_FAILURE,
+    generate_gated,
+    rejection_feedback,
+)
 from bianque.agents.prompting import (
     ASSESSMENT,
     DOMAINS_HEADING,
@@ -27,6 +33,7 @@ from bianque.agents.prompting import (
     FINDINGS,
     KNOWLEDGE,
     REJECTION,
+    SKILLS,
     build_prompt,
     prompt_text,
     render_domains,
@@ -34,9 +41,12 @@ from bianque.agents.prompting import (
     render_failures,
     render_findings,
     render_json,
+    render_skills,
     render_violations,
     section,
+    skills_prompt,
 )
+from bianque.agents.skill_loop import SkillLoop
 from bianque.agents.snapshot import (
     Snapshot,
     failed_calls,
@@ -49,6 +59,7 @@ from bianque.agents.state import AgentTask, InvestigationState, PendingStep, Run
 from bianque.gate import (
     SCHEMA_VERSION,
     Assessment,
+    GateContext,
     GateResult,
     OutputType,
     Plan,
@@ -60,7 +71,16 @@ from bianque.gate import (
 )
 from bianque.knowledge.query import alert_query
 from bianque.knowledge.search import SearchResult
-from bianque.llm import CallContext, LLMUnavailableError, StructuredOutputError, redact_for_llm
+from bianque.llm import (
+    CallContext,
+    LLMUnavailableError,
+    RedactedPrompt,
+    StructuredOutputError,
+    ToolCall,
+    ToolSpec,
+    redact_for_llm,
+)
+from bianque.llm.gateway import function_parameters
 from bianque.storage.ids import alert_evidence_id
 from bianque.storage.repositories import (
     AssessmentRepository,
@@ -213,6 +233,7 @@ class InvestigationNodes:
             "round": 1,
             "failures": [],
             "knowledge": [],
+            "skills": [],
             "report_attempt": 0,
             "rejection": [],
             "model_failed": False,
@@ -277,8 +298,8 @@ class InvestigationNodes:
             section(DOMAINS_HEADING, render_domains(rt.tools, first_round=True)),
             section(KNOWLEDGE, await self._knowledge_texts(state)),
         ]
-        pending = await self._make_plan(state, snapshot, sections, "plan", first_round=True)
-        return {"pending": pending}
+        pending, loaded = await self._make_plan(state, snapshot, sections, "plan", first_round=True)
+        return {"pending": pending, "skills": loaded}
 
     async def replan(self, state: InvestigationState) -> dict[str, Any]:
         """Generate a supplementary plan for what the last assessment found missing."""
@@ -298,8 +319,12 @@ class InvestigationNodes:
             section(DOMAINS_HEADING, render_domains(rt.tools, first_round=False)),
             section(KNOWLEDGE, await self._knowledge_texts(state)),
         ]
-        pending = await self._make_plan(state, snapshot, sections, "replan", first_round=False)
-        return {"pending": pending, "round": state["round"] + 1}
+        if rt.plans_with_skills:
+            sections.append(section(SKILLS, render_skills(rt.skills, state.get("skills", []))))
+        pending, loaded = await self._make_plan(
+            state, snapshot, sections, "replan", first_round=False
+        )
+        return {"pending": pending, "skills": loaded, "round": state["round"] + 1}
 
     async def _make_plan(
         self,
@@ -309,30 +334,46 @@ class InvestigationNodes:
         operation: str,
         *,
         first_round: bool,
-    ) -> list[PendingStep]:
+    ) -> tuple[list[PendingStep], list[str]]:
+        """Generate, check and store a plan version; return its steps and the loaded skills.
+
+        With skills, the model may load some first (``SkillLoop``); a plan it submits
+        there is validated like a forced one. Without skills, the plan is one forced call.
+        """
         rt = self._rt
         investigation_id = state["investigation_id"]
         preserve = self._preserve(snapshot)
         knowledge_ids = [k["id"] for k in state.get("knowledge", [])]
-        gated = await generate_gated(
-            rt.gateway,
-            rt.recorder,
-            build_prompt(prompt_text(operation), sections, engine=rt.engine, preserve=preserve),
-            context=self._context(investigation_id, operation),
-            output_type=OutputType.PLAN,
-            function_name=PLAN_FUNCTION[0],
-            description=PLAN_FUNCTION[1],
-            gate_context=gate_context(snapshot, rt, knowledge_ids=knowledge_ids),
-            preserve=preserve,
+        context = self._context(investigation_id, operation)
+        skills = skills_prompt(rt.skills) if rt.plans_with_skills else ""
+        prompt = build_prompt(
+            prompt_text(operation, skills=skills), sections, engine=rt.engine, preserve=preserve
         )
-        plan = gated.output if isinstance(gated.output, Plan) else None
+        loaded = list(state.get("skills", []))
+        submitted: tuple[ToolCall, str] | None = None
+        unavailable = False
+        if rt.plans_with_skills:
+            outcome = await SkillLoop(rt, self._plan_function).run(
+                prompt, context, loaded, preserve
+            )
+            prompt, submitted = outcome.conversation, outcome.submitted
+            loaded, unavailable = list(outcome.loaded), outcome.unavailable
+        plan: Plan | None = None
+        result: GateResult | None = None
+        if not unavailable:
+            plan, result = await self._gated_plan(
+                prompt,
+                context,
+                submitted,
+                gate_context(snapshot, rt, knowledge_ids=knowledge_ids),
+                preserve,
+            )
         source = "model"
-        if plan is not None:
+        if plan is not None and result is not None:
             kept, dropped = check_range(plan, first_round=first_round)
             if dropped:
                 await rt.recorder.set_gate_result(
-                    self._context(investigation_id, operation),
-                    {**gated.results[-1].to_json(), "dropped_steps": dropped},
+                    context, {**result.to_json(), "dropped_steps": dropped}
                 )
             plan = plan.model_copy(update={"steps": kept}) if kept else None
         if plan is None:
@@ -342,6 +383,7 @@ class InvestigationNodes:
                 investigation_id,
                 source=source,
                 rationale=plan.rationale,
+                skills=sorted(loaded),
                 steps=[
                     StepSpec(
                         domain=step.domain,
@@ -357,7 +399,57 @@ class InvestigationNodes:
         await rt.events.emit(
             investigation_id, "plan_created", plan_id=row.id, version=row.version, source=source
         )
-        return [PendingStep(id=s.id, domain=s.domain) for s in steps if s.plan_id == row.id]
+        pending = [PendingStep(id=s.id, domain=s.domain) for s in steps if s.plan_id == row.id]
+        return pending, loaded
+
+    @property
+    def _plan_function(self) -> ToolSpec:
+        return ToolSpec(PLAN_FUNCTION[0], PLAN_FUNCTION[1], function_parameters(Plan))
+
+    async def _gated_plan(
+        self,
+        prompt: RedactedPrompt,
+        context: CallContext,
+        submitted: tuple[ToolCall, str] | None,
+        gate: GateContext,
+        preserve: frozenset[str],
+    ) -> tuple[Plan | None, GateResult | None]:
+        """Validate a plan the model submitted on its own, or force one; one retry either way.
+
+        Returns:
+            The plan that passed the gate, or ``None``, and the last gate result.
+        """
+        rt = self._rt
+        retries = 1
+        if submitted is not None:
+            call, text = submitted
+            try:
+                arguments: Any = json.loads(call.arguments)
+            except json.JSONDecodeError:
+                result = GateResult(OutputType.PLAN.value, (SCHEMA_FAILURE,))
+            else:
+                result = validate(OutputType.PLAN, arguments, gate)
+            await rt.recorder.set_gate_result(context, result.to_json())
+            if result.passed and isinstance(result.output, Plan):
+                return result.output, result
+            prompt = prompt + rejection_feedback(
+                call, text, result.violations, engine=rt.engine, preserve=preserve
+            )
+            retries = 0
+        gated = await generate_gated(
+            rt.gateway,
+            rt.recorder,
+            prompt,
+            context=context,
+            output_type=OutputType.PLAN,
+            function_name=PLAN_FUNCTION[0],
+            description=PLAN_FUNCTION[1],
+            gate_context=gate,
+            preserve=preserve,
+            retries=retries,
+        )
+        plan = gated.output if isinstance(gated.output, Plan) else None
+        return plan, gated.results[-1] if gated.results else None
 
     async def dispatch(self, state: InvestigationState) -> dict[str, Any]:
         """Mark the start of a round; the routing function sends the steps out."""

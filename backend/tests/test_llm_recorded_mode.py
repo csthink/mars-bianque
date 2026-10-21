@@ -29,6 +29,8 @@ from llm_fakes import (
     status,
 )
 
+from bianque.agents.prompting import prompt_hashes
+from bianque.agents.startup import load_skill_catalog
 from bianque.config.manifest import ManifestError, RecordingManifest, write_manifest
 from bianque.llm import (
     CallContext,
@@ -112,13 +114,14 @@ async def _record_one(monkeypatch: pytest.MonkeyPatch, record_dir: Path) -> LLMC
 
 def _manifest(**changes: Any) -> RecordingManifest:
     fields: dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "model": MODEL,
         "extra_body": json.loads(_EXTRA_BODY),
         "endpoint_host": "llm.example.test",
         "recorded_at": "2026-10-20T12:00:00+00:00",
         "cases": ["s1-a", "s1-d"],
         "prompts": {"plan.md": "0" * 64},
+        "skills": {"investigate-pod-restarts/SKILL.md": "2" * 64},
         "tool_schemas_sha256": "1" * 64,
     }
     return RecordingManifest.model_validate({**fields, **changes})
@@ -381,9 +384,9 @@ def test_other_modes_ignore_the_manifest(monkeypatch: pytest.MonkeyPatch, tmp_pa
 @pytest.mark.parametrize(
     ("content", "message"),
     [
-        ('{"schema_version": 2}', "schema_version is 2, expected 1"),
+        ('{"schema_version": 1}', "schema_version is 1, expected 2"),
         ("not json", "cannot read the recording manifest"),
-        ('{"schema_version": 1, "model": "m"}', "manifest.json"),
+        ('{"schema_version": 2, "model": "m"}', "manifest.json"),
     ],
 )
 def test_a_malformed_manifest_fails_naming_the_file(
@@ -394,3 +397,106 @@ def test_a_malformed_manifest_fails_naming_the_file(
         settings_from_env(
             monkeypatch, {"BIANQUE_LLM_MODE": "recorded", "BIANQUE_LLM_RECORDINGS_DIR": tmp_path}
         )
+
+
+# -- Prompt files and skills against the manifest ---------------------------------------
+
+
+def _skills(root: Path, body: str = "Read the pod status.\n") -> Path:
+    skill = root / "skills" / "check-pods"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        f"---\nname: check-pods\ndescription: Check pods.\n---\n{body}", encoding="utf-8"
+    )
+    return root / "skills"
+
+
+def _recorded_with(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, skills: Path) -> Any:
+    return settings_from_env(
+        monkeypatch,
+        {
+            "BIANQUE_LLM_MODE": "recorded",
+            "BIANQUE_LLM_RECORDINGS_DIR": tmp_path / "rec",
+            "BIANQUE_SKILLS_DIR": skills,
+        },
+    )
+
+
+def _write_current(tmp_path: Path, skills_dir: Path, **changes: Any) -> None:
+    from bianque.skills import load_skills
+
+    (tmp_path / "rec").mkdir(exist_ok=True)
+    values: dict[str, Any] = {
+        "prompts": prompt_hashes(),
+        "skills": load_skills(skills_dir).hashes(),
+        **changes,
+    }
+    write_manifest(tmp_path / "rec", _manifest(**values))
+
+
+def test_recorded_mode_starts_when_prompts_and_skills_match(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    skills = _skills(tmp_path)
+    _write_current(tmp_path, skills)
+    catalog = load_skill_catalog(_recorded_with(monkeypatch, tmp_path, skills))
+    assert catalog.names == ("check-pods",)
+
+
+def test_a_changed_skill_fails_recorded_mode_naming_the_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    skills = _skills(tmp_path)
+    _write_current(tmp_path, skills)
+    (skills / "check-pods" / "SKILL.md").write_text(
+        "---\nname: check-pods\ndescription: Check pods.\n---\nRead the events.\n"
+    )
+    with pytest.raises(ManifestError, match=r"check-pods/SKILL\.md.*record again"):
+        load_skill_catalog(_recorded_with(monkeypatch, tmp_path, skills))
+
+
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    [
+        ({"skills": {}}, r"check-pods/SKILL\.md is not in the recording manifest"),
+        (
+            {"skills": {"check-pods/SKILL.md": "3" * 64, "gone/SKILL.md": "4" * 64}},
+            r"check-pods/SKILL\.md differs .*, 1 more",
+        ),
+        ({"prompts": {**prompt_hashes(), "plan.md": "5" * 64}}, r"prompts/plan\.md"),
+        ({"prompts": {"plan.md": prompt_hashes()["plan.md"]}}, r"prompts/assess\.md"),
+    ],
+)
+def test_every_difference_from_the_manifest_fails_recorded_mode(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, changes: dict[str, Any], message: str
+) -> None:
+    skills = _skills(tmp_path)
+    _write_current(tmp_path, skills, **changes)
+    with pytest.raises(ManifestError, match=message):
+        load_skill_catalog(_recorded_with(monkeypatch, tmp_path, skills))
+
+
+def test_a_recorded_skill_missing_on_disk_fails_recorded_mode(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from bianque.skills import load_skills
+
+    skills = _skills(tmp_path)
+    recorded = {**load_skills(skills).hashes(), "gone/SKILL.md": "4" * 64}
+    _write_current(tmp_path, skills, skills=recorded)
+    with pytest.raises(ManifestError, match=r"gone/SKILL\.md is in the recording manifest"):
+        load_skill_catalog(_recorded_with(monkeypatch, tmp_path, skills))
+
+
+def test_other_modes_do_not_compare_files(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    skills = _skills(tmp_path)
+    _write_current(tmp_path, skills, prompts={})
+    settings = settings_from_env(
+        monkeypatch,
+        {
+            "BIANQUE_LLM_MODE": "scripted",
+            "BIANQUE_LLM_RECORDINGS_DIR": tmp_path / "rec",
+            "BIANQUE_SKILLS_DIR": skills,
+        },
+    )
+    assert load_skill_catalog(settings).names == ("check-pods",)

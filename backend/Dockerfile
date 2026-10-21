@@ -24,6 +24,10 @@ COPY alembic.ini ./
 COPY migrations ./migrations
 COPY bianque ./bianque
 RUN uv sync --locked --no-dev
+# The skills live at the repository root, outside this build context: every build passes
+# them as the named context `skills` (--build-context skills=.agents/skills, or
+# additional_contexts in Compose). BIANQUE_SKILLS_DIR defaults to .agents/skills.
+COPY --from=skills . ./.agents/skills
 
 # The local embedding model's directory. The model is never downloaded at run time: the
 # `demo` stage downloads it here at build time; on `runtime`, `local` embedding mode

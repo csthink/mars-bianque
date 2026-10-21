@@ -12,6 +12,7 @@ Subcommands:
 - ``bianque eval retrieval``: evaluate the fused retrieval on annotated queries.
 - ``bianque eval run``: replay every case, ask its questions, write the evaluation report.
 - ``bianque eval compare``: check that a recorded replay reproduced the live run.
+- ``bianque eval diff``: set two evaluation reports side by side, case by case.
 - ``bianque auth hash-password``: print the bcrypt hash of a password read from stdin.
 """
 
@@ -102,11 +103,13 @@ def _export_schemas(args: argparse.Namespace) -> None:
 
 async def _investigate(args: argparse.Namespace) -> int:
     from bianque.agents.runner import run_investigation
+    from bianque.agents.startup import load_skill_catalog
     from bianque.api.alertmanager import parse_webhook
     from bianque.storage.db import create_engine, session_factory
     from bianque.tools.backends import open_backends
 
     settings = get_settings()
+    skills = load_skill_catalog(settings)
     if args.case and settings.tool_backend != "pack":
         raise SystemExit("--case replays an evidence pack: set BIANQUE_TOOL_BACKEND=pack")
     if args.alert:
@@ -123,6 +126,7 @@ async def _investigate(args: argparse.Namespace) -> int:
                 alert,
                 sessions=sessions,
                 backends=backends,
+                skills=skills,
                 trigger="replay" if args.case else "manual",
                 case_id=args.case,
             )
@@ -316,16 +320,28 @@ async def _eval_run(args: argparse.Namespace) -> int:
 
 
 def _eval_compare(args: argparse.Namespace) -> int:
-    from bianque.evals.report import EvalReport, compare_reports
+    from bianque.evals.report import compare_reports, load_report
 
-    live = EvalReport.model_validate_json(Path(args.live).read_text())
-    replay = EvalReport.model_validate_json(Path(args.replay).read_text())
+    live = load_report(Path(args.live))
+    replay = load_report(Path(args.replay))
     problems = compare_reports(live, replay)
     for problem in problems:
         print(problem, file=sys.stderr)
     if not problems:
         print(f"the replay reproduced all {len(live.cases)} cases of the live run")
     return 1 if problems else 0
+
+
+def _eval_diff(args: argparse.Namespace) -> int:
+    from bianque.evals.report import load_report, render_comparison
+
+    text = render_comparison(load_report(Path(args.base)), load_report(Path(args.new)))
+    if args.out:
+        Path(args.out).write_text(text, encoding="utf-8")
+        print(f"comparison written to {args.out}")
+    else:
+        print(text, end="")
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -417,6 +433,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     compare.add_argument("live", help="report.json of the live run")
     compare.add_argument("replay", help="report.json of the recorded replay")
+    diff = eval_commands.add_parser(
+        "diff", help="set two evaluation reports side by side: root cause, evidence and cost"
+    )
+    diff.add_argument("base", help="report.json of the baseline")
+    diff.add_argument("new", help="report.json to compare with it")
+    diff.add_argument("--out", help="write the Markdown here instead of printing it")
     return parser
 
 
@@ -468,12 +490,15 @@ def _knowledge(args: argparse.Namespace) -> int:
     from bianque.knowledge.chunking import ChunkingError
     from bianque.knowledge.embedding import EmbeddingError
     from bianque.knowledge.fixtures import EmbeddingFixtureError
+    from bianque.skills import SkillError
 
     try:
         if args.command == "eval" and args.eval_command == "run":
             return asyncio.run(_eval_run(args))
         if args.command == "eval" and args.eval_command == "compare":
             return _eval_compare(args)
+        if args.command == "eval" and args.eval_command == "diff":
+            return _eval_diff(args)
         if args.command == "eval":
             return asyncio.run(_eval_retrieval(args))
         if args.knowledge_command == "download-model":
@@ -489,6 +514,7 @@ def _knowledge(args: argparse.Namespace) -> int:
         CaseFileError,
         EvaluationError,
         ManifestError,
+        SkillError,
     ) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

@@ -7,10 +7,14 @@ category and object only. Each model call site has one prompt file in ``prompts/
 holds the role, the evidence discipline and the task. The data follows in one user
 message made of sections with fixed headings; the scripted responder parses the same
 headings (``bianque.agents.scripted_rules``).
+
+The planning prompts add the skill catalog (``prompts/skills.md``) to the role text
+when there are skills, and nothing about skills when there are none.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -23,6 +27,7 @@ from bianque.agents.domains import DOMAINS
 from bianque.gate import Violation
 from bianque.llm import RedactedPrompt, redact_prompt_for_llm
 from bianque.redaction import RedactionEngine
+from bianque.skills import SkillCatalog, render_catalog, skill_content
 from bianque.tools import ToolRegistry
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
@@ -38,6 +43,7 @@ KNOWLEDGE = "Knowledge"
 REJECTION = "Rejected attempt"
 REPORT = "Report"
 SUGGESTIONS = "Suggestions"
+SKILLS = "Skills"
 
 #: Written where a section has no content.
 NONE = "(none)"
@@ -49,13 +55,43 @@ def _read(name: str) -> str:
 
 
 def prompt_text(name: str, **values: str) -> str:
-    """Return a prompt file with the evidence discipline and ``values`` filled in."""
-    return Template(_read(name)).substitute(discipline=_read("discipline").strip(), **values)
+    """Return a prompt file with the evidence discipline and ``values`` filled in.
+
+    Trailing blank lines are dropped, so a placeholder filled with nothing at the end of
+    a file leaves nothing behind.
+    """
+    text = Template(_read(name)).substitute(discipline=_read("discipline").strip(), **values)
+    return text.rstrip()
 
 
-def prompt_files() -> dict[str, str]:
-    """Return the text of every prompt file by file name; evaluation reports hash them."""
-    return {path.name: path.read_text() for path in sorted(PROMPTS_DIR.glob("*.md"))}
+def skills_prompt(catalog: SkillCatalog) -> str:
+    """The skill part of a planning prompt: what skills are and the catalog; empty if none."""
+    if not catalog:
+        return ""
+    return Template(_read("skills")).substitute(catalog=render_catalog(catalog)).strip()
+
+
+def render_skills(catalog: SkillCatalog, loaded: Collection[str]) -> str:
+    """Render the loaded skills' content, sorted by name; the lines inside the tags indented.
+
+    The indentation by two spaces keeps the headings of a skill's body from reading as
+    sections of the prompt.
+    """
+    blocks = []
+    for skill in catalog:
+        if skill.name in loaded:
+            first, *inner, last = skill_content(skill).splitlines()
+            indented = [f"  {line}" if line.strip() else "" for line in inner]
+            blocks.append("\n".join([first, *indented, last]))
+    return "\n\n".join(blocks)
+
+
+def prompt_hashes() -> dict[str, str]:
+    """SHA-256 of every prompt file, by file name, for reports and the recording manifest."""
+    return {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(PROMPTS_DIR.glob("*.md"))
+    }
 
 
 @dataclass(frozen=True)

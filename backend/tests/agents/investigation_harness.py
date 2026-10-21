@@ -21,11 +21,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 
 from bianque.agents.runner import InvestigationOutcome, run_investigation
+from bianque.agents.startup import load_skill_catalog
 from bianque.api.alertmanager import AlertInput, parse_webhook
 from bianque.config import Settings
 from bianque.knowledge.embedding import FixtureEmbedder
 from bianque.knowledge.ingest import ingest
 from bianque.llm import ScriptedRule
+from bianque.skills import SkillCatalog, load_skills
 from bianque.storage.db import session_factory
 from bianque.storage.models import (
     Assessment,
@@ -49,6 +51,10 @@ CASES = REPO / "eval" / "cases"
 RUNBOOKS = REPO / "knowledge" / "runbooks"
 EMBEDDING_FIXTURE = REPO / "eval" / "embeddings" / "bge-small-en-v1.5.json"
 
+#: The repository's skills, which scripted investigations load while planning.
+SKILLS_DIR = REPO / ".agents" / "skills"
+SKILLS: SkillCatalog = load_skills(SKILLS_DIR)
+
 
 async def no_wait(_: float) -> None:
     """A sleep that returns at once, for retries in tests."""
@@ -68,6 +74,7 @@ def scripted_settings(pg_url: str, **overrides: Any) -> Settings:
         "cases_dir": CASES,
         "embedding_mode": "fixture",
         "embedding_fixture": EMBEDDING_FIXTURE,
+        "skills_dir": SKILLS_DIR,
     }
     return Settings(**{**values, **overrides})
 
@@ -149,7 +156,7 @@ async def investigate(
         rules: Scripted rules tried before the role rules.
         wrap: Replaces the backends, for example to delay calls.
         knowledge: Import the runbooks first, so the investigation retrieves knowledge.
-        overrides: Settings, such as ``subagent_max_steps``.
+        overrides: Settings, such as ``subagent_max_steps`` or ``skills_dir``.
     """
     settings = scripted_settings(pg_url, **overrides)
     async with database(pg_url) as sessions, open_pack(CASES / case / "pack") as backends:
@@ -160,6 +167,7 @@ async def investigate(
             case_alert(case),
             sessions=sessions,
             backends=wrap(backends) if wrap else backends,
+            skills=load_skill_catalog(settings),
             trigger="replay",
             case_id=case,
             rules=rules,

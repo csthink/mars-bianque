@@ -102,7 +102,8 @@ $(REPLAY_ENV):
 replay-login:
 	mkdir -p .demo
 	demo/scripts/demo-login.sh $(REPLAY_LOGIN_ENV) $(DEMO_PASSWORD) $(MCP_TOKEN) \
-		docker run --rm -i "$$(docker build -q --target runtime backend)" bianque auth hash-password
+		docker run --rm -i "$$(docker build -q --target runtime --build-context skills=.agents/skills \
+			backend)" bianque auth hash-password
 
 # LLM_MODE picks the model mode: recorded (the default) replays recorded responses;
 # scripted answers with the scripted rules; live calls a real model and needs

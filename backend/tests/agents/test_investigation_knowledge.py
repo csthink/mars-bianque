@@ -50,8 +50,9 @@ async def test_the_plan_gets_retrieved_knowledge_and_the_report_refers_to_it(
     retrieved = [line.split(" ", 1)[0] for line in lines]
     assert all(KNOWLEDGE_ID.fullmatch(kid) for kid in retrieved)
 
-    # The plan and the replan see the five chunks with their texts, sorted by ID.
-    assert len(plans) == 2
+    # The plan (both turns: the skill activation and the submission) and the replan see
+    # the five chunks with their texts, sorted by ID.
+    assert [request.operation for request in plans] == ["plan", "plan", "replan"]
     for request in plans:
         section = _knowledge_section(request)
         entries = re.findall(r"^\[(kn_[0-9a-f]{12})\] ", section, flags=re.MULTILINE)
@@ -66,8 +67,9 @@ async def test_the_plan_gets_retrieved_knowledge_and_the_report_refers_to_it(
     assert "\n  " not in report_section
 
     plan_calls = [c for c in result.calls_of("investigation", "model") if c.name == "plan"]
-    assert min(retrieved) in (plan_calls[0].output_summary or "")
-    assert plan_calls[0].gate_result and plan_calls[0].gate_result["passed"]
+    submitted = plan_calls[-1]
+    assert min(retrieved) in (submitted.output_summary or "")
+    assert submitted.gate_result and submitted.gate_result["passed"]
 
     assert result.final is not None and result.final.status == "published"
     body = result.final.body

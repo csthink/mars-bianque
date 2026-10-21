@@ -87,12 +87,15 @@ async def test_plans_steps_and_assessments_read_back(migrated: Engine, pg_url: s
         steps = await PlanRepository(session).list_steps(inv)
         assessments = await AssessmentRepository(session).list(inv)
     assert [p.version for p in plans] == [1, 2]
+    # Plan 2 had the skill loaded for plan 1 in its prompt.
+    assert [p.skills for p in plans] == [["investigate-pod-restarts"]] * 2
     assert len(steps) == len(result.steps) and all(s.findings for s in steps)
     assert [a.round for a in assessments] == [1, 2]
 
     with TestClient(create_app(Settings(database_url=pg_url))) as client:
         detail = client.get(f"/api/investigations/{inv}").json()
     assert [p["version"] for p in detail["plans"]] == [1, 2]
+    assert detail["plans"][0]["skills"] == ["investigate-pod-restarts"]
     assert sum(len(p["steps"]) for p in detail["plans"]) == len(steps)
     assert [a["round"] for a in detail["assessments"]] == [1, 2]
     assert detail["report"]["status"] == "published"
@@ -124,14 +127,19 @@ async def test_call_records_count_every_call_and_name_their_agent(
     model_calls = [c for c in result.calls if c.kind == "model"]
     tool_calls = [c for c in result.calls if c.kind == "tool"]
     knowledge_calls = [c for c in result.calls if c.kind == "knowledge"]
+    skill_calls = [c for c in result.calls if c.kind == "skill"]
     assert len(model_calls) == len(requests)
     assert [(c.agent, c.name) for c in knowledge_calls] == [("investigation", "retrieve_knowledge")]
-    assert len(result.calls) == len(model_calls) + len(tool_calls) + 1
+    assert [(c.agent, c.name) for c in skill_calls] == [
+        ("investigation", "investigate-pod-restarts")
+    ]
+    assert len(result.calls) == len(model_calls) + len(tool_calls) + 2
     requested_tools = [
         line
         for c in model_calls
         for line in (c.output_summary or "").splitlines()
-        if line.startswith("calls ") and not line.startswith("calls submit_")
+        if line.startswith("calls ")
+        and not line.startswith(("calls submit_", "calls activate_skill"))
     ]
     assert len(tool_calls) == len(requested_tools)
     assert {c.agent for c in result.calls} == AGENTS
@@ -141,7 +149,14 @@ async def test_call_records_count_every_call_and_name_their_agent(
     for call in model_calls:
         assert call.tokens_in and call.tokens_out
     assert knowledge_calls[0].tokens_in is None and knowledge_calls[0].output_summary
-    structured = [c for c in model_calls if c.name != "evidence_agent"]
+    [skill] = skill_calls
+    assert skill.input_summary == "investigate-pod-restarts" and skill.tokens_in is None
+    assert re.fullmatch(r"sha256 [0-9a-f]{12}; first load", skill.output_summary or "")
+    # The plan's model turn that loaded the skill carries no gate result; every other
+    # structured output passed the gate.
+    activating = [c for c in model_calls if "calls activate_skill" in (c.output_summary or "")]
+    assert [c.name for c in activating] == ["plan"] and activating[0].gate_result is None
+    structured = [c for c in model_calls if c.name != "evidence_agent" and c not in activating]
     assert all(c.gate_result and c.gate_result["passed"] for c in structured)
     assert result.investigation.tokens_used == sum(
         (c.tokens_in or 0) + (c.tokens_out or 0) for c in model_calls

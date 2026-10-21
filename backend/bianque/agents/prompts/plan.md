@@ -9,3 +9,5 @@ Your task: write the first investigation plan for the alert below.
 - One step per question you need answered. The steps of one domain run in order; different domains run in parallel.
 - The Knowledge section holds runbook excerpts retrieved for this alert. Use them to decide what to check; put the IDs of the excerpts you used in knowledge_refs. They are not evidence about this cluster.
 - In the rationale, say in one or two sentences what the plan looks at first and why.
+
+$skills

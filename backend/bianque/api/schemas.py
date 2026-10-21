@@ -92,12 +92,13 @@ class StepView(BaseModel):
 
 
 class PlanView(BaseModel):
-    """One plan version with its steps."""
+    """One plan version with its steps and the skills loaded when it was generated."""
 
     id: int
     version: int
     source: str
     rationale: str
+    skills: list[str]
     created_at: datetime
     steps: list[StepView]
 
@@ -185,13 +186,15 @@ class CallView(BaseModel):
 
     A tool call shows its redacted input and output summaries, its error and the
     evidence it produced. A knowledge call (the investigation's runbook retrieval) shows
-    its query and the chunks found; knowledge is not model output. A model call shows
-    its tokens and gate result only.
+    its query and the chunks found; knowledge is not model output. A skill call (a skill
+    the planning model loaded) shows the skill's name, the digest of its content and
+    whether it was loaded now or earlier; a skill is a file, not model output. A model
+    call shows its tokens and gate result only.
     """
 
     id: int
     agent: str
-    kind: Literal["model", "tool", "knowledge"]
+    kind: Literal["model", "tool", "knowledge", "skill"]
     name: str
     caller: str | None
     started_at: datetime
@@ -218,6 +221,7 @@ class CallTotals(BaseModel):
     model_calls: int
     tool_calls: int
     knowledge_calls: int
+    skill_calls: int
     tokens_in: int
     tokens_out: int
     latency_ms: int

@@ -10,6 +10,7 @@ import pytest
 import yaml
 from investigation_harness import (
     CASES,
+    SKILLS,
     Investigated,
     database,
     investigate,
@@ -86,7 +87,11 @@ def service(
     **overrides: Any,
 ) -> FollowupService:
     return FollowupService(
-        scripted_settings(pg_url, **overrides), sessions, rules=rules, model_sleep=no_wait
+        scripted_settings(pg_url, **overrides),
+        sessions,
+        skills=SKILLS,
+        rules=rules,
+        model_sleep=no_wait,
     )
 
 
@@ -293,7 +298,7 @@ async def test_a_failing_retrieval_still_answers(
             raise RuntimeError("vector store down")
 
     followups = FollowupService(
-        scripted_settings(pg_url), sessions, model_sleep=no_wait, knowledge=Broken()
+        scripted_settings(pg_url), sessions, skills=SKILLS, model_sleep=no_wait, knowledge=Broken()
     )
     session_id = await open_session(followups, s1a)
     events = await collect(await followups.ask(session_id, "Why?"))
@@ -436,6 +441,7 @@ async def test_an_answer_may_refer_to_the_knowledge_the_report_refers_to(
     followups = FollowupService(
         scripted_settings(pg_url),
         sessions,
+        skills=SKILLS,
         rules=[followup_only(lambda r: reply)],
         model_sleep=no_wait,
         knowledge=Nothing(),

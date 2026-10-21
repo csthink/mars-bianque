@@ -14,7 +14,8 @@ JSON Schema; no registered tool writes; no evidence comes from an agent; no
 knowledge ID is cited as evidence.
 
 With ``record`` set, a ``live`` run also records every model response, one directory
-per case, and writes the recording manifest once every case has run.
+per case, and writes the recording manifest once every case has run: the model, the
+prompt files and the skills the recordings were made with.
 """
 
 from __future__ import annotations
@@ -34,10 +35,11 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bianque.agents.followup import Done, Failed, FollowupService
-from bianque.agents.prompting import PROMPTS_DIR
+from bianque.agents.prompting import prompt_hashes
 from bianque.agents.runner import open_checkpointer, run_investigation
 from bianque.agents.service import case_alert
 from bianque.agents.snapshot import failed_calls, load_snapshot, preserved_identifiers
+from bianque.agents.startup import load_skill_catalog
 from bianque.api.alertmanager import AlertInput
 from bianque.config import Settings
 from bianque.config.manifest import RecordingManifest, load_manifest, write_manifest
@@ -66,6 +68,7 @@ from bianque.knowledge import KnowledgeRetriever
 from bianque.knowledge.embedding import MODEL_NAME, build_embedder, file_sha256
 from bianque.knowledge.ingest import ingest
 from bianque.llm import build_gateway, build_redaction_engine
+from bianque.skills import SkillCatalog
 from bianque.storage.db import create_engine, session_factory
 from bianque.storage.models import CallRecord, FollowupMessage, Investigation
 from bianque.storage.repositories import (
@@ -122,11 +125,6 @@ def load_cases(cases_dir: Path, only: Sequence[str] = ()) -> list[EvalCase]:
     if not chosen:
         raise EvaluationError(f"no case under {cases_dir}")
     return [EvalCase(d, load_case(d), load_question_set(d)) for d in chosen]
-
-
-def prompt_hashes() -> dict[str, str]:
-    """SHA-256 of every prompt file, by name."""
-    return {path.name: file_sha256(path) for path in sorted(PROMPTS_DIR.glob("*.md"))}
 
 
 def tool_schemas_sha256() -> str:
@@ -270,13 +268,14 @@ async def revalidate(
     sessions: async_sessionmaker[AsyncSession],
     run: CaseRun,
     alert: AlertInput,
+    skills: SkillCatalog,
 ) -> list[str]:
     """Validate the final report and every answer again; return what failed.
 
     The report gets the context the runtime gave it: the evidence, the identifiers, the
-    failed calls and the knowledge of the run's last checkpoint. The knowledge retrieved
-    for one follow-up question is not stored, so an answer's references are checked
-    against every imported knowledge ID.
+    failed calls, the knowledge of the run's last checkpoint and the skill names. The
+    knowledge retrieved for one follow-up question is not stored, so an answer's
+    references are checked against every imported knowledge ID.
     """
     problems: list[str] = []
     engine = build_redaction_engine(settings)
@@ -292,6 +291,7 @@ async def revalidate(
         preserved=preserved,
         failed_calls=failed_calls(state.get("failures") or []),
         engine=engine,
+        skill_names=frozenset(skills.names),
     )
     result = validate(OutputType.REPORT, dict(final.body), context)
     if not result.passed:
@@ -308,6 +308,7 @@ async def revalidate(
         suggestion_ids=run.suggestion_ids,
         preserved=preserved,
         engine=engine,
+        skill_names=frozenset(skills.names),
     )
     for answer in run.answers:
         if answer.outcome != "answered":
@@ -393,6 +394,7 @@ async def evaluate(
         raise EvaluationError("recording needs live model mode")
     if record is not None:
         settings = settings.model_copy(update={"llm_record_dir": record})
+    skills = load_skill_catalog(settings)
     isolated = await network_isolated() if check_network else None
     engine = create_engine(settings)
     try:
@@ -405,7 +407,7 @@ async def evaluate(
         embedder = build_embedder(settings)
         await ingest(settings.knowledge_dir, sessions=sessions, embedder=embedder)
         retrieval_report = await _retrieval(settings, sessions, queries)
-        followups = FollowupService(settings, sessions)
+        followups = FollowupService(settings, sessions, skills=skills)
         runs: list[CaseRun] = []
         problems: list[str] = []
         for item in cases:
@@ -417,6 +419,7 @@ async def evaluate(
                     alert,
                     sessions=sessions,
                     backends=backends,
+                    skills=skills,
                     trigger="replay",
                     case_id=item.case.case,
                     tool_sleep=_no_wait,
@@ -431,7 +434,7 @@ async def evaluate(
             )
             runs.append(run)
             if run.status != "failed":
-                problems += await revalidate(settings, sessions, run, alert)
+                problems += await revalidate(settings, sessions, run, alert, skills)
         await followups.close()
         async with sessions() as session:
             knowledge_ids = {
@@ -476,13 +479,14 @@ async def evaluate(
         write_manifest(
             record,
             RecordingManifest(
-                schema_version=1,
+                schema_version=2,
                 model=settings.llm_model,
                 extra_body=settings.llm_extra_body,
                 endpoint_host=build_gateway(settings).endpoint_host,
                 recorded_at=report.generated_at,
                 cases=tuple(item.case.case for item in cases),
                 prompts=report.prompts,
+                skills=skills.hashes(),
                 tool_schemas_sha256=report.tool_schemas_sha256,
             ),
         )

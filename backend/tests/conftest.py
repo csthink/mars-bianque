@@ -38,6 +38,10 @@ IMAGE = "pgvector/pgvector:pg16"
 URL_ENV = "BIANQUE_TEST_DATABASE_URL"
 STARTUP_TIMEOUT_SECONDS = 60
 
+#: Tests that read the settings from the environment use the repository's skills; the
+#: default ``.agents/skills`` is relative to the repository root, not to ``backend``.
+os.environ.setdefault("BIANQUE_SKILLS_DIR", str(BACKEND_DIR.parent / ".agents" / "skills"))
+
 
 def _wait_until_ready(url: str) -> None:
     conninfo = url.replace("postgresql+psycopg://", "postgresql://", 1)

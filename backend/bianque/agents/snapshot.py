@@ -123,4 +123,5 @@ def gate_context(
         ),
         failed_calls=failed_calls(failures),
         engine=runtime.engine,
+        skill_names=frozenset(runtime.skills.names),
     )

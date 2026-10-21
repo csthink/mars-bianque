@@ -26,7 +26,8 @@ kind get clusters 2>/dev/null | grep -qx "$KIND_CLUSTER" ||
   die "no kind cluster named $KIND_CLUSTER; run make demo"
 
 info "building and loading $BACKEND_IMAGE and $FRONTEND_IMAGE"
-docker build --quiet --tag "$BACKEND_IMAGE" "$REPO_ROOT/backend" >/dev/null
+docker build --quiet --tag "$BACKEND_IMAGE" --build-context skills="$REPO_ROOT/.agents/skills" \
+  "$REPO_ROOT/backend" >/dev/null
 docker build --quiet --tag "$FRONTEND_IMAGE" "$REPO_ROOT/frontend" >/dev/null
 kind load docker-image "$BACKEND_IMAGE" "$FRONTEND_IMAGE" --name "$KIND_CLUSTER" >/dev/null
 

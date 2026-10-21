@@ -34,6 +34,7 @@ from bianque.config import Settings
 from bianque.knowledge import KnowledgeRetriever
 from bianque.knowledge.embedding import build_embedder
 from bianque.llm import ScriptedRule, build_gateway, build_redaction_engine
+from bianque.skills import SkillCatalog
 from bianque.storage.db import database_url
 from bianque.storage.repositories import (
     AlertRepository,
@@ -208,6 +209,7 @@ async def execute_investigation(
     *,
     sessions: async_sessionmaker[AsyncSession],
     backends: ToolBackends,
+    skills: SkillCatalog,
     rules: Sequence[ScriptedRule] = (),
     notifier: EventNotifier | None = None,
     tool_sleep: Sleep = asyncio.sleep,
@@ -222,6 +224,7 @@ async def execute_investigation(
         alert: The alert under investigation.
         sessions: Database sessions.
         backends: The tool backends: the cluster and repository, or an evidence pack.
+        skills: The skills the planning model may load, loaded at startup.
         rules: Scripted rules tried before the role rules; tests use them to inject
             failures. Only ``scripted`` mode reads them.
         notifier: Wakes the event stream readers of this process.
@@ -251,6 +254,8 @@ async def execute_investigation(
         events=events,
         knowledge=KnowledgeRetriever(sessions, build_embedder(settings)),
         alert=alert,
+        skills=skills,
+        max_skill_activations=settings.plan_max_skill_activations,
         subagent_max_steps=settings.subagent_max_steps,
         max_replan_rounds=settings.max_replan_rounds,
         report_max_retries=settings.report_max_retries,
@@ -282,6 +287,7 @@ async def run_investigation(
     *,
     sessions: async_sessionmaker[AsyncSession],
     backends: ToolBackends,
+    skills: SkillCatalog,
     trigger: str,
     case_id: str | None = None,
     rules: Sequence[ScriptedRule] = (),
@@ -307,6 +313,7 @@ async def run_investigation(
         alert,
         sessions=sessions,
         backends=backends,
+        skills=skills,
         rules=rules,
         tool_sleep=tool_sleep,
         model_sleep=model_sleep,

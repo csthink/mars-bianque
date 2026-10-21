@@ -3,6 +3,10 @@
 The JSON is the record; its structure is the pydantic model ``EvalReport`` below, so a
 report can be validated against the model or against its exported JSON Schema. The
 Markdown is a summary for a reader and is rendered from the JSON alone.
+
+Version 2 adds the skills each case loaded. A version 1 report still loads, with no
+skill fields, so ``render_comparison`` can set a report made before skills existed
+beside one made with them.
 """
 
 from __future__ import annotations
@@ -15,7 +19,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict
 
 #: Version of the report format.
-REPORT_SCHEMA_VERSION: Literal[1] = 1
+REPORT_SCHEMA_VERSION: Literal[2] = 2
 
 #: What a ``recorded`` result stands for (``docs/adr/0005-recorded-model-responses-for-eval.md``).
 RECORDED_NOTE = (
@@ -122,6 +126,8 @@ class CaseResult(_Model):
     report_attempts: int
     report_status: str | None
     followup: list[QuestionResult]
+    #: Activations of each skill, first loads and repeats; ``None`` in a version 1 report.
+    skills: dict[str, int] | None = None
 
 
 class HardGate(_Model):
@@ -145,6 +151,8 @@ class Summary(_Model):
     followup_unknown: Ratio
     tokens: int
     model_calls: int
+    #: Skill activations of every case; ``None`` in a version 1 report.
+    skill_activations: int | None = None
 
 
 class LLMContext(_Model):
@@ -161,7 +169,7 @@ class LLMContext(_Model):
 class EvalReport(_Model):
     """``report.json``."""
 
-    schema_version: Literal[1]
+    schema_version: Literal[1, 2]
     generated_at: datetime
     passed: bool
     llm: LLMContext
@@ -181,8 +189,18 @@ def _ratio(ratio: Ratio) -> str:
     return f"{ratio.value:.2%} ({ratio.count}/{ratio.total})"
 
 
+def _count(value: int | None) -> str:
+    return "not recorded" if value is None else str(value)
+
+
 def _flag(value: bool | None) -> str:
     return "-" if value is None else ("yes" if value else "no")
+
+
+def _skills(skills: dict[str, int] | None) -> str:
+    if skills is None:
+        return "not recorded"
+    return ", ".join(f"{name} ×{n}" if n > 1 else name for name, n in skills.items()) or "-"
 
 
 def render_markdown(report: EvalReport) -> str:
@@ -230,12 +248,13 @@ def render_markdown(report: EvalReport) -> str:
         f"| follow-up unknown answered as unknown | {_ratio(summary.followup_unknown)} |",
         f"| tokens | {summary.tokens} |",
         f"| model calls | {summary.model_calls} |",
+        f"| skill activations | {_count(summary.skill_activations)} |",
         "",
         "## Cases",
         "",
         "| case | status | root cause | correct | citations | required evidence | "
-        "report attempts | tokens |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        "report attempts | tokens | skills |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for case in report.cases:
         actual = case.root_cause.actual
@@ -243,7 +262,8 @@ def render_markdown(report: EvalReport) -> str:
         lines.append(
             f"| {case.case} | {case.status} | {cause} | {_flag(case.root_cause.correct)} | "
             f"{_ratio(case.citation_completeness)} | {_ratio(case.required_evidence)} | "
-            f"{case.report_attempts} | {case.tokens} / {case.token_budget} |"
+            f"{case.report_attempts} | {case.tokens} / {case.token_budget} | "
+            f"{_skills(case.skills)} |"
         )
     lines += [
         "",
@@ -295,6 +315,7 @@ _REPRODUCED = (
     "report_attempts",
     "report_status",
     "followup",
+    "skills",
 )
 
 
@@ -317,3 +338,69 @@ def compare_reports(live: EvalReport, replay: EvalReport) -> list[str]:
             if getattr(case, name) != getattr(other, name):
                 problems.append(f"{case.case}: {name} differs")
     return problems
+
+
+def load_report(path: Path) -> EvalReport:
+    """Read a ``report.json`` of format version 1 or 2."""
+    return EvalReport.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+def _cause(case: CaseResult) -> str:
+    actual = case.root_cause.actual
+    label = actual.get("category") or actual.get("status") or "none"
+    return f"{label}, {'correct' if case.root_cause.correct else 'wrong'}"
+
+
+def _side(report: EvalReport) -> str:
+    llm = report.llm
+    return (
+        f"{llm.model or '-'} in {llm.mode} mode, generated at {report.generated_at.isoformat()}"
+        f" (report format {report.schema_version})"
+    )
+
+
+def render_comparison(base: EvalReport, new: EvalReport) -> str:
+    """Set two reports side by side, case by case: root cause, citations, evidence, cost.
+
+    The baseline is typically a report made before skills existed; its skill columns
+    then say ``not recorded``.
+    """
+    newer = {case.case: case for case in new.cases}
+    rows = []
+    for case in base.cases:
+        other = newer.get(case.case)
+        if other is None:
+            continue
+        rows.append(
+            f"| {case.case} | {_cause(case)} | {_cause(other)} | "
+            f"{_ratio(case.citation_completeness)} | {_ratio(other.citation_completeness)} | "
+            f"{_ratio(case.required_evidence)} | {_ratio(other.required_evidence)} | "
+            f"{case.tokens} | {other.tokens} | {case.model_calls} | {other.model_calls} | "
+            f"{_skills(case.skills)} | {_skills(other.skills)} |"
+        )
+    a, b = base.summary, new.summary
+    rows.append(
+        f"| all | {_ratio(a.root_cause_correct)} | {_ratio(b.root_cause_correct)} | "
+        f"{_ratio(a.citation_completeness)} | {_ratio(b.citation_completeness)} | "
+        f"{_ratio(a.required_evidence)} | {_ratio(b.required_evidence)} | "
+        f"{a.tokens} | {b.tokens} | {a.model_calls} | {b.model_calls} | "
+        f"{_count(a.skill_activations)} | {_count(b.skill_activations)} |"
+    )
+    lines = [
+        "# Evaluation comparison",
+        "",
+        f"- Baseline: {_side(base)}",
+        f"- New: {_side(new)}",
+        "",
+        "> Both reports come from one live run each; they do not show how the model "
+        "behaves on every run. Tokens are those of the investigation; model calls include "
+        "the follow-up questions.",
+        "",
+        "| case | root cause (baseline) | root cause (new) | citations (baseline) | "
+        "citations (new) | required evidence (baseline) | required evidence (new) | "
+        "tokens (baseline) | tokens (new) | model calls (baseline) | model calls (new) | "
+        "skills (baseline) | skills (new) |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        *rows,
+    ]
+    return "\n".join(lines) + "\n"

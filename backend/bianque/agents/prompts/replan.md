@@ -9,3 +9,5 @@ Your task: the last assessment found the evidence insufficient. Write a suppleme
 - When the hypothesis is a configuration or specification problem, find the change that introduced it: the rollout history of the workload and the commits of the manifest repository.
 - The Knowledge section holds runbook excerpts retrieved for this alert. Use them to decide what to check; put the IDs of the excerpts you used in knowledge_refs. They are not evidence about this cluster.
 - In the rationale, say in one or two sentences what the new steps look for.
+
+$skills

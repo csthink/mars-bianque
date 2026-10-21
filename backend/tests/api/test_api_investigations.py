@@ -70,6 +70,7 @@ def test_detail_assembles_the_investigation(client: TestClient) -> None:
     alert_evidence = next(e for e in DATA["evidence"] if e["source"] == "alertmanager")
     assert detail["alert"]["evidence_id"] == alert_evidence["id"]
     assert [(p["version"], len(p["steps"])) for p in detail["plans"]] == [(1, 6), (2, 3)]
+    assert [p["skills"] for p in detail["plans"]] == [["investigate-pod-restarts"]] * 2
     assert {s["domain"] for s in detail["plans"][1]["steps"]} == {"change"}
     assert all(s["findings"] for p in detail["plans"] for s in p["steps"])
     assert [(a["round"], a["sufficient"]) for a in detail["assessments"]] == [(1, False), (2, True)]
@@ -115,12 +116,14 @@ def test_calls_and_totals(client: TestClient) -> None:
     calls, totals = body["calls"], body["totals"]
     model = [c for c in DATA["calls"] if c["kind"] == "model"]
     knowledge = [c for c in DATA["calls"] if c["kind"] == "knowledge"]
-    assert len(knowledge) == 1
+    skills = [c for c in DATA["calls"] if c["kind"] == "skill"]
+    assert len(knowledge) == 1 and len(skills) == 1
     assert totals == {
         "calls": len(DATA["calls"]),
         "model_calls": len(model),
-        "tool_calls": len(DATA["calls"]) - len(model) - len(knowledge),
+        "tool_calls": len(DATA["calls"]) - len(model) - len(knowledge) - len(skills),
         "knowledge_calls": 1,
+        "skill_calls": 1,
         "tokens_in": sum(c["tokens_in"] for c in model),
         "tokens_out": sum(c["tokens_out"] for c in model),
         "latency_ms": sum(c["latency_ms"] for c in DATA["calls"]),
@@ -139,6 +142,12 @@ def test_calls_and_totals(client: TestClient) -> None:
             assert call["name"] == "retrieve_knowledge" and call["agent"] == "investigation"
             assert call["input_summary"].startswith("Bianque Pod Restarting")
             assert call["output_summary"].startswith("kn_c73d8439117f ")
+            assert call["evidence_ids"] == [] and call["gate"] is None
+        elif call["kind"] == "skill":
+            # A skill is a file, not model output: its name and the digest are shown.
+            assert call["name"] == "investigate-pod-restarts"
+            assert call["input_summary"] == "investigate-pod-restarts"
+            assert call["output_summary"].endswith("; first load")
             assert call["evidence_ids"] == [] and call["gate"] is None
         else:
             assert call["input_summary"] and call["output_summary"]

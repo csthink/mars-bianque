@@ -8,7 +8,7 @@
     "llm_mode": "scripted",
     "llm_model": null,
     "token_budget": 120000,
-    "tokens_used": 61805,
+    "tokens_used": 65433,
     "started_at": "2026-10-19T22:33:58Z",
     "finished_at": "2026-10-19T22:35:22Z",
     "error": null
@@ -83,6 +83,9 @@
       "source": "model",
       "created_at": "2026-10-19T22:34:03.600000Z",
       "rationale": "The alert names pod s1-app-5468546b65-dvgq5 restarting in demo-s1. Read its current state, events, owning deployment and the logs of the last two container instances first.",
+      "skills": [
+        "investigate-pod-restarts"
+      ],
       "steps": [
         {
           "seq": 1,
@@ -229,6 +232,9 @@
       "source": "model",
       "created_at": "2026-10-19T22:34:26.600000Z",
       "rationale": "APP_MODE looks misconfigured; find the change that set it to invalid.",
+      "skills": [
+        "investigate-pod-restarts"
+      ],
       "steps": [
         {
           "seq": 1,
@@ -342,6 +348,38 @@
       "tokens_out": null
     },
     {
+      "key": "plan-0",
+      "agent": "investigation",
+      "kind": "model",
+      "name": "plan",
+      "input_summary": "XMODELINX plan prompt with the skill catalog",
+      "output_summary": "XMODELOUTX activate_skill arguments",
+      "gate_result": null,
+      "status": "ok",
+      "error": null,
+      "retries": 0,
+      "started_at": "2026-10-19T22:33:58.400000Z",
+      "latency_ms": 1900,
+      "tokens_in": 2370,
+      "tokens_out": 18
+    },
+    {
+      "key": "skill-1",
+      "agent": "investigation",
+      "kind": "skill",
+      "name": "investigate-pod-restarts",
+      "input_summary": "investigate-pod-restarts",
+      "output_summary": "sha256 5d41402abc4b; first load",
+      "gate_result": null,
+      "status": "ok",
+      "error": null,
+      "retries": 0,
+      "started_at": "2026-10-19T22:34:00.310000Z",
+      "latency_ms": 1,
+      "tokens_in": null,
+      "tokens_out": null
+    },
+    {
       "key": "plan-1",
       "agent": "investigation",
       "kind": "model",
@@ -356,9 +394,9 @@
       "status": "ok",
       "error": null,
       "retries": 0,
-      "started_at": "2026-10-19T22:33:58.400000Z",
-      "latency_ms": 5200,
-      "tokens_in": 2410,
+      "started_at": "2026-10-19T22:34:00.320000Z",
+      "latency_ms": 3280,
+      "tokens_in": 3650,
       "tokens_out": 690
     },
     {

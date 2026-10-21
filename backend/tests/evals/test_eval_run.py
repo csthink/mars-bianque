@@ -21,6 +21,7 @@ from bianque.evals.metrics import ReportRow, final_report
 from bianque.evals.report import EvalReport, write_report
 from bianque.evals.run import EvaluationError, evaluate, load_cases, revalidate
 from bianque.gate import validate
+from bianque.skills import load_skills
 from bianque.storage.db import session_factory
 
 REPO = Path(__file__).resolve().parents[3]
@@ -28,6 +29,7 @@ CASES = REPO / "eval" / "cases"
 QUERIES = REPO / "eval" / "retrieval" / "queries.yaml"
 RUNBOOKS = REPO / "knowledge" / "runbooks"
 EMBEDDING_FIXTURE = REPO / "eval" / "embeddings" / "bge-small-en-v1.5.json"
+SKILLS = REPO / ".agents" / "skills"
 
 
 def _settings(pg_url: str, **overrides: object) -> Settings:
@@ -39,6 +41,7 @@ def _settings(pg_url: str, **overrides: object) -> Settings:
         "knowledge_dir": RUNBOOKS,
         "embedding_mode": "fixture",
         "embedding_fixture": EMBEDDING_FIXTURE,
+        "skills_dir": SKILLS,
     }
     return Settings(**{**values, **overrides})  # type: ignore[arg-type]
 
@@ -56,7 +59,10 @@ async def test_every_case_is_evaluated_and_the_report_is_complete(
     assert all(q.outcome == "answered" for c in report.cases for q in c.followup)
     assert report.llm.mode == "scripted" and report.llm.note is None
     assert report.retrieval["metrics"]["mrr"] > 0
-    assert set(report.prompts) >= {"plan.md", "report.md", "followup.md"}
+    assert set(report.prompts) >= {"plan.md", "report.md", "followup.md", "skills.md"}
+    # The scripted plan rule loads the pod restart skill for every case's alert.
+    assert all(c.skills == {"investigate-pod-restarts": 1} for c in report.cases)
+    assert report.summary.skill_activations == 6
     assert {g.name for g in report.hard_gates} == {
         "investigations_report",
         "outputs_pass_the_gate",
@@ -101,13 +107,14 @@ async def test_the_evaluation_validates_with_the_runtime_gate(
         final = final_report(run)
         assert final is not None
         alert = case_alert(settings, "s1-a")
-        assert await revalidate(settings, sessions, run, alert) == []
+        skills = load_skills(settings.skills_dir)
+        assert await revalidate(settings, sessions, run, alert, skills) == []
 
         cause = {**final.body["root_cause"], "citations": ["ev_0000000000"]}
         tampered = replace(
             run, reports=(ReportRow(1, "published", {**final.body, "root_cause": cause}),)
         )
-        assert await revalidate(settings, sessions, tampered, alert) == [
+        assert await revalidate(settings, sessions, tampered, alert, skills) == [
             "s1-a: final report rejected by ['citation_integrity']"
         ]
     finally:

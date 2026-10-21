@@ -19,6 +19,7 @@ from bianque.api.alertmanager import AlertInput
 from bianque.knowledge.search import KnowledgeSearch
 from bianque.llm import LLMGateway
 from bianque.redaction import RedactionEngine
+from bianque.skills import SkillCatalog
 from bianque.tools import ToolExecutor, ToolRegistry
 
 
@@ -47,6 +48,8 @@ class InvestigationState(TypedDict, total=False):
         failures: Failed calls of every round; sub-agents append to it in parallel.
         knowledge: The knowledge given to the model, as ``{id, title}``; the chunk texts
             stay in the database.
+        skills: The names of the skills loaded so far, in the order they were loaded;
+            their bodies stay in the skill files.
         sufficient: The latest assessment found the evidence sufficient.
         budget_exhausted: The token budget was exceeded at the latest assessment.
         report_attempt: The number of reports generated so far.
@@ -62,6 +65,7 @@ class InvestigationState(TypedDict, total=False):
     pending: list[PendingStep]
     failures: Annotated[list[Failure], operator.add]
     knowledge: list[dict[str, str]]
+    skills: list[str]
     sufficient: bool
     budget_exhausted: bool
     report_attempt: int
@@ -94,6 +98,9 @@ class Runtime:
         events: Progress event writer.
         knowledge: Runbook retrieval.
         alert: The alert under investigation.
+        skills: The skills the planning model may load.
+        max_skill_activations: ``activate_skill`` calls of one plan generation; 0 turns
+            skills off.
         subagent_max_steps: Model turns of one step of a sub-agent.
         max_replan_rounds: Supplementary plans of the investigation.
         report_max_retries: Retries after a rejected report.
@@ -110,6 +117,8 @@ class Runtime:
     events: EventWriter
     knowledge: KnowledgeSearch
     alert: AlertInput
+    skills: SkillCatalog
+    max_skill_activations: int
     subagent_max_steps: int
     max_replan_rounds: int
     report_max_retries: int
@@ -120,3 +129,8 @@ class Runtime:
     def alert_identifiers(self) -> tuple[str, ...]:
         """The identifiers redaction keeps in the alert."""
         return self.alert.identifiers
+
+    @property
+    def plans_with_skills(self) -> bool:
+        """Whether planning offers ``activate_skill``: there are skills and calls allowed."""
+        return bool(self.skills) and self.max_skill_activations > 0

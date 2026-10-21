@@ -191,6 +191,7 @@ async def get_investigation(investigation_id: str, session: Session) -> Investig
                 version=plan.version,
                 source=plan.source,
                 rationale=plan.rationale,
+                skills=[str(skill) for skill in plan.skills],
                 created_at=plan.created_at,
                 steps=[
                     StepView(
@@ -367,6 +368,7 @@ async def list_calls(investigation_id: str, session: Session) -> CallList:
             model_calls=sum(1 for c in calls if c.kind == "model"),
             tool_calls=sum(1 for c in calls if c.kind == "tool"),
             knowledge_calls=sum(1 for c in calls if c.kind == "knowledge"),
+            skill_calls=sum(1 for c in calls if c.kind == "skill"),
             tokens_in=sum(c.tokens_in or 0 for c in calls),
             tokens_out=sum(c.tokens_out or 0 for c in calls),
             latency_ms=sum(c.latency_ms or 0 for c in calls),
@@ -376,9 +378,12 @@ async def list_calls(investigation_id: str, session: Session) -> CallList:
 
 
 def _call_view(record: CallRecord, evidence_ids: list[str]) -> CallView:
-    kind: Literal["model", "tool", "knowledge"] = (
-        "tool" if record.kind == "tool" else "knowledge" if record.kind == "knowledge" else "model"
-    )
+    kinds: dict[str, Literal["tool", "knowledge", "skill"]] = {
+        "tool": "tool",
+        "knowledge": "knowledge",
+        "skill": "skill",
+    }
+    kind: Literal["model", "tool", "knowledge", "skill"] = kinds.get(record.kind, "model")
     # Only a model call's output is model text, which the API never returns.
     shown = kind != "model"
     return CallView(

@@ -67,6 +67,7 @@ from bianque.llm import (
     redact_prompt_for_llm,
 )
 from bianque.redaction import RedactionEngine
+from bianque.skills import SkillCatalog
 from bianque.storage.errors import NotFoundError
 from bianque.storage.models import Alert, FollowupMessage, FollowupSession
 from bianque.storage.repositories import (
@@ -234,6 +235,7 @@ class FollowupService:
         settings: Settings,
         sessions: async_sessionmaker[AsyncSession],
         *,
+        skills: SkillCatalog,
         rules: Sequence[ScriptedRule] = (),
         model_sleep: Any = asyncio.sleep,
         knowledge: KnowledgeSearch | None = None,
@@ -243,12 +245,15 @@ class FollowupService:
         Args:
             settings: Process settings: model mode, budget and cases directory.
             sessions: Database sessions.
+            skills: The skills loaded at startup; an answer never cites them. Follow-up
+                does not load skills.
             rules: Scripted rules tried before the role rules; tests inject them.
             model_sleep: Waits between model retries.
             knowledge: Runbook retrieval; built from the settings when omitted.
         """
         self._settings = settings
         self._sessions = sessions
+        self._skill_names = frozenset(skills.names)
         self._engine: RedactionEngine = build_redaction_engine(settings)
         self._recorder = DatabaseCallRecorder(sessions)
         self._rules = [*rules, *ROLE_RULES]
@@ -393,6 +398,7 @@ class FollowupService:
             suggestion_ids=frozenset(item.id for item in context.suggestions),
             preserved=preserve,
             engine=self._engine,
+            skill_names=self._skill_names,
         )
 
         async def stage(name: Stage) -> None:

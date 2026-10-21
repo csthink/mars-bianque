@@ -86,6 +86,7 @@ async def load(session: AsyncSession, path: Path = FIXTURE) -> str:
             version=plan_data["version"],
             source=plan_data["source"],
             rationale=plan_data["rationale"],
+            skills=plan_data["skills"],
             created_at=_time(plan_data["created_at"]),
         )
         session.add(plan)

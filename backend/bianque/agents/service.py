@@ -35,6 +35,7 @@ from bianque.config import Settings
 from bianque.knowledge.embedding import build_embedder
 from bianque.knowledge.ingest import ingest
 from bianque.llm import ScriptedRule
+from bianque.skills import SkillCatalog
 from bianque.storage.repositories import InvestigationRepository, PlanRepository
 from bianque.tools.backends import open_backends
 
@@ -77,6 +78,7 @@ class InvestigationService:
         sessions: async_sessionmaker[AsyncSession],
         notifier: EventNotifier,
         *,
+        skills: SkillCatalog,
         rules: Sequence[ScriptedRule] = (),
         tool_sleep: Sleep = asyncio.sleep,
         model_sleep: Sleep = asyncio.sleep,
@@ -87,6 +89,7 @@ class InvestigationService:
             settings: Process settings.
             sessions: Database sessions.
             notifier: Wakes the event stream readers.
+            skills: The skills loaded at startup.
             rules: Scripted rules tried before the role rules; tests inject them.
             tool_sleep: Waits between tool retries.
             model_sleep: Waits between model retries.
@@ -94,6 +97,7 @@ class InvestigationService:
         self._settings = settings
         self._sessions = sessions
         self._notifier = notifier
+        self._skills = skills
         self._rules = tuple(rules)
         self._tool_sleep = tool_sleep
         self._model_sleep = model_sleep
@@ -185,6 +189,7 @@ class InvestigationService:
                     alert,
                     sessions=self._sessions,
                     backends=backends,
+                    skills=self._skills,
                     rules=self._rules,
                     notifier=self._notifier,
                     tool_sleep=self._tool_sleep,

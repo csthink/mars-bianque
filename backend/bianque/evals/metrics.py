@@ -306,6 +306,7 @@ def case_result(run: CaseRun, *, report_attempts: int) -> CaseResult:
     coverage, matches = required_evidence(run)
     final = final_report(run)
     model_calls = [c for c in (*run.calls, *run.followup_calls) if c.kind == "model"]
+    skills = Counter(c.name for c in run.calls if c.kind == "skill")
     return CaseResult(
         case=run.case.case,
         title=run.case.title,
@@ -331,6 +332,7 @@ def case_result(run: CaseRun, *, report_attempts: int) -> CaseResult:
         - (1 if final is not None and final.status == "degraded" else 0),
         report_status=final.status if final else None,
         followup=[question_result(a, run.evidence, run.suggestion_ids) for a in run.answers],
+        skills=dict(sorted(skills.items())),
     )
 
 
@@ -359,4 +361,5 @@ def summary(cases: Sequence[CaseResult]) -> Summary:
         followup_unknown=Ratio.of(sum(1 for q in unknown if q.unknown), len(unknown)),
         tokens=sum(c.tokens for c in cases),
         model_calls=sum(c.model_calls for c in cases),
+        skill_activations=sum(sum((c.skills or {}).values()) for c in cases),
     )

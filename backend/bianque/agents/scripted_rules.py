@@ -6,7 +6,9 @@ would, reading only the request: the sections of the user message
 (``bianque.agents.prompting``), the tool results in the conversation and the offered
 tools. They never read the database and never name an evaluation case.
 
-- ``plan``: the first-round default steps for the pod named in the alert.
+- ``plan``: when the request offers ``activate_skill``, first load the skill the alert
+  name points to (``investigate-pod-restarts`` for a restart or crash loop alert); then
+  the first-round default steps for the pod named in the alert.
 - ``evidence_agent``: call the step's suggested tools one by one with arguments taken
   from the alert and from earlier results, then submit one finding per evidence ID.
 - ``assess``: sufficient once there is pod status and change evidence.
@@ -43,6 +45,7 @@ from bianque.agents.prompting import (
 from bianque.gate import SCHEMA_VERSION
 from bianque.llm import ScriptedReply, ScriptedRule
 from bianque.llm.request import ModelRequest
+from bianque.skills import ACTIVATE_SKILL
 from bianque.tools import registry
 
 _HEADER = re.compile(r"^\[(ev_[0-9a-f]{10})\] source: (\S+); tool: (\S+)$")
@@ -53,6 +56,9 @@ _FAILURE = re.compile(r"^- (.+?) \((\w+) domain\): (.+)$")
 _REPLICASET_POD = re.compile(r"^(?P<workload>.+)-[0-9a-f]{6,10}-[0-9a-z]{5}$")
 _EVIDENCE_ID = re.compile(r"^Evidence ID: (ev_[0-9a-f]{10}(?:, ev_[0-9a-f]{10})*)$", re.M)
 _SUGGESTION = re.compile(r"^- \[(sg_[0-9a-f]{10})\] ", re.M)
+
+#: The skill a scripted plan loads for an alert, by a pattern of the alert name.
+_SKILL_FOR_ALERT = ((re.compile(r"restart|crashloop", re.I), "investigate-pod-restarts"),)
 
 
 @dataclass(frozen=True)
@@ -249,12 +255,30 @@ def _plan_steps(names: Iterable[str]) -> list[dict[str, Any]]:
     ]
 
 
+def _skill_to_load(request: ModelRequest, labels: Mapping[str, str]) -> str | None:
+    """The skill to load for the alert, when it is offered and nothing was loaded yet."""
+    offered = next((tool for tool in request.tools if tool.name == ACTIVATE_SKILL), None)
+    if offered is None or request.tool_choice != "required":
+        return None
+    if any(call.name == ACTIVATE_SKILL for m in request.prompt.messages for call in m.tool_calls):
+        return None
+    names = offered.parameters.get("properties", {}).get("name", {}).get("enum", [])
+    alert = labels.get("alertname", "")
+    return next(
+        (skill for pattern, skill in _SKILL_FOR_ALERT if pattern.search(alert) and skill in names),
+        None,
+    )
+
+
 def plan_rule(request: ModelRequest) -> ScriptedReply | None:
-    """The first plan: the first-round default steps for the alerted pod."""
+    """The first plan: load the alert's skill if offered, then the first-round steps."""
     if request.operation != "plan":
         return None
     sections = _sections(request)
     labels = _labels(_evidence(sections))
+    skill = _skill_to_load(request, labels)
+    if skill is not None:
+        return _call(ACTIVATE_SKILL, {"name": skill})
     names = [item.name for item in DOMAINS if item.first_round]
     rationale = (
         f"The alert names pod {labels.get('pod', 'unknown')} in namespace "

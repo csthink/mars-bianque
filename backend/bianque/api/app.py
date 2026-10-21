@@ -3,7 +3,9 @@
 Run it with ``uvicorn --factory bianque.api.app:create_app``.
 
 At startup, before any request is served, investigations left pending or running by the
-previous process are marked ``interrupted``. Investigations and follow-up
+previous process are marked ``interrupted``. The skills are loaded and validated when
+the application is built; a broken skill, or in ``recorded`` mode a prompt file or skill
+that differs from the recording manifest, stops the start. Investigations and follow-up
 answers run in background tasks of this process and are cancelled at shutdown; the
 next start marks the cancelled investigations interrupted. With ``BIANQUE_REPLAY_SEED``
 the replay profile's startup runs once the application serves requests.
@@ -24,6 +26,7 @@ from starlette.types import Receive, Scope, Send
 from bianque.agents.events import EventNotifier
 from bianque.agents.followup import FollowupService
 from bianque.agents.service import InvestigationService, interrupt_unfinished, seed_replay
+from bianque.agents.startup import load_skill_catalog
 from bianque.api import alerts, auth, investigations, sessions
 from bianque.auth.authenticator import Authenticator
 from bianque.config import Settings, get_settings
@@ -62,6 +65,7 @@ def create_app(
         model_sleep: Waits between model retries; tests skip them.
     """
     resolved = settings or get_settings()
+    skills = load_skill_catalog(resolved)
     # One authenticator per application, holding the accounts read at startup.
     authenticator = Authenticator.from_settings(resolved)
 
@@ -77,12 +81,13 @@ def create_app(
             resolved,
             factory,
             notifier,
+            skills=skills,
             rules=scripted_rules,
             tool_sleep=tool_sleep,
             model_sleep=model_sleep,
         )
         followups = FollowupService(
-            resolved, factory, rules=scripted_rules, model_sleep=model_sleep
+            resolved, factory, skills=skills, rules=scripted_rules, model_sleep=model_sleep
         )
         app.state.investigations = service
         app.state.followups = followups

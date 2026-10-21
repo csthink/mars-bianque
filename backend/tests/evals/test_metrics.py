@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -21,7 +23,14 @@ from bianque.evals.metrics import (
     root_cause,
     summary,
 )
-from bianque.evals.report import EvalReport, LLMContext, compare_reports, render_markdown
+from bianque.evals.report import (
+    EvalReport,
+    LLMContext,
+    compare_reports,
+    load_report,
+    render_comparison,
+    render_markdown,
+)
 from bianque.evals.run import hard_gates
 
 EVIDENCE = (
@@ -219,7 +228,7 @@ def test_summary_sums_counts_before_dividing() -> None:
 
 def _report(mode: str, *results: Any) -> EvalReport:
     return EvalReport(
-        schema_version=1,
+        schema_version=2,
         generated_at="2026-10-20T00:00:00Z",  # type: ignore[arg-type]
         passed=True,
         llm=LLMContext(mode=mode, model="m", extra_body={}, recorded_at=None, note=None),  # type: ignore[arg-type]
@@ -241,6 +250,12 @@ def test_compare_finds_what_the_replay_did_not_reproduce() -> None:
     other = case_result(_run(tokens=11), report_attempts=3)
     assert compare_reports(_report("live", live), _report("recorded", other)) == [
         "s1-x: tokens differs"
+    ]
+    skilled = case_result(
+        _run(calls=(_skill_call(1, "investigate-pod-restarts"),)), report_attempts=3
+    )
+    assert compare_reports(_report("live", live), _report("recorded", skilled)) == [
+        "s1-x: skills differs"
     ]
     assert "not recorded" in compare_reports(_report("live", live), _report("scripted", same))[0]
     assert "# Bianque evaluation" in render_markdown(_report("live", live))
@@ -269,3 +284,49 @@ def test_each_hard_gate_fails_on_its_violation(change: dict[str, Any], gate: str
 def test_a_failed_revalidation_fails_its_gate() -> None:
     gates = {g.name: g for g in hard_gates([_run()], ["s1-x: final report rejected"], set())}
     assert not gates["outputs_pass_the_gate"].passed
+
+
+def _skill_call(call_id: int, name: str) -> CallRow:
+    return CallRow(call_id, "investigation", "skill", name, "ok", None, None, 0)
+
+
+def test_a_case_counts_the_activations_of_each_skill() -> None:
+    calls = (
+        _skill_call(1, "investigate-pod-restarts"),
+        _gated(2, "plan", True),
+        _skill_call(3, "investigate-pod-restarts"),
+        _skill_call(4, "diagnose-config-error"),
+    )
+    result = case_result(_run(calls=calls), report_attempts=3)
+    assert result.skills == {"diagnose-config-error": 1, "investigate-pod-restarts": 2}
+    # Activations are not model calls.
+    assert result.model_calls == 1
+    assert summary([result]).skill_activations == 3
+    assert "investigate-pod-restarts ×2" in render_markdown(_report("live", result))
+
+
+def test_a_report_written_before_skills_reads_without_them(tmp_path: Path) -> None:
+    result = case_result(_run(), report_attempts=3)
+    document = _report("live", result).model_dump(mode="json")
+    document["schema_version"] = 1
+    del document["cases"][0]["skills"]
+    del document["summary"]["skill_activations"]
+    path = tmp_path / "report.json"
+    path.write_text(json.dumps(document))
+    old = load_report(path)
+    assert old.schema_version == 1
+    assert old.cases[0].skills is None and old.summary.skill_activations is None
+
+
+def test_the_comparison_lists_each_case_of_both_reports() -> None:
+    base = case_result(_run(tokens=100), report_attempts=3)
+    base = base.model_copy(update={"skills": None})
+    calls = (_skill_call(1, "investigate-pod-restarts"), _gated(2, "plan", True))
+    new = case_result(_run(tokens=150, calls=calls), report_attempts=3)
+    text = render_comparison(_report("live", base), _report("live", new))
+    assert "| s1-x | config_error, correct | config_error, correct |" in text
+    assert "| 100 | 150 |" in text
+    assert "investigate-pod-restarts" in text
+    assert "one live run each" in text
+    total = next(line for line in text.splitlines() if line.startswith("| all |"))
+    assert "100" in total and "150" in total
