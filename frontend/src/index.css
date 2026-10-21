@@ -30,8 +30,28 @@ html {
   color: var(--color-slate-400);
 }
 
+/* A narrow screen scrolls the graph sideways. Overlay scrollbars (macOS) stay hidden
+   until a scroll starts and leave a step cut off at the edge with no sign that more
+   follows, so the graph keeps its scrollbar on screen. */
+.bq-flow::-webkit-scrollbar {
+  height: 8px;
+}
+
+.bq-flow::-webkit-scrollbar-track {
+  background-color: transparent;
+}
+
+.bq-flow::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background-color: var(--color-slate-300);
+}
+
 @media (prefers-color-scheme: dark) {
   .bq-flow {
     --xy-edge-stroke: var(--color-slate-500);
+  }
+
+  .bq-flow::-webkit-scrollbar-thumb {
+    background-color: var(--color-slate-600);
   }
 }
