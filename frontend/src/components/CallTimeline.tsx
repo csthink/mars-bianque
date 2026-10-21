@@ -8,7 +8,7 @@ import { Badge, Muted, Section } from "./ui";
 
 /** Knowledge retrieval and skill loading are drawn in their own colors on the investigation agent's lane. */
 const KNOWLEDGE_BAR = "bg-violet-600 dark:bg-violet-400";
-const SKILL_BAR = "bg-fuchsia-600 dark:bg-fuchsia-400";
+const SKILL_BAR = "bg-amber-500 dark:bg-amber-300";
 
 /** The output summary of a skill call ends with how the skill was loaded. */
 const SKILL_LOADS: Record<string, string> = {
@@ -18,7 +18,7 @@ const SKILL_LOADS: Record<string, string> = {
 
 function skillLoad(summary: string | null): { digest: string; load: string } {
   const [digest = "", how = ""] = (summary ?? "").split("; ");
-  return { digest, load: SKILL_LOADS[how] ?? how };
+  return { digest: digest.replace(/^sha256 /, ""), load: SKILL_LOADS[how] ?? how };
 }
 
 export function CallTimeline({
@@ -196,8 +196,10 @@ function SkillDetail({ call }: { call: CallView }) {
       </dd>
       <dt className="text-xs leading-5 text-slate-500 dark:text-slate-400">加载情况</dt>
       <dd className="text-xs leading-5 text-slate-700 dark:text-slate-300">{load}</dd>
-      <dt className="text-xs leading-5 text-slate-500 dark:text-slate-400">正文摘要</dt>
-      <dd className="font-mono text-xs leading-5 text-slate-700 dark:text-slate-300">{digest}</dd>
+      <dt className="text-xs leading-5 text-slate-500 dark:text-slate-400">正文 SHA-256</dt>
+      <dd className="text-xs leading-5 text-slate-700 dark:text-slate-300">
+        <span className="font-mono">{digest}</span>（前 12 位）
+      </dd>
       <dd className="col-span-2 mt-1 text-xs text-slate-500 dark:text-slate-400">
         skill 只说明怎么查，不是证据，也不能列为参考资料。
       </dd>

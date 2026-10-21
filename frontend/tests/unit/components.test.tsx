@@ -75,7 +75,7 @@ describe("CallTimeline", () => {
     await userEvent.click(screen.getByRole("button", { name: /^investigate-pod-restarts，/ }));
     expect(detail()).toHaveTextContent("skill 名investigate-pod-restarts");
     expect(detail()).toHaveTextContent("首次加载");
-    expect(detail()).toHaveTextContent("sha256 5d41402abc4b");
+    expect(detail()).toHaveTextContent("正文 SHA-2565d41402abc4b（前 12 位）");
     expect(detail()).toHaveTextContent("skill 只说明怎么查，不是证据");
   });
 
