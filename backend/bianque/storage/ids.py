@@ -1,6 +1,7 @@
 """Identifiers of persisted entities.
 
-Investigation IDs are ULIDs, so they sort by creation time and never enter a prompt.
+Investigation IDs are ULIDs, so they sort by creation time and never enter a prompt. So
+are the IDs of A2A tasks and of the contexts Bianque opens for them.
 
 Evidence, suggestion and knowledge IDs are derived from content. Evidence and
 suggestion IDs appear in prompts, and recorded model responses are looked up by a key
@@ -19,6 +20,8 @@ from typing import Any
 from ulid import ULID
 
 INVESTIGATION_PREFIX = "inv_"
+A2A_TASK_PREFIX = "task_"
+A2A_CONTEXT_PREFIX = "ctx_"
 EVIDENCE_PREFIX = "ev_"
 SUGGESTION_PREFIX = "sg_"
 KNOWLEDGE_PREFIX = "kn_"
@@ -52,6 +55,16 @@ def _digest(fields: Sequence[Any], length: int) -> str:
 def new_investigation_id() -> str:
     """Return a new investigation ID: ``inv_`` followed by a 26-character ULID."""
     return f"{INVESTIGATION_PREFIX}{ULID()}"
+
+
+def new_a2a_task_id() -> str:
+    """Return a new A2A task ID: ``task_`` followed by a 26-character ULID."""
+    return f"{A2A_TASK_PREFIX}{ULID()}"
+
+
+def new_a2a_context_id() -> str:
+    """Return a new A2A context ID: ``ctx_`` followed by a 26-character ULID."""
+    return f"{A2A_CONTEXT_PREFIX}{ULID()}"
 
 
 def evidence_id(tool: str, identity_params: Mapping[str, Any], redacted_text: str) -> str:

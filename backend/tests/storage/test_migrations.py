@@ -5,6 +5,7 @@ import pytest
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from sqlalchemy import Engine, inspect, text
+from sqlalchemy.exc import IntegrityError
 
 from bianque.storage.models import Base
 
@@ -154,3 +155,46 @@ def test_0004_adds_plan_skills_and_skill_call_records(empty: Any) -> None:
         kinds = list(connection.scalars(text("SELECT kind FROM call_records")))
     assert "skills" not in columns
     assert kinds == ["knowledge"]
+
+
+def test_a2a_tasks_need_an_investigation_or_a_reason_and_downgrade_keeps_investigations(
+    empty: Any,
+) -> None:
+    engine = empty.engine
+    empty.upgrade("0005")
+    insert = (
+        "INSERT INTO investigations (id, trigger, case_id, tool_backend, llm_mode, token_budget) "
+        "VALUES (:id, 'a2a', :case, 'pack', 'scripted', 1)"
+    )
+    with engine.begin() as connection:
+        connection.execute(text(insert), {"id": "inv_case", "case": "s1-a"})
+        connection.execute(text(insert), {"id": "inv_alert", "case": None})
+        connection.execute(
+            text(
+                "INSERT INTO a2a_tasks (id, context_id, investigation_id, caller) "
+                "VALUES ('task_1', 'ctx_1', 'inv_case', 'agent-a')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO a2a_tasks (id, context_id, caller, rejected_reason) "
+                "VALUES ('task_2', 'ctx_1', 'agent-a', 'unknown_case')"
+            )
+        )
+    for values in (
+        "('task_3', 'c', 'agent-a', 'inv_case', 'malformed')",
+        "('task_4', 'c', 'agent-a', NULL, NULL)",
+        "('task_5', 'c', 'agent-a', NULL, 'tired')",
+    ):
+        with pytest.raises(IntegrityError), engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO a2a_tasks (id, context_id, caller, investigation_id, "
+                    f"rejected_reason) VALUES {values}"
+                )
+            )
+    empty.downgrade("0004")
+    with engine.connect() as connection:
+        triggers = dict(connection.execute(text("SELECT id, trigger FROM investigations")).all())
+        assert "a2a_tasks" not in inspect(connection).get_table_names()
+    assert triggers == {"inv_case": "replay", "inv_alert": "alert"}

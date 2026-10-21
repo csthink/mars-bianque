@@ -21,6 +21,7 @@ from bianque.storage import ids
 from bianque.storage.errors import AlreadyDecidedError, NotFoundError
 from bianque.storage.models import (
     OPEN_INVESTIGATION_STATUSES,
+    A2ATask,
     Alert,
     Assessment,
     CallRecord,
@@ -70,9 +71,14 @@ class RecordedAlert:
     """The result of recording an incoming alert."""
 
     alert: Alert
-    #: ``True`` when an investigation of the same fingerprint has not ended yet, so the
-    #: alert only refreshed ``received_at`` and must not start a new investigation.
-    under_investigation: bool
+    #: The investigation of the same fingerprint that has not ended yet, if any: the alert
+    #: then only refreshed ``received_at`` and must not start a new investigation.
+    open_investigation_id: str | None = None
+
+    @property
+    def under_investigation(self) -> bool:
+        """``True`` when an investigation of the same fingerprint has not ended yet."""
+        return self.open_investigation_id is not None
 
 
 class AlertRepository:
@@ -106,21 +112,13 @@ class AlertRepository:
         await self._session.execute(
             select(func.pg_advisory_xact_lock(func.hashtext(ALERT_LOCK_PREFIX + fingerprint)))
         )
-        open_alert = await self._session.scalar(
-            select(Alert)
-            .join(Investigation, Investigation.alert_id == Alert.id)
-            .where(
-                Alert.fingerprint == fingerprint,
-                Investigation.status.in_(OPEN_INVESTIGATION_STATUSES),
-            )
-            .order_by(Alert.id.desc())
-            .limit(1)
-        )
-        if open_alert is not None:
+        found = await self.open_investigation(fingerprint)
+        if found is not None:
+            open_alert, investigation_id = found
             open_alert.received_at = func.now()
             await self._session.flush()
             await self._session.refresh(open_alert, ["received_at"])
-            return RecordedAlert(alert=open_alert, under_investigation=True)
+            return RecordedAlert(alert=open_alert, open_investigation_id=investigation_id)
         alert = Alert(
             fingerprint=fingerprint,
             status=status,
@@ -132,7 +130,28 @@ class AlertRepository:
         self._session.add(alert)
         await self._session.flush()
         await self._session.refresh(alert, ["received_at"])
-        return RecordedAlert(alert=alert, under_investigation=False)
+        return RecordedAlert(alert=alert)
+
+    async def open_investigation(self, fingerprint: str) -> tuple[Alert, str] | None:
+        """Return the latest investigation of ``fingerprint`` that has not ended, and its alert.
+
+        Returns:
+            The alert row and the investigation ID, or ``None`` when every investigation
+            of the fingerprint has ended.
+        """
+        row = (
+            await self._session.execute(
+                select(Alert, Investigation.id)
+                .join(Investigation, Investigation.alert_id == Alert.id)
+                .where(
+                    Alert.fingerprint == fingerprint,
+                    Investigation.status.in_(OPEN_INVESTIGATION_STATUSES),
+                )
+                .order_by(Alert.id.desc(), Investigation.started_at.desc())
+                .limit(1)
+            )
+        ).first()
+        return None if row is None else (row[0], row[1])
 
     async def get(self, alert_id: int) -> Alert:
         """Return an alert by ID.
@@ -242,6 +261,64 @@ class InvestigationRepository:
             update(Investigation)
             .where(Investigation.id == investigation_id)
             .values(tokens_used=Investigation.tokens_used + tokens)
+        )
+
+
+class A2ATaskRepository:
+    """Tasks of A2A clients. A task is read only by the client that started it."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        """Bind the repository to a session."""
+        self._session = session
+
+    async def create(
+        self,
+        *,
+        context_id: str,
+        caller: str,
+        investigation_id: str | None = None,
+        rejected_reason: str | None = None,
+    ) -> A2ATask:
+        """Add a task with a new ``task_`` ID.
+
+        A task either follows an investigation or was rejected for ``rejected_reason``;
+        the database refuses both and neither.
+        """
+        task = A2ATask(
+            id=ids.new_a2a_task_id(),
+            context_id=context_id,
+            caller=caller,
+            investigation_id=investigation_id,
+            rejected_reason=rejected_reason,
+        )
+        self._session.add(task)
+        await self._session.flush()
+        await self._session.refresh(task, ["created_at"])
+        return task
+
+    async def get_owned(self, task_id: str, caller: str) -> A2ATask | None:
+        """Return a task of ``caller``; another client's task reads as missing."""
+        return await self._session.scalar(
+            select(A2ATask).where(A2ATask.id == task_id, A2ATask.caller == caller)
+        )
+
+    async def list_owned(self, caller: str, *, context_id: str | None = None) -> Sequence[A2ATask]:
+        """Return the tasks of ``caller``, optionally of one context, newest first."""
+        query = select(A2ATask).where(A2ATask.caller == caller)
+        if context_id is not None:
+            query = query.where(A2ATask.context_id == context_id)
+        result = await self._session.scalars(
+            query.order_by(A2ATask.created_at.desc(), A2ATask.id.desc())
+        )
+        return result.all()
+
+    async def first_caller(self, investigation_id: str) -> str | None:
+        """Return the client of the earliest task that follows an investigation, if any."""
+        return await self._session.scalar(
+            select(A2ATask.caller)
+            .where(A2ATask.investigation_id == investigation_id)
+            .order_by(A2ATask.created_at, A2ATask.id)
+            .limit(1)
         )
 
 
@@ -584,6 +661,15 @@ class EventRepository:
         self._session.add(event)
         await self._session.flush()
         return event
+
+    async def latest(self, investigation_id: str) -> InvestigationEvent | None:
+        """Return the event with the highest sequence number, or ``None`` before the first."""
+        return await self._session.scalar(
+            select(InvestigationEvent)
+            .where(InvestigationEvent.investigation_id == investigation_id)
+            .order_by(InvestigationEvent.seq.desc())
+            .limit(1)
+        )
 
     async def list_after(
         self, investigation_id: str, after_seq: int = 0

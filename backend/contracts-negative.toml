@@ -58,6 +58,12 @@ source_modules = ["bianque_negative_fixture"]
 forbidden_modules = ["mcp", "mcp_types"]
 
 [[tool.importlinter.contracts]]
+name = "Negative: Only the A2A package imports the A2A SDK"
+type = "forbidden"
+source_modules = ["bianque_negative_fixture"]
+forbidden_modules = ["a2a"]
+
+[[tool.importlinter.contracts]]
 name = "Negative: Only the API package imports FastAPI"
 type = "forbidden"
 source_modules = ["bianque_negative_fixture"]

@@ -95,10 +95,13 @@ class CreatedInvestigation:
         alert_id: The alert row: a new one, or the one already under investigation.
         investigation_id: The new pending investigation, or ``None`` when the alert was
             deduplicated.
+        open_investigation_id: When the alert was deduplicated, the investigation of the
+            same fingerprint that has not ended yet.
     """
 
     alert_id: int
     investigation_id: str | None
+    open_investigation_id: str | None = None
 
     @property
     def deduplicated(self) -> bool:
@@ -121,7 +124,7 @@ async def create_investigation(
         settings: Process settings: tool backend, model mode and budget.
         alert: The alert.
         sessions: Database sessions.
-        trigger: ``alert``, ``manual`` or ``replay``.
+        trigger: ``alert``, ``manual``, ``replay`` or ``a2a``.
         case_id: The evaluation case whose evidence pack the tools read.
         deduplicate: Create nothing when an investigation of the same fingerprint has
             not ended yet (webhook deliveries); otherwise always create one.
@@ -136,7 +139,7 @@ async def create_investigation(
             payload=alert.payload,
         )
         if deduplicate and recorded.under_investigation:
-            return CreatedInvestigation(recorded.alert.id, None)
+            return CreatedInvestigation(recorded.alert.id, None, recorded.open_investigation_id)
         investigation_id = await _create(session, settings, recorded.alert.id, trigger, case_id)
     return CreatedInvestigation(recorded.alert.id, investigation_id)
 

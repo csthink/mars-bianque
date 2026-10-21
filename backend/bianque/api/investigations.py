@@ -17,8 +17,9 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from bianque.agents.events import TERMINAL_EVENTS, EventNotifier
+from bianque.agents.events import EventNotifier
 from bianque.agents.followup import FollowupService, NoReportError
+from bianque.agents.records import follow_events
 from bianque.agents.service import (
     CaseNotFoundError,
     InvestigationService,
@@ -57,10 +58,10 @@ from bianque.api.schemas import (
 from bianque.storage.errors import AlreadyDecidedError, NotFoundError
 from bianque.storage.models import Alert, CallRecord, Evidence, Investigation, Report
 from bianque.storage.repositories import (
+    A2ATaskRepository,
     AssessmentRepository,
     CallRecordRepository,
     ConfirmationRepository,
-    EventRepository,
     EvidenceRepository,
     FollowupRepository,
     InvestigationRepository,
@@ -172,6 +173,7 @@ async def get_investigation(investigation_id: str, session: Session) -> Investig
             started_at=inv.started_at,
             finished_at=inv.finished_at,
             error=inv.error,
+            caller=await A2ATaskRepository(session).first_caller(inv.id),
         ),
         alert=None
         if alert is None
@@ -460,9 +462,7 @@ async def events(
     ``investigation_finished`` or ``investigation_interrupted``.
 
     The endpoint takes no request-scoped database session: one would stay open, idle in
-    a transaction, for as long as the stream lasts, and an open transaction blocks
-    statements that wait for all of them, such as the ``CREATE INDEX CONCURRENTLY`` of
-    the checkpoint tables' setup. Each read of the stream uses a session of its own.
+    a transaction, for as long as the stream lasts (``follow_events``).
     """
     async with request.app.state.sessions() as session:
         inv_id = (await _investigation(session, investigation_id)).id
@@ -482,18 +482,13 @@ async def _event_frames(
     investigation_id: str,
     after: int,
 ) -> AsyncIterator[str]:
-    """Read the events after ``after`` from the table, waiting for new ones in between.
-
-    The table is the only source of events; a wake-up only makes the next read sooner.
-    The read after each wait also finds events another process wrote.
-    """
-    last = after
+    """Send the events after ``after`` as frames, and a keep-alive comment when quiet."""
     quiet_since = time.monotonic()
-    while True:
-        async with sessions() as session:
-            rows = await EventRepository(session).list_after(investigation_id, last)
-        for row in rows:
-            last = row.seq
+    async for row in follow_events(
+        sessions, notifier, investigation_id, after, poll_seconds=EVENT_POLL_SECONDS
+    ):
+        now = time.monotonic()
+        if row is not None:
             data = {
                 "seq": row.seq,
                 "type": row.type,
@@ -501,15 +496,10 @@ async def _event_frames(
                 **row.payload,
             }
             yield sse.frame(row.type, data, event_id=row.seq)
-            if row.type in TERMINAL_EVENTS:
-                return
-        now = time.monotonic()
-        if rows:
             quiet_since = now
         elif now - quiet_since >= KEEPALIVE_SECONDS:
             yield sse.comment("keepalive")
             quiet_since = now
-        await notifier.wait(investigation_id, EVENT_POLL_SECONDS)
 
 
 @router.post("/{investigation_id}/sessions", status_code=201, response_model=FollowupSessionView)

@@ -9,7 +9,8 @@ that differs from the recording manifest, stops the start. Investigations and fo
 answers run in background tasks of this process and are cancelled at shutdown; the
 next start marks the cancelled investigations interrupted. With ``BIANQUE_REPLAY_SEED``
 the replay profile's startup runs once the application serves requests.
-The MCP service is served at ``/mcp``.
+The MCP service is served at ``/mcp``; the A2A service at ``/a2a``, with its Agent Card
+at ``/.well-known/agent-card.json``.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from fastapi import FastAPI
 from starlette.routing import Route
 from starlette.types import Receive, Scope, Send
 
+from bianque.a2a import card_routes, open_a2a
 from bianque.agents.events import EventNotifier
 from bianque.agents.followup import FollowupService
 from bianque.agents.service import InvestigationService, interrupt_unfinished, seed_replay
@@ -46,6 +48,13 @@ class _MCPRoute:
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         await scope["app"].state.mcp(scope, receive, send)
+
+
+class _A2ARoute:
+    """Serves ``/a2a`` with the A2A endpoint the lifespan opened, as ``_MCPRoute`` does."""
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        await scope["app"].state.a2a(scope, receive, send)
 
 
 def create_app(
@@ -92,8 +101,12 @@ def create_app(
         app.state.investigations = service
         app.state.followups = followups
         try:
-            async with open_mcp(resolved, factory, tool_sleep=tool_sleep) as mcp:
+            async with (
+                open_mcp(resolved, factory, tool_sleep=tool_sleep) as mcp,
+                open_a2a(resolved, factory, notifier, service) as a2a,
+            ):
                 app.state.mcp = mcp
+                app.state.a2a = a2a
                 seeding = (
                     asyncio.create_task(seed_replay(resolved, factory, service))
                     if resolved.replay_seed
@@ -119,6 +132,8 @@ def create_app(
     app.include_router(investigations.router)
     app.include_router(sessions.router)
     app.router.routes.append(Route("/mcp", _MCPRoute(), methods=["GET", "POST", "DELETE"]))
+    app.router.routes.append(Route("/a2a", _A2ARoute(), methods=["POST"]))
+    app.router.routes.extend(card_routes(resolved))
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:

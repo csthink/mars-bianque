@@ -30,11 +30,12 @@ from mcp.shared.exceptions import MCPError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from bianque.auth.bearer import BearerAuth
 from bianque.config import Settings
 from bianque.knowledge.embedding import build_embedder
 from bianque.knowledge.search import KnowledgeRetriever
 from bianque.llm.redacted import build_redaction_engine
-from bianque.mcp.clients import STATE_KEY, BearerAuth, Client, resolve_clients
+from bianque.mcp.clients import STATE_KEY, Client, resolve_clients
 from bianque.mcp.sources import DatabaseInvestigations
 from bianque.tools.backends import open_backends
 from bianque.tools.executor import NAME_LIMIT, ToolExecutor, ToolResult, storable
@@ -167,7 +168,7 @@ class MCPEndpoint:
 
     def __init__(self, app: ASGIApp, clients: Sequence[Client]) -> None:
         """Serve ``app`` to the holders of the tokens of ``clients``."""
-        self._app = BearerAuth(app, clients)
+        self._app = BearerAuth(app, clients, STATE_KEY)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         """Handle one request."""

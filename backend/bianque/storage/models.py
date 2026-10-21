@@ -53,6 +53,16 @@ NAMING_CONVENTION = {
 }
 
 INVESTIGATION_STATUSES = ("pending", "running", "reported", "degraded", "interrupted", "failed")
+#: How an investigation was started: a webhook alert, by hand, a case replay, an A2A task.
+INVESTIGATION_TRIGGERS = ("alert", "manual", "replay", "a2a")
+#: Why an A2A task was rejected before any investigation started.
+A2A_REJECTED_REASONS = (
+    "malformed",
+    "namespace_denied",
+    "profile_mismatch",
+    "unknown_case",
+    "resolved_alert",
+)
 #: Statuses of an investigation that has not ended yet.
 OPEN_INVESTIGATION_STATUSES = ("pending", "running")
 
@@ -117,7 +127,7 @@ class Investigation(Base):
 
     __tablename__ = "investigations"
     __table_args__ = (
-        CheckConstraint(_in("trigger", ("alert", "manual", "replay")), name="trigger"),
+        CheckConstraint(_in("trigger", INVESTIGATION_TRIGGERS), name="trigger"),
         CheckConstraint(_in("status", INVESTIGATION_STATUSES), name="status"),
         CheckConstraint(_in("tool_backend", ("live", "pack")), name="tool_backend"),
         CheckConstraint(_in("llm_mode", ("live", "recorded", "scripted")), name="llm_mode"),
@@ -138,6 +148,32 @@ class Investigation(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None] = mapped_column(Text)
+
+
+class A2ATask(Base):
+    """A task an A2A client started: the investigation it follows, or why it was rejected.
+
+    The task's state is not stored: it is derived from the investigation and its progress
+    events whenever the task is read. Several tasks may follow one investigation, when an
+    alert under investigation is sent again.
+    """
+
+    __tablename__ = "a2a_tasks"
+    __table_args__ = (
+        CheckConstraint(_in("rejected_reason", A2A_REJECTED_REASONS), name="rejected_reason"),
+        CheckConstraint("(investigation_id IS NULL) <> (rejected_reason IS NULL)", name="outcome"),
+        Index(None, "caller", "created_at"),
+        Index(None, "investigation_id"),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    context_id: Mapped[str] = mapped_column(Text)
+    investigation_id: Mapped[str | None] = mapped_column(
+        Text, ForeignKey("investigations.id", ondelete="CASCADE")
+    )
+    caller: Mapped[str] = mapped_column(Text)
+    rejected_reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = _created_at()
 
 
 class Plan(Base):

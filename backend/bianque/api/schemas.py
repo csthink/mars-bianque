@@ -39,7 +39,7 @@ class InvestigationList(BaseModel):
 
 
 class InvestigationInfo(BaseModel):
-    """The investigation row."""
+    """The investigation row, and the A2A client of the earliest task that follows it."""
 
     id: str
     status: str
@@ -53,6 +53,7 @@ class InvestigationInfo(BaseModel):
     started_at: datetime
     finished_at: datetime | None
     error: str | None
+    caller: str | None
 
 
 class AlertView(BaseModel):

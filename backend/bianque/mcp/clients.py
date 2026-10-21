@@ -4,26 +4,33 @@ Each client is configured with the SHA-256 of its bearer token (``BIANQUE_MCP_CL
 Its tool patterns are expanded against the registry when the application starts, so a
 pattern that names no tool stops the start instead of silently granting nothing.
 
-``BearerAuth`` sits in front of the MCP endpoint: a request without a token, or with a
-token of no client, is answered 401 and goes no further; there is no caller to record.
-An authenticated request carries its client in the ASGI scope's state, where the MCP
-handlers read it.
+``bianque.auth.bearer.BearerAuth`` sits in front of the MCP endpoint: a request without
+a token, or with a token of no client, is answered 401 and goes no further; there is no
+caller to record. An authenticated request carries its client in the ASGI scope's state
+under ``STATE_KEY``, where the MCP handlers read it.
 """
 
 from __future__ import annotations
 
 import fnmatch
-import hashlib
-import hmac
-import json
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
-from starlette.types import ASGIApp, Receive, Scope, Send
-
+from bianque.auth.bearer import find_client, token_sha256
 from bianque.config.settings import MCPClient
 from bianque.tools.executor import CallerScope
 from bianque.tools.registry import ToolRegistry
+
+__all__ = [
+    "MCP_AGENT",
+    "STATE_KEY",
+    "Client",
+    "ClientConfigError",
+    "expand_tools",
+    "find_client",
+    "resolve_clients",
+    "token_sha256",
+]
 
 #: The ``agent`` of every call record an MCP client causes.
 MCP_AGENT = "mcp"
@@ -82,57 +89,3 @@ def resolve_clients(configured: Iterable[MCPClient], tools: ToolRegistry) -> tup
             raise ClientConfigError(f"MCP client {item.name}: {exc}") from None
         clients.append(Client(item.name, item.token_sha256, allowed, frozenset(item.namespaces)))
     return tuple(clients)
-
-
-def token_sha256(token: str) -> str:
-    """Return the hex SHA-256 of a token, the form clients are configured with."""
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
-
-
-def find_client(clients: Sequence[Client], token: str) -> Client | None:
-    """Return the client holding ``token``, comparing every hash in constant time."""
-    digest = token_sha256(token)
-    found = None
-    for client in clients:
-        if hmac.compare_digest(client.token_sha256, digest):
-            found = client
-    return found
-
-
-def _bearer(scope: Scope) -> str | None:
-    for name, value in scope.get("headers", []):
-        if name == b"authorization":
-            scheme, _, token = value.decode("latin-1").partition(" ")
-            return token.strip() if scheme.lower() == "bearer" and token.strip() else None
-    return None
-
-
-class BearerAuth:
-    """Admit requests whose bearer token belongs to a client; answer 401 otherwise."""
-
-    def __init__(self, app: ASGIApp, clients: Sequence[Client]) -> None:
-        """Guard ``app`` with the tokens of ``clients``."""
-        self._app = app
-        self._clients = tuple(clients)
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        """Pass an authenticated HTTP request on with its client in the scope's state."""
-        token = _bearer(scope) if scope["type"] == "http" else None
-        client = find_client(self._clients, token) if token is not None else None
-        if client is None:
-            body = json.dumps({"detail": "a valid bearer token is required"}).encode()
-            await send(
-                {
-                    "type": "http.response.start",
-                    "status": 401,
-                    "headers": [
-                        (b"content-type", b"application/json"),
-                        (b"content-length", str(len(body)).encode()),
-                        (b"www-authenticate", b"Bearer"),
-                    ],
-                }
-            )
-            await send({"type": "http.response.body", "body": body})
-            return
-        scope.setdefault("state", {})[STATE_KEY] = client
-        await self._app(scope, receive, send)

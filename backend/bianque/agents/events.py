@@ -50,7 +50,7 @@ class _Payload(BaseModel):
 class InvestigationStarted(_Payload):
     """The investigation started."""
 
-    trigger: Literal["alert", "manual", "replay"]
+    trigger: Literal["alert", "manual", "replay", "a2a"]
 
 
 class PlanCreated(_Payload):

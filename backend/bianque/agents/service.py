@@ -62,11 +62,13 @@ class DeliveredAlert:
         investigation_id: The investigation started for it; ``None`` for a resolved
             alert and for a deduplicated one.
         deduplicated: An investigation of the same fingerprint had not ended yet.
+        open_investigation_id: For a deduplicated alert, that investigation.
     """
 
     alert: AlertInput
     investigation_id: str | None
     deduplicated: bool
+    open_investigation_id: str | None = None
 
 
 class InvestigationService:
@@ -103,11 +105,17 @@ class InvestigationService:
         self._model_sleep = model_sleep
         self._tasks: dict[str, asyncio.Task[None]] = {}
 
-    async def deliver(self, alerts: Sequence[AlertInput]) -> list[DeliveredAlert]:
+    async def deliver(
+        self, alerts: Sequence[AlertInput], *, trigger: str = "alert"
+    ) -> list[DeliveredAlert]:
         """Start an investigation for each firing alert that is not under investigation.
 
         A resolved alert starts nothing and is not stored. With the evidence pack
         backend, the tools read the pack of ``BIANQUE_PACK_CASE``.
+
+        Args:
+            alerts: The alerts, in their order.
+            trigger: ``alert`` for the webhook, ``a2a`` for an A2A task.
         """
         case_id = self._settings.pack_case if self._settings.tool_backend == "pack" else None
         delivered = []
@@ -119,17 +127,29 @@ class InvestigationService:
                 self._settings,
                 alert,
                 sessions=self._sessions,
-                trigger="alert",
+                trigger=trigger,
                 case_id=case_id,
                 deduplicate=True,
             )
             if created.investigation_id is not None:
                 self._start(created.investigation_id, alert, case_id)
-            delivered.append(DeliveredAlert(alert, created.investigation_id, created.deduplicated))
+            delivered.append(
+                DeliveredAlert(
+                    alert,
+                    created.investigation_id,
+                    created.deduplicated,
+                    created.open_investigation_id,
+                )
+            )
         return delivered
 
-    async def replay_case(self, case_id: str) -> str:
+    async def replay_case(self, case_id: str, *, trigger: str = "replay") -> str:
         """Start a replay of a case's evidence pack and return the investigation ID.
+
+        Args:
+            case_id: The case.
+            trigger: ``replay`` for a person or the replay startup, ``a2a`` for an A2A
+                task.
 
         Raises:
             PackBackendRequiredError: The tool backend is not the evidence pack.
@@ -139,7 +159,7 @@ class InvestigationService:
             raise PackBackendRequiredError("a case is replayed with BIANQUE_TOOL_BACKEND=pack")
         alert = case_alert(self._settings, case_id)
         created = await create_investigation(
-            self._settings, alert, sessions=self._sessions, trigger="replay", case_id=case_id
+            self._settings, alert, sessions=self._sessions, trigger=trigger, case_id=case_id
         )
         assert created.investigation_id is not None
         self._start(created.investigation_id, alert, case_id)
