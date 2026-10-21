@@ -264,14 +264,27 @@ class PlanRepository:
         self._session = session
 
     async def add_plan(
-        self, investigation_id: str, *, source: str, rationale: str, steps: Sequence[StepSpec]
+        self,
+        investigation_id: str,
+        *,
+        source: str,
+        rationale: str,
+        steps: Sequence[StepSpec],
+        skills: Sequence[str] = (),
     ) -> Plan:
-        """Add the next plan version with its steps, numbered from 1 in the given order."""
+        """Add the next plan version with its steps, numbered from 1 in the given order.
+
+        ``skills`` are the skills loaded when the version was generated.
+        """
         version = await _next_value(
             self._session, Plan.version, Plan.investigation_id == investigation_id
         )
         plan = Plan(
-            investigation_id=investigation_id, version=version, source=source, rationale=rationale
+            investigation_id=investigation_id,
+            version=version,
+            source=source,
+            rationale=rationale,
+            skills=list(skills),
         )
         self._session.add(plan)
         await self._session.flush()
@@ -460,7 +473,7 @@ class EvidenceRepository:
 
 
 class CallRecordRepository:
-    """Model and tool call records."""
+    """Model, tool, knowledge and skill call records."""
 
     def __init__(self, session: AsyncSession) -> None:
         """Bind the repository to a session."""

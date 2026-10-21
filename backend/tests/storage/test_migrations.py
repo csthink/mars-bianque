@@ -112,3 +112,45 @@ def test_answers_stored_before_0003_keep_their_text_and_have_no_segments(empty: 
     with engine.connect() as connection:
         columns = {c["name"] for c in inspect(connection).get_columns("followup_messages")}
     assert "segments" not in columns
+
+
+def test_0004_adds_plan_skills_and_skill_call_records(empty: Any) -> None:
+    engine = empty.engine
+    empty.upgrade("0003")
+    insert_call = text(
+        "INSERT INTO call_records (investigation_id, agent, kind, name, input_summary, status, "
+        "started_at) VALUES ('inv_old', 'investigation', :kind, 'x', 'x', 'ok', now())"
+    )
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO investigations (id, trigger, tool_backend, llm_mode, token_budget) "
+                "VALUES ('inv_old', 'manual', 'pack', 'scripted', 1)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO plans (investigation_id, version, source, rationale) "
+                "VALUES ('inv_old', 1, 'model', 'An earlier plan.')"
+            )
+        )
+        connection.execute(insert_call, {"kind": "knowledge"})
+    with pytest.raises(Exception, match="ck_call_records_kind"), engine.begin() as connection:
+        connection.execute(insert_call, {"kind": "skill"})
+
+    empty.upgrade("0004")
+    with engine.begin() as connection:
+        # A plan stored before 0004 loaded no skill.
+        assert connection.scalar(text("SELECT skills FROM plans")) == []
+        connection.execute(insert_call, {"kind": "skill"})
+        kinds = sorted(connection.scalars(text("SELECT kind FROM call_records")))
+    assert kinds == ["knowledge", "skill"]
+    with pytest.raises(Exception, match="ck_call_records_kind"), engine.begin() as connection:
+        connection.execute(insert_call, {"kind": "agent"})
+
+    empty.downgrade("0003")
+    with engine.connect() as connection:
+        columns = {c["name"] for c in inspect(connection).get_columns("plans")}
+        kinds = list(connection.scalars(text("SELECT kind FROM call_records")))
+    assert "skills" not in columns
+    assert kinds == ["knowledge"]

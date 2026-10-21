@@ -154,6 +154,8 @@ class Plan(Base):
     version: Mapped[int] = mapped_column(Integer)
     source: Mapped[str] = mapped_column(Text)
     rationale: Mapped[str] = mapped_column(Text)
+    #: The skills loaded when this version was generated, filled by code.
+    skills: Mapped[list[Any]] = _json_list()
     created_at: Mapped[datetime] = _created_at()
 
 
@@ -199,11 +201,11 @@ class Assessment(Base):
 
 
 class CallRecord(Base):
-    """One model, tool or knowledge call, for the call timeline and cost totals."""
+    """One model, tool, knowledge or skill call, for the call timeline and cost totals."""
 
     __tablename__ = "call_records"
     __table_args__ = (
-        CheckConstraint(_in("kind", ("model", "tool", "knowledge")), name="kind"),
+        CheckConstraint(_in("kind", ("model", "tool", "knowledge", "skill")), name="kind"),
         Index(None, "investigation_id", "started_at"),
         Index(None, "session_id"),
     )
