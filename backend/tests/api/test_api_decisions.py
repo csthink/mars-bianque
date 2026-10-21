@@ -19,7 +19,7 @@ from demo_login import (
 )
 from fastapi.testclient import TestClient
 from investigation_fixture import FIXTURE, load
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bianque.api.app import create_app
@@ -72,7 +72,10 @@ async def test_confirm_and_reject_are_recorded(
 ) -> None:
     first, second = _suggestions(client, inv)
     assert first["state"] == second["state"] == "pending"
-    before = datetime.now().astimezone()
+    # The database stamps the decision with its own clock, which can trail this
+    # process's (the database runs in a container): read the lower bound from it too.
+    before = await session.scalar(select(func.clock_timestamp()))
+    assert before is not None
 
     confirmed = _decide(client, inv, first["id"], decision="confirmed")
     rejected = _decide(
