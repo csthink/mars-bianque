@@ -59,7 +59,7 @@ export function StepCard({ data: { step, version, onSelect } }: NodeProps<StepNo
         type="button"
         title={step.goal}
         onClick={() => onSelect(step, version)}
-        className="nodrag nopan flex h-full w-full cursor-pointer flex-col justify-between rounded-md px-2.5 py-1.5 text-left focus-visible:outline-2 focus-visible:outline-blue-500"
+        className="nodrag nopan flex h-full w-full cursor-pointer flex-col justify-start rounded-md px-2.5 py-1.5 text-left focus-visible:outline-2 focus-visible:outline-blue-500"
       >
         <span className="flex items-center justify-between gap-2 text-[11px] leading-4">
           <span
