@@ -83,13 +83,14 @@ derive-packs:
 
 # Replay profile: database, backend and nginx in Docker Compose, no cluster needed. The
 # database password is generated once into .demo/replay.env, since the data volume keeps
-# it; the demo login and the MCP token are generated again on every run into
-# .demo/replay-login.env, .demo/demo-password and .demo/mcp-token. None of them is ever
-# committed.
+# it; the demo login, the MCP token and the A2A token are generated again on every run
+# into .demo/replay-login.env, .demo/demo-password, .demo/mcp-token and .demo/a2a-token.
+# None of them is ever committed.
 REPLAY_ENV := .demo/replay.env
 REPLAY_LOGIN_ENV := .demo/replay-login.env
 DEMO_PASSWORD := .demo/demo-password
 MCP_TOKEN := .demo/mcp-token
+A2A_TOKEN := .demo/a2a-token
 COMPOSE_FILES := docker compose -f deploy/compose/replay.yaml --env-file $(REPLAY_ENV)
 COMPOSE_REPLAY := $(COMPOSE_FILES) --env-file $(REPLAY_LOGIN_ENV)
 REPLAY_URL := http://127.0.0.1:$${BIANQUE_REPLAY_PORT:-8080}
@@ -101,7 +102,7 @@ $(REPLAY_ENV):
 # The password is hashed inside the backend image, so the host needs no Python.
 replay-login:
 	mkdir -p .demo
-	demo/scripts/demo-login.sh $(REPLAY_LOGIN_ENV) $(DEMO_PASSWORD) $(MCP_TOKEN) \
+	demo/scripts/demo-login.sh $(REPLAY_LOGIN_ENV) $(DEMO_PASSWORD) $(MCP_TOKEN) $(A2A_TOKEN) \
 		docker run --rm -i "$$(docker build -q --target runtime --build-context skills=.agents/skills \
 			backend)" bianque auth hash-password
 
@@ -113,6 +114,12 @@ LLM_MODEL ?= deepseek-v4-pro
 LLM_BASE_URL ?= https://api.deepseek.com
 LLM_EXTRA_BODY ?= {"thinking": {"type": "disabled"}}
 COMPOSE_MODE := $(COMPOSE_REPLAY) $(if $(filter live,$(LLM_MODE)),-f deploy/compose/live.yaml)
+
+# The JSON-RPC request `make replay` prints: replay case s1-a as an A2A task, answered at
+# once with the task; GetTask or SubscribeToTask follow it.
+A2A_EXAMPLE := {"jsonrpc": "2.0", "id": 1, "method": "SendMessage", "params": {"message": \
+	{"messageId": "1", "role": "ROLE_USER", "parts": [{"data": {"case_id": "s1-a"}}]}, \
+	"configuration": {"returnImmediately": true}}}
 
 replay: $(REPLAY_ENV) replay-login
 	@case '$(LLM_MODE)' in recorded|scripted|live) ;; \
@@ -131,22 +138,36 @@ endif
 	@echo "Demo login: demo / $$(cat $(DEMO_PASSWORD))"
 	@echo "MCP for Claude Code, run from this directory:"
 	@echo "  claude mcp add --transport http bianque $(REPLAY_URL)/mcp --header \"Authorization: Bearer \$$(cat $(MCP_TOKEN))\""
+	@echo "A2A: the Agent Card is $(REPLAY_URL)/.well-known/agent-card.json, the token is in $(A2A_TOKEN)."
+	@echo "Replay a case as an A2A task, run from this directory:"
+	@echo "  curl -s $(REPLAY_URL)/a2a -H \"Authorization: Bearer \$$(cat $(A2A_TOKEN))\" \\"
+	@echo "    -H \"A2A-Version: 1.0\" -H \"Content-Type: application/json\" -d '"'$(A2A_EXAMPLE)'"'"
 
 # Compose checks every variable of the file even to stop it; the login values are not
 # used by `down`, so placeholders stand in when no login was generated yet.
 replay-down:
 	BIANQUE_DEMO_USERS=unused BIANQUE_SESSION_SECRET=unused BIANQUE_MCP_CLIENTS=unused \
-		$(COMPOSE_FILES) down --volumes
+		BIANQUE_A2A_CLIENTS=unused $(COMPOSE_FILES) down --volumes
 
 # End-to-end tests: the replay stack in scripted model mode, which investigates every case
 # once it has started, then Playwright against those investigations and new ones it
-# triggers. Screenshots land in frontend/e2e/screenshots. The stack starts from an empty
-# database: decisions on suggestions are append-only and cannot be undone between runs.
+# triggers, then the A2A tests with the official A2A SDK's client (backend/e2e). Two A2A
+# clients of their own replace the replay profile's: the env file given last wins.
+# Screenshots land in frontend/e2e/screenshots. The stack starts from an empty database:
+# decisions on suggestions are append-only and cannot be undone between runs.
+E2E_A2A_ENV := .demo/e2e-a2a.env
+E2E_A2A_TOKEN_A := .demo/e2e-a2a-token-a
+E2E_A2A_TOKEN_B := .demo/e2e-a2a-token-b
+COMPOSE_E2E := $(COMPOSE_REPLAY) --env-file $(E2E_A2A_ENV)
+
 e2e: $(REPLAY_ENV) replay-login
-	$(COMPOSE_REPLAY) down --volumes
-	BIANQUE_LLM_MODE=scripted $(COMPOSE_REPLAY) up --detach --build --wait
+	demo/scripts/e2e-a2a.sh $(E2E_A2A_ENV) $(E2E_A2A_TOKEN_A) $(E2E_A2A_TOKEN_B)
+	$(COMPOSE_E2E) down --volumes
+	BIANQUE_LLM_MODE=scripted $(COMPOSE_E2E) up --detach --build --wait
 	cd frontend && BIANQUE_E2E_URL="$(REPLAY_URL)" BIANQUE_E2E_PASSWORD="$$(cat ../$(DEMO_PASSWORD))" \
-		npx playwright test
+		BIANQUE_E2E_A2A_TOKEN="$$(cat ../$(E2E_A2A_TOKEN_A))" npx playwright test
+	cd backend && BIANQUE_E2E_URL="$(REPLAY_URL)" BIANQUE_E2E_A2A_TOKEN_A="$$(cat ../$(E2E_A2A_TOKEN_A))" \
+		BIANQUE_E2E_A2A_TOKEN_B="$$(cat ../$(E2E_A2A_TOKEN_B))" uv run --locked pytest e2e
 
 # Embedding fixture: vectors of every runbook chunk and evaluation query, computed with the
 # local model. Rerun after editing knowledge/runbooks, eval/retrieval/queries.yaml or a

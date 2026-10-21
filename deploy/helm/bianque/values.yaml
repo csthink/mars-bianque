@@ -40,7 +40,7 @@ llm:
 # kept in the release. Their keys:
 #   database: password (the PostgreSQL password)
 #   auth:     BIANQUE_DEMO_USERS, BIANQUE_SESSION_SECRET, BIANQUE_MCP_CLIENTS,
-#             BIANQUE_ALERTMANAGER_TOKEN
+#             BIANQUE_A2A_CLIENTS, BIANQUE_ALERTMANAGER_TOKEN
 #   llm:      api-key
 secrets:
   database: bianque-db
@@ -56,6 +56,11 @@ knowledge:
 # Empty leaves the change tools without a repository.
 manifests:
   hostPath: ""
+
+# The A2A endpoint the Agent Card announces: where other agents reach /a2a through the
+# frontend Service. Empty announces the Service's address inside the cluster.
+a2a:
+  publicUrl: ""
 
 session:
   # Keep true behind https; a browser does not store a Secure cookie over plain http.

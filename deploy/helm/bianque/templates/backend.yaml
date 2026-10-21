@@ -1,4 +1,4 @@
-# The backend: HTTP API, Alertmanager webhook, investigation runner and MCP server.
+# The backend: HTTP API, Alertmanager webhook, investigation runner, MCP and A2A servers.
 # Real tool backend (the cluster through the service account, the manifest repository
 # from the node), live model, local embedding model built into the image.
 apiVersion: v1
@@ -85,7 +85,9 @@ spec:
             {{- end }}
             - name: BIANQUE_SESSION_COOKIE_SECURE
               value: {{ .Values.session.cookieSecure | quote }}
-            {{- range list "BIANQUE_DEMO_USERS" "BIANQUE_SESSION_SECRET" "BIANQUE_MCP_CLIENTS" "BIANQUE_ALERTMANAGER_TOKEN" }}
+            - name: BIANQUE_A2A_PUBLIC_URL
+              value: {{ .Values.a2a.publicUrl | default (printf "http://bianque-frontend.%s.svc/a2a" .Release.Namespace) | quote }}
+            {{- range list "BIANQUE_DEMO_USERS" "BIANQUE_SESSION_SECRET" "BIANQUE_MCP_CLIENTS" "BIANQUE_A2A_CLIENTS" "BIANQUE_ALERTMANAGER_TOKEN" }}
             - name: {{ . }}
               valueFrom:
                 secretKeyRef:

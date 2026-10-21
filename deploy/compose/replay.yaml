@@ -1,6 +1,6 @@
 # Replay profile: Bianque without a cluster, reading evidence packs and recorded model
 # responses. Started by `make replay`; the database password comes from .demo/replay.env,
-# the demo login and the MCP client from .demo/replay-login.env. Once started, the
+# the demo login and the MCP and A2A clients from .demo/replay-login.env. Once started, the
 # backend imports the runbooks and investigates every case with an evidence pack once.
 # `make replay LLM_MODE=scripted` answers with the scripted rules instead; `LLM_MODE=live`
 # adds live.yaml.
@@ -36,6 +36,9 @@ services:
       BIANQUE_DEMO_USERS: ${BIANQUE_DEMO_USERS:?run make replay, which generates it}
       BIANQUE_SESSION_SECRET: ${BIANQUE_SESSION_SECRET:?run make replay, which generates it}
       BIANQUE_MCP_CLIENTS: ${BIANQUE_MCP_CLIENTS:?run make replay, which generates it}
+      BIANQUE_A2A_CLIENTS: ${BIANQUE_A2A_CLIENTS:?run make replay, which generates it}
+      # The A2A endpoint the Agent Card announces: nginx on the workstation.
+      BIANQUE_A2A_PUBLIC_URL: http://127.0.0.1:${BIANQUE_REPLAY_PORT:-8080}/a2a
       # The case whose evidence pack the tools read: for alerts, manual investigations
       # and MCP calls alike.
       BIANQUE_PACK_CASE: ${BIANQUE_PACK_CASE:-s1-a}

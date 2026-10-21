@@ -1,4 +1,5 @@
-# Pages and API share one origin: the session cookie never crosses origins.
+# Pages and API share one origin: the session cookie never crosses origins. The MCP and
+# A2A endpoints are served from it too.
 server {
     listen 80;
     root /usr/share/nginx/html;
@@ -26,6 +27,18 @@ server {
         proxy_set_header Connection "";
         proxy_buffering off;
         proxy_read_timeout 1h;
+    }
+
+    # A2A: JSON-RPC whose streaming answers are server-sent events, and the Agent Card.
+    location = /a2a {
+        proxy_pass ${BIANQUE_BACKEND_URL};
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_read_timeout 1h;
+    }
+
+    location /.well-known/ {
+        proxy_pass ${BIANQUE_BACKEND_URL};
     }
 
     location = /healthz {

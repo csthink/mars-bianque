@@ -33,7 +33,7 @@ kind load docker-image "$BACKEND_IMAGE" "$FRONTEND_IMAGE" --name "$KIND_CLUSTER"
 
 init_kind_env
 "$REPO_ROOT/demo/scripts/demo-login.sh" "$KIND_LOGIN_ENV" "$KIND_PASSWORD" "$KIND_MCP_TOKEN" \
-  docker run --rm -i "$BACKEND_IMAGE" bianque auth hash-password
+  "$KIND_A2A_TOKEN" docker run --rm -i "$BACKEND_IMAGE" bianque auth hash-password
 
 info "creating the Secrets and the runbook ConfigMap in namespace $BIANQUE_NAMESPACE"
 secret_dir="$(mktemp -d)"
@@ -50,6 +50,7 @@ trap 'rm -rf "$secret_dir"' EXIT
   printf '%s' "$BIANQUE_DEMO_USERS" >"$secret_dir/BIANQUE_DEMO_USERS"
   printf '%s' "$BIANQUE_SESSION_SECRET" >"$secret_dir/BIANQUE_SESSION_SECRET"
   printf '%s' "$BIANQUE_MCP_CLIENTS" >"$secret_dir/BIANQUE_MCP_CLIENTS"
+  printf '%s' "$BIANQUE_A2A_CLIENTS" >"$secret_dir/BIANQUE_A2A_CLIENTS"
   printf '%s' "$BIANQUE_ALERTMANAGER_TOKEN" >"$secret_dir/BIANQUE_ALERTMANAGER_TOKEN"
 )
 kube create namespace "$BIANQUE_NAMESPACE" --dry-run=client -o yaml | kube apply -f - >/dev/null
@@ -58,10 +59,13 @@ apply_secret "$BIANQUE_NAMESPACE" bianque-auth \
   "BIANQUE_DEMO_USERS=$secret_dir/BIANQUE_DEMO_USERS" \
   "BIANQUE_SESSION_SECRET=$secret_dir/BIANQUE_SESSION_SECRET" \
   "BIANQUE_MCP_CLIENTS=$secret_dir/BIANQUE_MCP_CLIENTS" \
+  "BIANQUE_A2A_CLIENTS=$secret_dir/BIANQUE_A2A_CLIENTS" \
   "BIANQUE_ALERTMANAGER_TOKEN=$secret_dir/BIANQUE_ALERTMANAGER_TOKEN"
 apply_secret "$BIANQUE_NAMESPACE" bianque-llm "api-key=$LLM_API_KEY_FILE"
 kube -n "$BIANQUE_NAMESPACE" create configmap bianque-runbooks \
   --from-file="$REPO_ROOT/knowledge/runbooks" --dry-run=client -o yaml | kube apply -f - >/dev/null
+
+url="http://127.0.0.1:$DEMO_PORT"
 
 # The image IDs go into the pod templates: a rebuilt image under the same tag rolls the
 # pods, and an unchanged one leaves them running.
@@ -78,10 +82,10 @@ helm upgrade --install bianque "$CHART" \
   --set-string "llm.baseUrl=$LLM_BASE_URL" \
   --set-string "llm.model=$LLM_MODEL" \
   --set-json "llm.extraBody=$LLM_EXTRA_BODY" \
+  --set-string "a2a.publicUrl=$url/a2a" \
   --wait --timeout 10m >/dev/null
 
 kube get pods -n "$BIANQUE_NAMESPACE"
-url="http://127.0.0.1:$DEMO_PORT"
 info "Bianque (demo profile, live model $LLM_MODEL): $url"
 info "demo login: demo / $(cat "$KIND_PASSWORD")"
 info "MCP for Claude Code, run from the repository root:"
@@ -89,4 +93,7 @@ info "MCP for Claude Code, run from the repository root:"
 # shellcheck disable=SC2016
 printf '  claude mcp add --transport http bianque %s/mcp --header "Authorization: Bearer $(cat %s)"\n' \
   "$url" "${KIND_MCP_TOKEN#"$REPO_ROOT"/}"
+info "A2A for an agent: the Agent Card is $url/.well-known/agent-card.json, the token is in" \
+  "${KIND_A2A_TOKEN#"$REPO_ROOT"/}; a task takes one firing Alertmanager alert of namespace" \
+  "$DEMO_NAMESPACE (README, A2A)"
 info "inject a fault with: make inject-s1 CASE=a"

@@ -1,5 +1,5 @@
-# The web pages, served by nginx, which proxies /api and /mcp to the backend on the same
-# origin.
+# The web pages, served by nginx, which proxies /api, /mcp, /a2a and the A2A Agent Card to
+# the backend on the same origin.
 apiVersion: v1
 kind: Service
 metadata:

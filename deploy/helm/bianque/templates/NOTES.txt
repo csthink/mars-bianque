@@ -1,5 +1,6 @@
 Bianque is installed in namespace {{ .Release.Namespace }}.
 
-Pages and the MCP endpoint are served by the Service bianque-frontend (port 80); the
-Alertmanager webhook is http://bianque-backend.{{ .Release.Namespace }}.svc:8000/api/alerts/alertmanager.
+Pages and the MCP and A2A endpoints are served by the Service bianque-frontend (port 80);
+the A2A Agent Card is at /.well-known/agent-card.json there. The Alertmanager webhook is
+http://bianque-backend.{{ .Release.Namespace }}.svc:8000/api/alerts/alertmanager.
 Bianque reads these namespaces only: {{ join ", " .Values.readNamespaces }}.

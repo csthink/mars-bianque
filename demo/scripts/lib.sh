@@ -38,6 +38,7 @@ KIND_ENV="$KIND_SECRETS_DIR/demo.env"
 KIND_LOGIN_ENV="$KIND_SECRETS_DIR/login.env"
 KIND_PASSWORD="$KIND_SECRETS_DIR/demo-password"
 KIND_MCP_TOKEN="$KIND_SECRETS_DIR/mcp-token"
+KIND_A2A_TOKEN="$KIND_SECRETS_DIR/a2a-token"
 
 BIANQUE_NAMESPACE="bianque"
 MONITORING_NAMESPACE="monitoring"
@@ -57,6 +58,18 @@ die() {
 
 info() {
   printf '==> %s\n' "$*"
+}
+
+# Write a new random bearer token to <file>.tmp, readable by the owner only, and print
+# its SHA-256: a client is configured with the hash, never with the token. The caller
+# renames the file into place once everything it writes is complete.
+new_token() {
+  local token token_sha256
+  token="$(openssl rand -hex 32)"
+  token_sha256="$(printf '%s' "$token" | openssl dgst -sha256 -r | cut -d' ' -f1)"
+  [[ "$token_sha256" =~ ^[0-9a-f]{64}$ ]] || die "the token hash could not be computed"
+  (umask 077 && printf '%s\n' "$token" >"$1.tmp")
+  printf '%s' "$token_sha256"
 }
 
 warn() {
