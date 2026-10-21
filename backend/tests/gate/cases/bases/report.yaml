@@ -9,6 +9,9 @@ context:
   # text unless preserved.
   preserved: [BianquePodRestarting, demo-s1, s1-app, s1-app-7d9f8c6b5-x2k4p, 3f9a1c2b7d4e5f60718293a4b5c6d7e8f9012345]
   failed_calls: []
+  # The skills of the repository; their names never stand where evidence or knowledge
+  # belongs.
+  skill_names: [diagnose-config-error, investigate-pod-restarts]
 output:
   schema_version: "1"
   summary: Pod s1-app-7d9f8c6b5-x2k4p in demo-s1 restarts because APP_MODE was set to an invalid value.

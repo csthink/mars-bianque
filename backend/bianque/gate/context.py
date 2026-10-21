@@ -37,6 +37,7 @@ class GateContext:
             redaction residue.
         failed_calls: The failed evidence tool calls of the investigation.
         engine: The redaction engine configured with the internal domain suffixes.
+        skill_names: The names of the skills; a skill is neither evidence nor knowledge.
     """
 
     evidence_ids: frozenset[str] = frozenset()
@@ -45,3 +46,4 @@ class GateContext:
     preserved: frozenset[str] = frozenset()
     failed_calls: tuple[FailedCall, ...] = ()
     engine: RedactionEngine = field(default_factory=RedactionEngine)
+    skill_names: frozenset[str] = frozenset()

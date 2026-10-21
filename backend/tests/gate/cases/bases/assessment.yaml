@@ -5,6 +5,9 @@ context:
   suggestion_ids: []
   preserved: [s1-app, s1-app-7d9f8c6b5-x2k4p]
   failed_calls: []
+  # The skills of the repository; their names never stand where evidence or knowledge
+  # belongs.
+  skill_names: [diagnose-config-error, investigate-pod-restarts]
 output:
   sufficient: false
   reason: Pod s1-app-7d9f8c6b5-x2k4p exits with code 2 on an invalid APP_MODE; the change that set it is not known yet.

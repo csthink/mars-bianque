@@ -48,3 +48,19 @@
     violations:
       - [redaction_residue, "steps[1].expected_evidence", "residue:high-entropy"]
       - [redaction_residue, "steps[1].expected_evidence", "residue:known-token"]
+
+- name: knowledge_ref_is_a_skill
+  set:
+    "knowledge_refs": [kn_0f1e2d3c4b5a, investigate-pod-restarts]
+  expect:
+    passed: false
+    violations:
+      - [knowledge_boundary, "knowledge_refs[1]", skill_cited]
+      - [knowledge_boundary, "knowledge_refs[1]", unknown_knowledge_id]
+
+- name: skill_named_in_the_rationale_passes
+  set:
+    "rationale": Following investigate-pod-restarts, read the termination state first.
+  expect:
+    passed: true
+    exercises: [knowledge_boundary]

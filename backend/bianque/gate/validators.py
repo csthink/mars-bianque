@@ -167,6 +167,18 @@ def _referenced_knowledge(
             yield join(field, index), item
 
 
+#: A citation list element: ``...citations[<n>]``.
+_CITATION_PATH = re.compile(r"(?:^|\.)citations\[\d+\]$")
+
+
+def _names_skill(value: str, names: frozenset[str]) -> bool:
+    """Whether ``value`` holds a skill name as a whole word (not inside a longer name)."""
+    return any(
+        re.search(rf"(?<![a-z0-9-]){re.escape(name)}(?![a-z0-9-])", value, re.IGNORECASE)
+        for name in names
+    )
+
+
 def knowledge_boundary(
     output_type: OutputType, data: Mapping[str, Any], context: GateContext
 ) -> list[Violation]:
@@ -174,6 +186,10 @@ def knowledge_boundary(
 
     Knowledge is not evidence: a ``kn_`` ID in a citation, a statement or any other field
     is a violation, and so is a referenced knowledge ID that the model was not given.
+
+    A skill is neither evidence nor knowledge: its name in a citation, in the references
+    or in a plan's ``knowledge_refs`` is a violation (``skill_cited``). Prose may name a
+    skill, for example a plan's rationale saying which skill it follows.
     """
     field = _KNOWLEDGE_FIELD.get(output_type)
     violations = [
@@ -186,6 +202,13 @@ def knowledge_boundary(
         for path, knowledge_id in _referenced_knowledge(output_type, data)
         if knowledge_id not in context.knowledge_ids
     ]
+    if context.skill_names:
+        violations += [
+            Violation("knowledge_boundary", path, "skill_cited")
+            for path, value in iter_strings(data)
+            if (top_key(path) == field or _CITATION_PATH.search(path))
+            and _names_skill(value, context.skill_names)
+        ]
     return violations
 
 

@@ -5,6 +5,9 @@ context:
   suggestion_ids: []
   preserved: [s1-app-7d9f8c6b5-x2k4p]
   failed_calls: []
+  # The skills of the repository; their names never stand where evidence or knowledge
+  # belongs.
+  skill_names: [diagnose-config-error, investigate-pod-restarts]
 output:
   findings:
     - statement: The previous container of s1-app-7d9f8c6b5-x2k4p logged invalid APP_MODE before exiting.

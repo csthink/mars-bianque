@@ -68,6 +68,7 @@ def _context(data: dict[str, Any]) -> GateContext:
         suggestion_ids=frozenset(data.get("suggestion_ids") or ()),
         preserved=frozenset(data.get("preserved") or ()),
         failed_calls=tuple(FailedCall(**call) for call in data.get("failed_calls") or ()),
+        skill_names=frozenset(data.get("skill_names") or ()),
     )
 
 

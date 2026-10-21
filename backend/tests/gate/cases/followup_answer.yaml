@@ -79,3 +79,21 @@
   expect:
     passed: false
     violations: [[redaction_residue, "segments[2].text", "residue:kv-secret"]]
+
+- name: segment_cites_a_skill
+  set:
+    "segments[0].citations": [ev_b2d5000002, diagnose-config-error]
+  expect:
+    passed: false
+    violations:
+      - [citation_integrity, "segments[0].citations[1]", unknown_id]
+      - [knowledge_boundary, "segments[0].citations[1]", skill_cited]
+
+- name: reference_is_a_skill
+  set:
+    "references": [investigate-pod-restarts]
+  expect:
+    passed: false
+    violations:
+      - [knowledge_boundary, "references[0]", skill_cited]
+      - [knowledge_boundary, "references[0]", unknown_knowledge_id]

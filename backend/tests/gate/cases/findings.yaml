@@ -58,3 +58,12 @@
     violations:
       - [redaction_residue, "findings[0].statement", "residue:high-entropy"]
       - [redaction_residue, "findings[0].statement", "residue:kv-secret"]
+
+- name: finding_cites_a_skill
+  set:
+    "findings[0].citations": [diagnose-config-error]
+  expect:
+    passed: false
+    violations:
+      - [citation_integrity, "findings[0].citations[0]", unknown_id]
+      - [knowledge_boundary, "findings[0].citations[0]", skill_cited]

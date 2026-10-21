@@ -299,3 +299,52 @@
     violations:
       - [redaction_residue, "claims[0].statement", "residue:high-entropy"]
       - [redaction_residue, summary, "residue:high-entropy"]
+
+# -- skill names (knowledge_boundary) -----------------------------------------------------
+- name: claim_cites_a_skill
+  set:
+    "claims[0].citations": [diagnose-config-error]
+  expect:
+    passed: false
+    violations:
+      - [citation_integrity, "claims[0].citations[0]", unknown_id]
+      - [knowledge_boundary, "claims[0].citations[0]", skill_cited]
+
+- name: root_cause_cites_a_skill_beside_evidence
+  set:
+    "root_cause.citations": [ev_d4c1000004, investigate-pod-restarts]
+  expect:
+    passed: false
+    violations:
+      - [citation_integrity, "root_cause.citations[1]", unknown_id]
+      - [knowledge_boundary, "root_cause.citations[1]", skill_cited]
+
+- name: reference_names_a_skill
+  set:
+    "references[0].title": Skill diagnose-config-error
+  expect:
+    passed: false
+    violations: [[knowledge_boundary, "references[0].title", skill_cited]]
+
+- name: reference_id_is_a_skill
+  set:
+    "references[0].knowledge_id": investigate-pod-restarts
+  expect:
+    passed: false
+    violations:
+      - [knowledge_boundary, "references[0].knowledge_id", skill_cited]
+      - [knowledge_boundary, "references[0].knowledge_id", unknown_knowledge_id]
+
+- name: skill_named_in_a_statement_passes
+  set:
+    "claims[1].statement": Following investigate-pod-restarts, the pod status was read first.
+  expect:
+    passed: true
+    exercises: [knowledge_boundary]
+
+- name: skill_name_inside_a_longer_word_passes
+  set:
+    "references[0].title": Not-diagnose-config-errors at start-up
+  expect:
+    passed: true
+    exercises: [knowledge_boundary]
