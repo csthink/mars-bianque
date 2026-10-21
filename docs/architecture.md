@@ -280,7 +280,7 @@ faults.yaml        可选：回放时注入的故障，例如某个工具超时
 | `knowledge_boundary` | `kn_` 编号只能出现在 `references`（计划里是 `knowledge_refs`），且必须是给过模型的知识编号；出现在引用或其他文本里即违规 | ✓ | ✓ | ✓ | | ✓ |
 | `unknown_discipline` | 根因没有引用时 `status` 必须为 `unknown`；`unknown` 时置信度必须为 `low` | ✓ | | | | |
 | `missing_evidence_consistency` | 本调查有失败的取证调用时 `missing_evidence` 不能为空；失败的调用属于 `failure_caps_confidence` 为真的证据域（`logs`）时，根因置信度不能为 `high` | ✓ | | | | |
-| `forbidden_actions` | 写类命令（`backend/bianque/gate/forbidden.py`：`kubectl`、`oc`、`helm`、`git` 的写动词）只能出现在报告里风险为 `change` 的修复建议的动作或命令中，其余位置一律违规 | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `forbidden_actions` | 写类命令（`backend/bianque/gate/forbidden.py`：`kubectl`、`oc`、`helm`、`git` 的写动词）只能出现在报告里风险为 `change` 的修复建议的动作或命令中，其余位置一律违规；紧跟在限定词之后、而且后面没有参数的命令（如 the git commit author、这次 kubectl apply 操作）是名词，不算命令；后面有选项、对象或其他参数（a kubectl rollout undo deployment/x），或者限定词前面是 run、执行一类动词时，仍算命令 | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `redaction_residue` | 用脱敏引擎的 `detect()` 扫描全部文本字段，保留标识符之外有命中即违规 | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 校验上下文（`GateContext`）包含本调查的证据编号、给过模型的知识编号、修复建议编号（追问）、保留标识符、失败的取证调用与脱敏引擎。保留标识符是本调查全部证据的标识符、告警的标识符，加注册表里的全部工具名：告警名与工具名常常超过高熵检测的长度阈值。
