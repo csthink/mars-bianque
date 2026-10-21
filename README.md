@@ -40,7 +40,7 @@ make demo LLM_API_KEY_FILE=<密钥文件>
 
 注入 S1-a 后约 1 分钟（实测 48 至 76 秒）Alertmanager 发出 `BianquePodRestarting` 告警，扁鹊随即开始调查，页面上能看到实时进度与流程图；实测一次 S1-a 调查约 70 秒、40 余次调用、约 10 万 token。告警规则只看 `demo-s1`；扁鹊的 ServiceAccount 只能在 `demo-s1` 里 get、list、watch Pod、Pod 日志、事件、Deployment 与 ReplicaSet，读不到其他命名空间。所有命令都指定 `kind-bianque-demo` 这个 kubectl context，建集群后会切回原来的当前 context，不会改动其他集群。
 
-内存：kind 节点容器（集群里的全部 Pod 都在其中）在 `make demo` 完成后实测约 1.9 GiB，一次调查之后约 2.1 GiB；其中扁鹊后端加载嵌入模型后约 320 MiB。给 Docker 分 4 GiB 以上即可。
+内存：kind 节点容器（集群里的全部 Pod 都在其中）在 `make demo` 完成后实测约 1.5 至 1.9 GiB，一次调查之后约 1.7 至 2.1 GiB；其中扁鹊后端加载嵌入模型后约 320 MiB。给 Docker 分 4 GiB 以上即可。
 
 ## 回放形态
 
