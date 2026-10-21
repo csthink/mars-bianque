@@ -46,6 +46,12 @@ source_modules = ["bianque_negative_fixture"]
 forbidden_modules = ["bianque.llm"]
 
 [[tool.importlinter.contracts]]
+name = "Negative: The skills package imports no other Bianque package"
+type = "forbidden"
+source_modules = ["bianque_negative_fixture"]
+forbidden_modules = ["bianque.agents", "bianque.api", "bianque.llm", "bianque.storage", "bianque.tools"]
+
+[[tool.importlinter.contracts]]
 name = "Negative: Only the MCP package imports the MCP SDK"
 type = "forbidden"
 source_modules = ["bianque_negative_fixture"]

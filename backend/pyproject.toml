@@ -38,6 +38,7 @@ dev = [
     "pytest-asyncio>=0.24",
     "ruff>=0.6",
     "types-pyyaml>=6",
+    "skills-ref>=0.1.1",
 ]
 [build-system]
 requires = ["hatchling"]
@@ -121,6 +122,12 @@ name = "The evidence gate does not import the model gateway"
 type = "forbidden"
 source_modules = ["bianque.gate"]
 forbidden_modules = ["bianque.llm"]
+
+[[tool.importlinter.contracts]]
+name = "The skills package imports no other Bianque package"
+type = "forbidden"
+source_modules = ["bianque.skills"]
+forbidden_modules = ["bianque.agents", "bianque.api", "bianque.llm", "bianque.storage", "bianque.tools"]
 
 [[tool.importlinter.contracts]]
 name = "Only the MCP package imports the MCP SDK"
