@@ -16,14 +16,22 @@
   "model": "deepseek-v4-pro",
   "prompts": {
     "assess.md": "4405ee3c40c78f015f66c6c6a8b567aa956acc19b67d3d672b6d70b007fef702",
-    "discipline.md": "b37c402d115cdf92ecc406a6cfc5c4c0a677bff3352264ab3eee506e3dce8fc9",
+    "discipline.md": "ebd6c1be2b81a83cd28820d01e744088c4ac0f0906d51ff4e376504c399b22d8",
     "evidence_agent.md": "b37780062dd2355977760a0b1e02d58a7ddbd6c84116382cb76d582426093211",
     "followup.md": "73fbac49e61c6ebebb20d8416775cf189d941501a670be6aa8ecf8d1162274b0",
-    "plan.md": "b611105af4cb672980a6aa03f26e28f0cb54e7c55a1ad311c71362b394ddd033",
-    "replan.md": "ad35b6bbe0f42874f0bf1507927d05eb489710b0478434c89142123070c0ad94",
-    "report.md": "70f6778eb1a01c45900755726f85488eb24e5fe3355ebbfa18414aef521a2242"
+    "plan.md": "346e4ce24a540ba091cb58735261a4fac3b9c93207bafd832062766c987c29c6",
+    "replan.md": "9ed07426f6c95cdc98959ba860a5c2fe0dceebd59bc887ae4743aa26a14a0b0a",
+    "report.md": "70f6778eb1a01c45900755726f85488eb24e5fe3355ebbfa18414aef521a2242",
+    "skills.md": "328368177aa8886346c9427117fca3efecb7b21516a07a9bb24b864502e0c030"
   },
-  "recorded_at": "2026-10-21T02:11:12Z",
-  "schema_version": 1,
+  "recorded_at": "2026-10-21T14:43:33Z",
+  "schema_version": 2,
+  "skills": {
+    "attribute-gitops-change/SKILL.md": "8b9d35ec4eed9bcd889b4959c3cb9d7ec60cc6d7398e8a198f790b199a7b5c02",
+    "diagnose-config-error/SKILL.md": "2503d5bc51aa9d3d78c98c04792820aef7c2ab540894414acab1d547ff2aa600",
+    "diagnose-oomkilled/SKILL.md": "fd11c02098b704c2f0c38a13fb8ab212eb15b9ed1d569450b4a751102043a059",
+    "diagnose-probe-failure/SKILL.md": "bb49f25098f5af437e6916b7337608ad7837154ab1f8b5636078b4617ab44bf4",
+    "investigate-pod-restarts/SKILL.md": "d95f293cec5bacb429d89079384f1b420a81926449f0007d511fe2ab52200daa"
+  },
   "tool_schemas_sha256": "8b6562024782e3d5998778411a05ea2d7e23fdf607039b0288ecce9ebbce5567"
 }
