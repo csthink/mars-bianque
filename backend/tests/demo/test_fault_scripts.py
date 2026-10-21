@@ -1,8 +1,9 @@
 """The S1 fault scripts change the manifest repository as intended, and only once.
 
-The scripts run against a temporary ``DEMO_DIR`` with ``KUBECTL=true``, so the
-manifest repository logic is exercised without a cluster; applying the manifests on
-kind is covered by the manual run recorded for the demo environment. ``HOME`` points
+The scripts run against a temporary ``DEMO_DIR`` with ``KUBECTL=true`` and a ``kind``
+that knows no cluster, so the manifest repository logic is exercised without a cluster;
+applying the manifests on kind is covered by the manual run recorded for the demo
+environment. ``HOME`` points
 at a git configuration that signs commits and sets another identity, to prove the
 machine's own git settings never reach the repository.
 """
@@ -26,12 +27,17 @@ class Demo:
         self.manifests = self.dir / "manifests"
         home = tmp_path / "home"
         home.mkdir()
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        kind = bin_dir / "kind"
+        kind.write_text("#!/bin/sh\nexit 0\n")
+        kind.chmod(0o755)
         (home / ".gitconfig").write_text(
             "[user]\n\tname = Someone Else\n\temail = someone@example.org\n"
             "[commit]\n\tgpgsign = true\n"
         )
         self.env = {
-            "PATH": os.environ.get("PATH", ""),
+            "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
             "HOME": str(home),
             "XDG_CONFIG_HOME": str(home / ".config"),
             "DEMO_DIR": str(self.dir),
@@ -51,6 +57,12 @@ class Demo:
 
     def restore(self) -> subprocess.CompletedProcess[str]:
         return self.run(str(SCRIPTS / "restore-s1.sh"))
+
+    def down(self) -> subprocess.CompletedProcess[str]:
+        return self.run(str(SCRIPTS / "down.sh"))
+
+    def deploy(self) -> subprocess.CompletedProcess[str]:
+        return self.run("-c", f'source "{SCRIPTS}/lib.sh"; deploy_s1_app')
 
     def git(self, *args: str) -> str:
         return subprocess.run(
@@ -204,3 +216,53 @@ def test_every_commit_carries_only_the_demo_identity_and_no_signature(demo: Demo
     assert identities == {DEMO_IDENTITY}
     assert demo.git("log", "--format=%G?").split() == ["N"] * demo.commit_count()
     assert "gpgsig" not in demo.git("cat-file", "-p", "HEAD")
+
+
+@pytest.mark.parametrize(("case", "reverts"), [("a", 1), ("e", 2)])
+def test_down_reverts_an_injected_fault(demo: Demo, case: str, reverts: int) -> None:
+    demo.inject(case)
+    injected = demo.commit_count()
+    result = demo.down()
+    assert f"S1-{case} reverted" in result.stdout
+    assert demo.at_baseline()
+    assert demo.commit_count() == injected + reverts
+    assert demo.fault_state() is None
+    demo.inject("b")
+    assert demo.fault_state() == "b"
+
+
+def test_down_without_a_fault_leaves_the_repository_alone(demo: Demo) -> None:
+    demo.down()
+    assert demo.commit_count() == 1
+    assert demo.fault_state() is None
+
+
+def test_down_keeps_a_fault_under_uncommitted_changes(demo: Demo) -> None:
+    demo.inject("a")
+    commits = demo.commit_count()
+    (demo.manifests / "README.md").write_text("edited\n")
+    result = demo.down()
+    assert "S1-a stays injected" in result.stderr
+    assert "uncommitted changes" in result.stderr
+    assert demo.commit_count() == commits
+    assert demo.fault_state() == "a"
+
+
+def test_down_clears_the_fault_of_a_deleted_manifest_repository(demo: Demo) -> None:
+    demo.inject("a")
+    subprocess.run(["rm", "-rf", str(demo.manifests)], check=True)
+    demo.down()
+    assert demo.fault_state() is None
+
+
+def test_deploy_waits_for_the_rollout_without_a_fault(demo: Demo) -> None:
+    result = demo.deploy()
+    assert result.stderr == ""
+
+
+def test_deploy_names_the_restore_command_for_an_injected_fault(demo: Demo) -> None:
+    demo.inject("c")
+    result = demo.deploy()
+    assert "S1-c is injected" in result.stderr
+    assert "make restore-s1" in result.stderr
+    assert demo.fault_state() == "c"

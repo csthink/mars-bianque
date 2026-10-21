@@ -154,14 +154,14 @@ make demo LLM_API_KEY_FILE=<密钥文件>
 | 命令 | 作用 |
 | --- | --- |
 | `make demo LLM_API_KEY_FILE=<密钥文件>` | 起演示环境（下一行），再构建并载入扁鹊的后端与前端镜像，创建 Secret 与运维手册 ConfigMap，安装或升级 chart，导入运维手册。重复执行只更新有变化的部分，数据库保留 |
-| `make demo-env` | 只起演示环境，不装扁鹊：创建 kind 集群 `bianque-demo`，在 `.demo/manifests` 初始化清单仓，构建并载入演示应用镜像，安装 Prometheus 与 Alertmanager，部署演示应用 |
+| `make demo-env` | 只起演示环境，不装扁鹊：创建 kind 集群 `bianque-demo`，在 `.demo/manifests` 初始化清单仓，构建并载入演示应用镜像，安装 Prometheus 与 Alertmanager，部署演示应用。有注入中的故障时不等演示应用就绪，打印恢复命令 |
 | `make inject-s1 CASE=a` | 注入故障：`a` 把 `APP_MODE` 改成非法值；`b` 把内存限制改小；`c` 把存活检查指向不存在的路径；`e` 先做 `a`，再提交一次无关的改动 |
 | `make restore-s1` | 回退注入的提交，等待演示应用恢复 |
 | `make demo-alerts` | 列出 Alertmanager 当前的告警 |
 | `make record-pack CASE=a` | 录制一个用例的证据包（`a`、`b`、`c`、`e`），只在 `make demo-env` 起的、没有扁鹊的环境里运行：重置 `demo-s1` 到干净的基线，注入故障，取 Alertmanager 发出的第一条告警，把命名空间与清单仓的快照写到 `eval/cases/s1-<用例>/pack/`，跑一遍真实集群上的集成测试，最后恢复 |
 | `make derive-packs` | 从 S1-a 的证据包派生 S1-d（回放时日志工具超时）与 S1-f（只留告警与 Pod） |
 | `make helm-rbac` | `helm lint`，并确认 chart 渲染出的 RBAC 只有 get、list、watch |
-| `make demo-down` | 删除 kind 集群与 `.demo/kind/`；`.demo/` 的其余内容保留，要从头开始就另外删除 `.demo/` |
+| `make demo-down` | 删除 kind 集群与 `.demo/kind/`，并在清单仓里回退注入的提交，下次 `make demo` 部署的是没有故障的演示应用；清单仓与它的历史等 `.demo/` 的其余内容保留，要从头开始就另外删除 `.demo/` |
 
 注入 S1-a 后约 1 分钟（2026-10-21 四次实测 50 至 85 秒）Alertmanager 发出 `BianquePodRestarting` 告警，扁鹊随即开始调查，页面上能看到实时进度与流程图；同样四次实测，一次 S1-a 调查用时 1 分 30 秒至 1 分 40 秒、34 至 41 次调用、8.5 万至 10 万 token。告警规则只看 `demo-s1`；扁鹊的 ServiceAccount 只能在 `demo-s1` 里 get、list、watch Pod、Pod 日志、事件、Deployment 与 ReplicaSet，读不到其他命名空间。所有命令都指定 `kind-bianque-demo` 这个 kubectl context，建集群后切回原来的当前 context，不改动其他集群。
 

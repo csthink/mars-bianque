@@ -59,6 +59,10 @@ info() {
   printf '==> %s\n' "$*"
 }
 
+warn() {
+  printf 'warning: %s\n' "$*" >&2
+}
+
 require() {
   local cmd
   for cmd in "$@"; do
@@ -140,6 +144,42 @@ apply_manifests() {
 
 wait_rollout() {
   kube -n "$DEMO_NAMESPACE" rollout status "deployment/$DEMO_DEPLOYMENT" --timeout="$ROLLOUT_TIMEOUT"
+}
+
+# Print the injected S1 case; nothing when no fault is injected.
+injected_fault() {
+  [ -f "$STATE_FILE" ] || return 0
+  local active base
+  read -r active base <"$STATE_FILE"
+  printf '%s\n' "$active"
+}
+
+# Revert every commit made in the manifest repository since the fault was injected, one
+# revert commit each with the demo identity. The fault state is left to the caller, and
+# so is the cluster.
+revert_fault() {
+  local active base
+  read -r active base <"$STATE_FILE"
+  # Compare trees rather than counting commits: when an earlier run reverted but then
+  # failed before clearing the state, reverting base..HEAD again would re-inject.
+  if ! demo_git diff --quiet "$base" HEAD; then
+    # git revert walks the range newest first, so later commits are undone first.
+    demo_git revert --no-edit "$base..HEAD" >/dev/null
+    info "reverted the S1-$active commits; HEAD is $(demo_git rev-parse --short HEAD)"
+  fi
+}
+
+# Apply the manifests and wait for the s1-app rollout. With a fault injected the
+# rollout is expected to fail, so say how to restore instead of waiting for a timeout.
+deploy_s1_app() {
+  local active
+  active="$(injected_fault)"
+  apply_manifests
+  if [ -n "$active" ]; then
+    warn "S1-$active is injected, so s1-app is expected to fail; restore it with: make restore-s1"
+    return
+  fi
+  wait_rollout
 }
 
 # Put demo-s1 back to a clean baseline: delete the namespace, recreate the manifest

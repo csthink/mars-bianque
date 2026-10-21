@@ -73,8 +73,7 @@ helm upgrade --install prometheus "$PROMETHEUS_CHART" \
   --wait --timeout 5m >/dev/null
 
 info "deploying s1-app from the manifest repository"
-apply_manifests
-wait_rollout
+deploy_s1_app
 
 kube get pods -n "$MONITORING_NAMESPACE"
 kube get pods -n "$DEMO_NAMESPACE"
