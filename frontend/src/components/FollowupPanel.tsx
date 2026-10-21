@@ -258,10 +258,10 @@ function StoredAnswer({ message, references }: { message: FollowupMessage; refer
         </p>
       ))}
       {message.references.length > 0 && (
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          参考资料（知识，不作为证据）：
+        <p className="flex flex-wrap items-baseline gap-x-1.5 text-xs text-slate-500 dark:text-slate-400">
+          <span>参考资料（知识，不作为证据）：</span>
           {message.references.map((id) => (
-            <span key={id} className="ml-1.5 inline-block">
+            <span key={id}>
               <span className="font-mono">{id}</span>
               {titles.has(id) && ` ${titles.get(id)}`}
             </span>

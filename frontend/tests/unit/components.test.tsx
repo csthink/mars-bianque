@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import { ReactFlowProvider, type NodeProps } from "@xyflow/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router";
@@ -7,7 +8,8 @@ import { CallTable } from "../../src/components/CallTable";
 import { CallTimeline } from "../../src/components/CallTimeline";
 import { Citation } from "../../src/components/Citation";
 import { CitableIds } from "../../src/components/citableContext";
-import { callList } from "./fixtures";
+import { StepCard, type StepNode } from "../../src/components/FlowGraph";
+import { callList, step } from "./fixtures";
 
 function withEvidence(ids: string[], node: ReactNode) {
   return (
@@ -67,5 +69,29 @@ describe("CallTimeline", () => {
     expect(detail()).toHaveTextContent("检索查询Bianque Pod Restarting");
     expect(detail()).toHaveTextContent("知识不是证据");
     expect(detail()).toHaveTextContent("kn_c73d8439117f");
+  });
+});
+
+describe("StepCard", () => {
+  const card = (version: number, overrides: Parameters<typeof step>[0]) =>
+    render(
+      <ReactFlowProvider>
+        <StepCard {...({ data: { step: step(overrides), version, onSelect: () => {} } } as unknown as NodeProps<StepNode>)} />
+      </ReactFlowProvider>,
+    );
+
+  it("keeps the number and the status of a supplementary step on one header line", () => {
+    card(2, { seq: 2, status: "running" });
+    const number = screen.getByText("v2 · 2");
+    expect(number).toHaveClass("whitespace-nowrap", "text-violet-700");
+    expect(number).toHaveAttribute("title", "第 2 轮（补充计划）");
+    expect(screen.getByText("进行中")).toHaveClass("whitespace-nowrap");
+  });
+
+  it("shows a step of the first plan in the plain colour", () => {
+    card(1, { seq: 1 });
+    const number = screen.getByText("v1 · 1");
+    expect(number).not.toHaveClass("text-violet-700");
+    expect(number).not.toHaveAttribute("title");
   });
 });

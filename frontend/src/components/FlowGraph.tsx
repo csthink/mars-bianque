@@ -38,11 +38,15 @@ const STATUS: Record<string, { label: string; node: string; dot: string }> = {
 
 const statusOf = (status: string) => STATUS[status] ?? { ...PENDING, label: status };
 
-type StepNode = Node<{ step: StepView; version: number; onSelect: (step: StepView, version: number) => void }, "step">;
+export type StepNode = Node<{ step: StepView; version: number; onSelect: (step: StepView, version: number) => void }, "step">;
 type LaneNode = Node<{ agent: string }, "lane">;
 type ColumnNode = Node<{ version: number; source: string }, "column">;
 
-function StepCard({ data: { step, version, onSelect } }: NodeProps<StepNode>) {
+/**
+ * One plan step. The header holds the step number and the status on one line; a step of a
+ * supplementary plan has its number in violet, under the column that names its round.
+ */
+export function StepCard({ data: { step, version, onSelect } }: NodeProps<StepNode>) {
   const status = statusOf(step.status);
   return (
     <div
@@ -58,11 +62,13 @@ function StepCard({ data: { step, version, onSelect } }: NodeProps<StepNode>) {
         className="nodrag nopan flex h-full w-full cursor-pointer flex-col justify-between rounded-md px-2.5 py-1.5 text-left focus-visible:outline-2 focus-visible:outline-blue-500"
       >
         <span className="flex items-center justify-between gap-2 text-[11px] leading-4">
-          <span className="font-mono text-slate-500 dark:text-slate-400">
+          <span
+            title={version > 1 ? `第 ${version} 轮（补充计划）` : undefined}
+            className={`whitespace-nowrap font-mono ${version > 1 ? "font-semibold text-violet-700 dark:text-violet-300" : "text-slate-500 dark:text-slate-400"}`}
+          >
             v{version} · {step.seq}
-            {version > 1 && <span className="ml-1.5 font-sans text-violet-700 dark:text-violet-300">第 {version} 轮</span>}
           </span>
-          <span className="flex items-center gap-1 font-medium text-slate-700 dark:text-slate-200">
+          <span className="flex items-center gap-1 whitespace-nowrap font-medium text-slate-700 dark:text-slate-200">
             <span aria-hidden className={`size-2 rounded-full ${status.dot}`} />
             {status.label}
           </span>
