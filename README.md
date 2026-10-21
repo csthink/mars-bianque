@@ -48,24 +48,26 @@ flowchart TB
 - [`docs/adr/0003-single-tool-registry-and-mcp.md`](docs/adr/0003-single-tool-registry-and-mcp.md)
 - [`docs/adr/0004-postgresql-only.md`](docs/adr/0004-postgresql-only.md)
 - [`docs/adr/0005-recorded-model-responses-for-eval.md`](docs/adr/0005-recorded-model-responses-for-eval.md)
+- [`docs/adr/0006-agent-skills-for-planning.md`](docs/adr/0006-agent-skills-for-planning.md)
 
 ## 能力
 
 每项能力的模块与测试对照见 [`docs/capabilities.md`](docs/capabilities.md)。
 
 - **告警接入**：Alertmanager webhook（`backend/bianque/api/alerts.py`）为每条触发中的告警建立调查，同一指纹的调查未结束时不重复建立；告警原文是调查的第一条证据（`backend/bianque/api/alertmanager.py`）。登录后也可以手动触发调查。
-- **规划与执行**：调查 Agent 制定计划、按轮分派、判断证据是否充分、补充计划、生成报告（`backend/bianque/agents/graph.py`、`nodes.py`）。判断由模型给出，再由确定性规则复核；补充计划轮数、子 Agent 步数、报告重试次数与 token 预算都可配置。
+- **规划与执行**：调查 Agent 制定计划（之前可以先加载 skill）、按轮分派、判断证据是否充分、补充计划、生成报告（`backend/bianque/agents/graph.py`、`nodes.py`）。判断由模型给出，再由确定性规则复核；补充计划轮数、子 Agent 步数、报告重试次数与 token 预算都可配置。
 - **多源只读取证**：三个证据域共 8 个取证工具，读 Pod、事件、Deployment、容器日志、Deployment 修订历史与清单仓提交（`backend/bianque/tools/`）。每个工具都有读真实集群与清单仓的后端和读证据包的回放后端，回放后端用证据包里的快照回答同样的查询。
 - **多 Agent 并行取证**：同一轮的取证子 Agent 在一个 LangGraph superstep 里并行执行，每个步骤是一段 ReAct 对话；一个子 Agent 失败不会使调查失败（`backend/bianque/agents/subagent.py`）。证据域只在 `backend/bianque/agents/domains.py` 声明一次。
 - **证据门**：7 个校验器（schema、引用完整性、知识边界、未知纪律、缺失证据一致性、禁止动作、脱敏残留）按输出类型组成校验清单（`backend/bianque/gate/checklists.py`）。被拒的输出带校验器名称重试，报告重试用尽后发布降级报告（`backend/bianque/gate/degrade.py`）。
 - **追问与记忆**：追问只用该调查已有的证据、报告与修复建议，回答通过证据门之后才分段推送（`backend/bianque/agents/followup.py`）。会话记忆就是数据库里的问答轮次，后端重启后照常回答。
 - **知识检索（RAG）**：运维手册按标题分块，向量检索（pgvector）与全文检索用 RRF 融合（`backend/bianque/knowledge/search.py`）。知识只作参考资料，证据门禁止把知识编号当证据引用。
+- **Agent Skills**：扁鹊怎么查一类故障写成 [Agent Skills](https://agentskills.io/specification) 格式的 skill（`.agents/skills/`，见下文「Skill」一节）。生成计划时提示词只列目录，模型用 `activate_skill` 按需加载正文，同一次调查不重复注入，激活次数有上限；skill 不是证据也不是知识，证据门拒绝引用与参考资料里的 skill 名称。每次激活写调用记录，每版计划记录加载过的 skill（`backend/bianque/skills/`、`backend/bianque/agents/skill_loop.py`）。
 - **MCP 服务**：把注册表里的只读工具经 MCP（Streamable HTTP）提供给 Claude Code 等客户端，令牌绑定允许的工具与命名空间（`backend/bianque/mcp/`）。
 - **人工确认**：登录用户对修复建议确认或驳回，每条建议只能决定一次；决定表由数据库触发器保证只追加，扁鹊不执行任何命令。
 - **脱敏**：送进模型与展示在界面上的文本都经过脱敏引擎（`backend/bianque/redaction/`）；模型网关在类型检查、运行时与发送前三处拒绝未脱敏的输入。
 - **中断与重启**：调查图的状态以 LangGraph 检查点存进 PostgreSQL；后端重启时把未结束的调查标为中断，不续跑。
 - **前端**：调查列表、调查详情（流程图、计划与判断、调用时间线、证据、报告与引用跳转、修复建议、追问、调用记录）与登录页（`frontend/src/`）。
-- **可观测性**：每次模型、工具与知识调用写一条调用记录（Agent、耗时、重试、token、证据门结果）；进度事件持久化后经 SSE 推送，断线后可以续读。
+- **可观测性**：每次模型、工具、知识与 skill 调用写一条调用记录（Agent、耗时、重试、token、证据门结果）；进度事件持久化后经 SSE 推送，断线后可以续读。
 - **评测**：6 个用例回放录制的真实模型响应，计算根因准确率、引用完整性、必需证据覆盖、追问结果、证据门首次通过率与检索指标，并检查硬性门槛（`backend/bianque/evals/`）。
 - **工程化**：静态检查 import 边界、环境变量前缀与 Kubernetes 只读调用；Helm chart 渲染出的 RBAC 只有 get、list、watch；CI 有 6 个任务。
 
@@ -200,6 +202,25 @@ claude mcp add --transport http bianque http://127.0.0.1:8080/mcp \
 
 每个客户端持有一个 Bearer 令牌（`BIANQUE_MCP_CLIENTS` 只配置令牌的 SHA-256），令牌绑定允许的工具与命名空间。没有令牌或令牌不对返回 401；令牌不允许的工具不出现在工具列表里，直接调用返回错误；被拒与失败的调用都写调用记录，记录调用方。MCP 调用不属于任何调查，不产生证据。回放形态下工具读证据包（默认用例 S1-a，`BIANQUE_PACK_CASE` 可改），`knowledge_search` 的自由查询只走全文检索。演示形态下地址是 `http://127.0.0.1:8180/mcp`，令牌在 `.demo/kind/mcp-token`，工具读 kind 里的真实集群与清单仓。重新启动后令牌更换，要重新加一次。
 
+### Skill
+
+`.agents/skills/` 下有 5 个 skill，按 S1 告警的根因类别与取证顺序拆分：
+
+| skill | 用途 |
+| --- | --- |
+| `investigate-pod-restarts` | Pod 反复重启的告警先读什么（终止状态、事件、Deployment、前后两次日志），再按证据分流到下面的 skill |
+| `diagnose-config-error` | 容器启动即退出、日志指向某个配置值 |
+| `diagnose-oomkilled` | 上次终止原因是 OOMKilled |
+| `diagnose-probe-failure` | 存活检查失败导致重启 |
+| `attribute-gitops-change` | 用修订历史与清单仓提交找出引入故障值的那次变更 |
+
+skill 写扁鹊怎么查：按证据域列出要用的工具、期望的证据、证据对应的根因类别；Kubernetes 的背景知识与处置在运维手册里（`knowledge/runbooks/`），skill 只写手册的主题名。正文里的工具名就是注册表与 MCP 的工具名。后端启动时严格校验格式（名称、描述、字段、正文少于 500 行且不超过 20000 个字符、不带脚本），不合规即启动失败；`backend/tests/skills/` 另用 `skills-ref validate` 校验。
+
+同一份 skill 也给接入扁鹊 MCP 的客户端用：
+
+- **Claude Code**：Claude Code 读 `.claude/skills/`，仓库里的 `.claude/skills` 是指向 `../.agents/skills` 的相对符号链接，在仓库根目录启动 Claude Code 即可看到这 5 个 skill（已用 Claude Code 2.1.306 实测）。按上一节接入 MCP 后，Claude Code 里扁鹊的工具名带服务名前缀，例如 `k8s_get_pod_status` 显示为 `mcp__bianque__k8s_get_pod_status`；skill 正文写的是不带前缀的名字。Windows 上没有开启符号链接支持（`git config core.symlinks true` 并具备创建符号链接的权限）的克隆里，`.claude/skills` 是一个内容为路径的普通文件，Claude Code 读不到 skill。
+- **Codex**：依据 Codex 的文档，它扫描项目里的 `.agents/skills/`；这一点没有实测。
+
 ### 本地开发
 
 - 后端：`cd backend && uv sync --locked`，用 `uvicorn --factory bianque.api.app:create_app` 启动。测试使用 `BIANQUE_TEST_DATABASE_URL` 指定的 PostgreSQL；未设置时用 Docker 临时起一个 `pgvector/pgvector:pg16` 容器。
@@ -208,36 +229,54 @@ claude mcp add --transport http bianque http://127.0.0.1:8080/mcp \
 
 ## 评测
 
-以下数字全部来自 [`eval/reports/2026-10-21-deepseek-v4-pro/report.md`](eval/reports/2026-10-21-deepseek-v4-pro/report.md)：模型 `deepseek-v4-pro`，2026-10-21 录制。这份报告是 `make record` 中真实模型跑完 6 个用例的结果，运行中每个模型响应都录制进了 `eval/recordings/`；`make eval` 回放这批录制响应，复现同一次运行。报告中 5 个硬性门槛全部通过。
+以下数字全部来自 [`eval/reports/2026-10-21-deepseek-v4-pro-2/report.md`](eval/reports/2026-10-21-deepseek-v4-pro-2/report.md)：模型 `deepseek-v4-pro`，2026-10-21 录制，计划阶段可以加载 skill。这份报告是 `make record` 中真实模型跑完 6 个用例的结果，运行中每个模型响应都录制进了 `eval/recordings/`；`make eval` 回放这批录制响应，复现同一次运行。报告中 5 个硬性门槛全部通过。
 
 | 指标 | 结果 |
 | --- | --- |
 | 根因正确 | 100.00%（6/6） |
-| 引用完整性（首份报告） | 100.00%（112/112） |
+| 引用完整性（首份报告） | 100.00%（106/106） |
 | 必需证据覆盖 | 100.00%（17/17） |
-| 证据门首次通过：计划 | 100.00%（14/14） |
+| 证据门首次通过：计划 | 100.00%（12/12） |
 | 证据门首次通过：发现 | 92.31%（48/52） |
-| 证据门首次通过：判断 | 100.00%（14/14） |
-| 证据门首次通过：报告 | 100.00%（6/6） |
-| 证据门首次通过：追问回答 | 94.74%（18/19） |
-| 追问回答中引用证据的段落 | 100.00%（63/63） |
+| 证据门首次通过：判断 | 100.00%（12/12） |
+| 证据门首次通过：报告 | 83.33%（5/6） |
+| 证据门首次通过：追问回答 | 89.47%（17/19） |
+| 追问回答中引用证据的段落 | 100.00%（62/62） |
 | 追问回答引用了期望的证据 | 100.00%（10/10） |
-| 证据不足的追问答为未知 | 100.00%（7/7） |
+| 证据不足的追问答为未知 | 85.71%（6/7） |
 | 检索 hit@1 / hit@3 / hit@5 | 0.7917 / 0.8333 / 0.9167 |
 | 检索 MRR | 0.8264 |
-| 模型调用（含追问） | 201 次 |
-| 调查消耗的 token | 630926 |
+| 模型调用（含追问） | 205 次 |
+| 调查消耗的 token | 618123 |
+| skill 激活 | 14 次 |
 
 6 个用例是配置错误（S1-a）、内存限制过小（S1-b）、存活检查指向错误路径（S1-c）、回放时日志工具超时的 S1-a（S1-d）、故障提交不是最近一次提交（S1-e）、只有告警与 Pod 可用（S1-f，期望根因为未知）。检索指标按 `eval/retrieval/queries.yaml` 的 24 条标注查询计算，取前 5 条结果。
 
-报告里 S1-d 与 S1-f 的 token 超过了 120000 的调查预算。预算在每轮取证后检查一次（`backend/bianque/agents/nodes.py` 的 `assess`），超出后不再补充计划，直接生成报告，所以最后一轮与生成报告的消耗不受预算限制。这两个用例证据不全（日志工具超时；只有告警与 Pod），调查用了更多轮次：模型调用分别是 43 与 50 次，其余用例是 25 至 29 次。
+报告里 S1-f 的 token（140410）超过了 120000 的调查预算。预算在每轮取证后检查一次（`backend/bianque/agents/nodes.py` 的 `assess`），超出后不再补充计划，直接生成报告，所以最后一轮与生成报告的消耗不受预算限制。S1-f 只有告警与 Pod 可用，调查用满了补充计划轮数：模型调用 50 次，其余用例是 29 至 34 次。
+
+### 加载 skill 前后的对比
+
+下表把上面的报告与加载 skill 之前的 [`eval/reports/2026-10-21-deepseek-v4-pro/report.md`](eval/reports/2026-10-21-deepseek-v4-pro/report.md)（同一模型，2026-10-21 录制，计划阶段只有运维手册检索）逐用例对比，数字取自 [`eval/reports/2026-10-21-deepseek-v4-pro-2/comparison.md`](eval/reports/2026-10-21-deepseek-v4-pro-2/comparison.md)（`bianque eval diff` 生成）。两边各是一次真实运行，只说明这两次运行，不说明模型每次的表现。token 是调查的消耗；模型调用含追问。
+
+| 用例 | 根因 | 必需证据 | token（之前 → 之后） | 模型调用（之前 → 之后） | 加载的 skill |
+| --- | --- | --- | --- | --- | --- |
+| S1-a | 判对 → 判对 | 4/4 → 4/4 | 82922 → 85923 | 27 → 29 | `investigate-pod-restarts`、`attribute-gitops-change` |
+| S1-b | 判对 → 判对 | 3/3 → 3/3 | 77132 → 99790 | 25 → 34 | `investigate-pod-restarts`、`attribute-gitops-change` |
+| S1-c | 判对 → 判对 | 3/3 → 3/3 | 99177 → 92736 | 29 → 29 | `investigate-pod-restarts`、`attribute-gitops-change` |
+| S1-d | 判对 → 判对 | 3/3 → 3/3 | 147420 → 110419 | 43 → 34 | `investigate-pod-restarts`、`diagnose-config-error`、`attribute-gitops-change` |
+| S1-e | 判对 → 判对 | 4/4 → 4/4 | 86835 → 88845 | 27 → 29 | `investigate-pod-restarts`、`attribute-gitops-change` |
+| S1-f | 判对（未知）→ 判对（未知） | - | 137440 → 140410 | 50 → 50 | `investigate-pod-restarts`、`diagnose-config-error`、`attribute-gitops-change` |
+| 合计 | 6/6 → 6/6 | 17/17 → 17/17 | 630926 → 618123 | 201 → 205 | 14 次激活 |
+
+首份报告的引用完整率两次都是 100%（112/112 与 106/106）。这一次模型在每个用例的第一版计划加载了 `investigate-pod-restarts`，在补充计划加载了 `attribute-gitops-change`；S1-b 与 S1-c 没有加载与根因对应的 `diagnose-oomkilled`、`diagnose-probe-failure`。不在验收范围里但变差的几项：报告首次通过证据门 6/6 → 5/6（S1-d 重试一次后通过），追问回答首次通过 18/19 → 17/19，证据不足的追问答为未知 7/7 → 6/7。
 
 硬性门槛是确定性检查：每个调查都以报告结束；每份最终报告与追问回答用运行时的同一个 `validate` 重新通过证据门，最终报告还要符合导出的 JSON Schema；注册表里没有写工具；没有来自 Agent 的证据；没有把知识编号当证据引用。`make eval` 另把网络隔离作为一项硬性门槛。
 
 | 命令 | 作用 |
 | --- | --- |
 | `make eval` | 离线评测：数据库与评测进程在一个没有外网路由的内部 Docker 网络里，回放 `eval/recordings/` 的录制响应，嵌入向量取自 `eval/embeddings/` 的固定数据，并确认公网地址不可达。报告写到 `.demo/eval/report.md` 与 `report.json`，硬性门槛不通过时命令失败 |
-| `make record LLM_API_KEY_FILE=<密钥文件>` | 重新录制：在临时数据库里用真实模型跑全部用例并录制每个响应，再在另一个临时数据库里回放比对，一致后才替换 `eval/recordings/`，并把这次的报告保存到 `eval/reports/<日期>-<模型>/` |
+| `make record LLM_API_KEY_FILE=<密钥文件>` | 重新录制：在临时数据库里用真实模型跑全部用例并录制每个响应，真实运行一结束就把报告保存到 `eval/reports/<日期>-<模型>/`（同一天再录依次加 `-2`、`-3`，不覆盖）；再在另一个临时数据库里回放比对，一致后才替换 `eval/recordings/` |
+| `bianque eval diff <基线 report.json> <新 report.json>` | 把两份评测报告逐用例并排：根因、首份报告的引用完整率、必需证据、token、模型调用与加载的 skill（在 `backend/` 下用 `uv run` 执行） |
 
 ## 提示词设计
 
@@ -252,16 +291,17 @@ claude mcp add --transport http bianque http://127.0.0.1:8080/mcp \
 | `report.md` | 调查 Agent 生成报告 |
 | `followup.md` | 回答追问 |
 | `discipline.md` | 证据纪律，由以上各文件通过 `$discipline` 引入 |
+| `skills.md` | skill 的说明与目录，有 skill 时由 `plan.md`、`replan.md` 通过 `$skills` 引入 |
 
 写法：
 
-- 每个文件只写角色、证据纪律与本步任务。证据纪律有四条：事实陈述必须引用证据编号；证据不足以确定根因时写未知；运维手册是知识，不是证据，只能列为参考资料；会改动系统的命令只能出现在「变更」级修复建议里，交给人确认。
+- 每个文件只写角色、证据纪律与本步任务。证据纪律有五条：事实陈述必须引用证据编号；证据不足以确定根因时写未知；运维手册是知识，不是证据，只能列为参考资料；skill 只说明怎么查，既不是证据也不是知识，不能引用，也不能列为参考资料；会改动系统的命令只能出现在「变更」级修复建议里，交给人确认。
 - 输出格式不在提示词里描述：输出 schema 声明为函数，以 function calling 强制模型调用，再用 pydantic 校验参数。
 - 工具说明来自注册表生成的工具 schema，不在提示词里重复。
 - 占位符用 Python `string.Template` 的 `$name`（`backend/bianque/agents/prompting.py` 的 `prompt_text`），不引入模板引擎。
 - 数据放在一条用户消息里，由固定标题的小节组成；证据、发现与失败调用排序后拼接，不含时间与调查编号。证据门拒绝后的重试只附校验器名称、JSON 路径与违规代码，不含被拒输出的文本。
 
-与评测的关系：录制响应按请求键查找，请求键是 Agent 名称、规范化后的消息、工具 schema、采样参数与模型名称的 SHA-256（`backend/bianque/llm/request.py`）。提示词文本是请求键的一部分，所以改了提示词，旧的录制响应就不再命中，要用 `make record` 重新录制并重跑评测。录制清单与评测报告都记录每个提示词文件的 SHA-256（`backend/bianque/evals/run.py` 的 `prompt_hashes`），评测数字因此对应到确定的一版提示词。
+与评测的关系：录制响应按请求键查找，请求键是 Agent 名称、规范化后的消息、工具 schema、采样参数与模型名称的 SHA-256（`backend/bianque/llm/request.py`）。提示词文本是请求键的一部分，所以改了提示词，旧的录制响应就不再命中，要用 `make record` 重新录制并重跑评测。录制清单与评测报告都记录每个提示词文件的 SHA-256（`backend/bianque/agents/prompting.py` 的 `prompt_hashes`），录制清单还记录每个 `SKILL.md` 的 SHA-256；`recorded` 模式启动时逐个比对，提示词或 skill 改了而没有重新录制就启动失败并指出文件。评测数字因此对应到确定的一版提示词与 skill。
 
 ## 换一个领域要改哪几处
 
@@ -275,6 +315,7 @@ claude mcp add --transport http bianque http://127.0.0.1:8080/mcp \
 | 禁止动作的命令模式 | `backend/bianque/gate/forbidden.py` | 新领域的写类命令与动词 |
 | 降级报告的规则提示 | `backend/bianque/gate/degrade.py` | 从证据的结构化字段推出根因类别提示的规则 |
 | 提示词 | `backend/bianque/agents/prompts/` | 角色与领域说明 |
+| skill | `.agents/skills/` | 新领域各类故障的排查方法；正文里的工具名随取证工具一起改 |
 | 告警接入 | `backend/bianque/api/alertmanager.py` | 新告警来源的字段映射：告警证据文本与需要保留的标识符 |
 | `scripted` 规则 | `backend/bianque/agents/scripted_rules.py` | 测试用的角色规则，读的是 Kubernetes 与 Git 证据 |
 | 界面的证据域列表 | `frontend/src/lib/flow.ts`、`frontend/src/lib/timeline.ts`、`frontend/src/lib/agents.ts` | 流程图的泳道与调用时间线的行 |
@@ -302,6 +343,7 @@ deploy/      Docker Compose 文件（回放、live、评测）与 Helm chart
 demo/        演示形态：kind 集群配置、监控与告警规则、演示应用 s1-app、脚本
 eval/        评测用例与证据包、录制响应、嵌入向量固定数据、检索查询、评测报告
 knowledge/   运维手册（Markdown）
+.agents/     skill（.agents/skills/）；.claude/skills 是指向它的符号链接
 tools/       公开内容扫描与 Git hook 安装脚本
 docs/        架构说明、架构决策、能力对照与 README 的截图
 ```

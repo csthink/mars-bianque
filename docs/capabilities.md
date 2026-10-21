@@ -4,7 +4,7 @@
 
 ## 规划与执行
 
-调查 Agent 是一张 LangGraph 状态图：告警进来后检索运维手册、制定计划、按证据域分派步骤、判断证据是否充分、不充分时补充计划，最后生成报告并通过证据门发布。判断由模型给出，再由确定性规则复核：没有 Pod 状态证据，或假设的根因类别（如 `config_error`、`resource_limit`）需要 `change` 域证据而还没有时，一律判为不充分。计划被证据门拒绝且重试仍不通过时退回不经模型的默认计划。补充计划轮数、子 Agent 每步的模型轮数、报告重试次数与 token 预算都可配置；后端重启时未结束的调查标为中断，不从检查点续跑。
+调查 Agent 是一张 LangGraph 状态图：告警进来后检索运维手册、制定计划（之前可以先加载 skill，见下文「Skill」一节）、按证据域分派步骤、判断证据是否充分、不充分时补充计划，最后生成报告并通过证据门发布。判断由模型给出，再由确定性规则复核：没有 Pod 状态证据，或假设的根因类别（如 `config_error`、`resource_limit`）需要 `change` 域证据而还没有时，一律判为不充分。计划被证据门拒绝且重试仍不通过时退回不经模型的默认计划。补充计划轮数、子 Agent 每步的模型轮数、报告重试次数与 token 预算都可配置；后端重启时未结束的调查标为中断，不从检查点续跑。
 
 | 模块 | 作用 |
 | --- | --- |
@@ -135,6 +135,27 @@
 | `backend/tests/knowledge/test_knowledge_eval.py` | 检索评测的指标与命令 |
 | `backend/tests/agents/test_investigation_knowledge.py` | 调查中的知识检索与引用边界 |
 
+## Skill
+
+扁鹊怎么查一类故障写成 [Agent Skills](https://agentskills.io/specification) 格式的 skill，放在仓库根目录的 `.agents/skills/`（`investigate-pod-restarts`、`diagnose-config-error`、`diagnose-oomkilled`、`diagnose-probe-failure`、`attribute-gitops-change`），`.claude/skills` 是指向它的相对符号链接。skill 按证据域列出要用的工具、期望的证据与证据对应的根因类别，需要背景时写运维手册的主题名。启动时严格校验格式，不合规即启动失败。生成计划与补充计划时，系统提示词只列目录；模型调用 `activate_skill` 加载正文，名称限定为目录名称的枚举，同一次调查不重复注入，每次计划生成的激活次数有上限，到上限后只能提交计划；没有 skill 时不提供激活函数也不列目录。skill 不是证据也不是知识：证据门拒绝引用与参考资料里的 skill 名称。每次激活写一条调用记录，每版计划记录生成时加载过的 skill；`recorded` 模式启动时把每个 `SKILL.md` 的 SHA-256 与录制清单比对。取证子 Agent、判断、报告与追问不加载 skill。
+
+| 模块 | 作用 |
+| --- | --- |
+| `.agents/skills/` | skill 文件 |
+| `backend/bianque/skills/loader.py` | 读入目录并严格校验 |
+| `backend/bianque/skills/activation.py` | 目录的渲染、`activate_skill` 的参数 schema 与结果 |
+| `backend/bianque/agents/skill_loop.py` | 计划前的激活循环与调用记录 |
+| `backend/bianque/agents/startup.py` | 启动时加载 skill，`recorded` 模式下比对提示词与 skill 的哈希 |
+| `backend/bianque/agents/prompts/skills.md` | 计划提示词里的 skill 说明与目录 |
+
+| 测试 | 覆盖 |
+| --- | --- |
+| `backend/tests/skills/test_skill_loader.py` | 格式的每条规则各一个反例；目录排序；激活的首次加载、已加载与被拒 |
+| `backend/tests/skills/test_skill_files.py` | 仓库里的 skill 通过严格校验与 `skills-ref validate`；符号链接；没有脚本；正文里形如工具名的词都在注册表里 |
+| `backend/tests/agents/test_plan_skills.py` | 提示词只有目录没有正文、枚举、已加载、上限、空目录、补充计划的 Skills 一节、改 skill 后请求键改变 |
+| `backend/tests/gate/cases/` | `skill_cited` 的样例 |
+| `backend/tests/test_llm_recorded_mode.py` | 提示词或 skill 与录制清单不一致时启动失败并指出文件 |
+
 ## MCP 服务
 
 扁鹊在 `/mcp` 以 Streamable HTTP 提供 MCP 服务。工具说明来自同一个注册表，调用经过同一个工具执行器，超时、重试、脱敏与调用记录都与取证子 Agent 相同；另有 `knowledge_search`、`investigation_list`、`investigation_get_report` 三个辅助工具，结果不是证据。每个客户端的 Bearer 令牌绑定允许的工具与命名空间，配置里只存令牌的 SHA-256；被拒与失败的调用都写调用记录。
@@ -204,7 +225,7 @@
 
 ## 可观测性
 
-每次模型、工具与知识调用写一条调用记录：所属 Agent、名称、状态、错误、重试次数、开始时间、耗时、输入与输出 token、证据门结果；模型调用的 token 同时累加到调查的总量，用于预算检查。调查的进度事件写进数据库，经 SSE 推送，客户端带 `Last-Event-ID` 重连时从断点续读。事件载荷只含编号、状态、计数与校验器名称，不含模型文本。
+每次模型、工具、知识与 skill 调用写一条调用记录：所属 Agent、名称、状态、错误、重试次数、开始时间、耗时、输入与输出 token、证据门结果；模型调用的 token 同时累加到调查的总量，用于预算检查。调查的进度事件写进数据库，经 SSE 推送，客户端带 `Last-Event-ID` 重连时从断点续读。事件载荷只含编号、状态、计数与校验器名称，不含模型文本。
 
 | 模块 | 作用 |
 | --- | --- |
@@ -214,6 +235,7 @@
 | `backend/bianque/api/investigations.py` | 调用记录与进度事件流接口 |
 | `frontend/src/components/CallTable.tsx` | 调用记录表与合计 |
 | `frontend/src/components/CallTimeline.tsx` | 按 Agent 分组的调用时间线 |
+| `frontend/src/components/PlanPanel.tsx` | 计划各版本、加载过的 skill 与每轮判断 |
 
 | 测试 | 覆盖 |
 | --- | --- |
@@ -224,7 +246,7 @@
 
 ## 评测
 
-评测对每个用例回放证据包里的告警、按顺序提问用例的追问，计算根因准确率、引用完整性、必需证据覆盖、追问结果、证据门首次通过率与检索指标，并检查确定性的硬性门槛。模型响应来自用真实模型录制的录制响应，按请求键查找，查不到就报错；嵌入向量取自固定数据。`make eval` 在没有外网路由的 Docker 网络里运行；`make record` 用真实模型重新录制，回放比对一致后才替换录制响应。
+评测对每个用例回放证据包里的告警、按顺序提问用例的追问，计算根因准确率、引用完整性、必需证据覆盖、追问结果、证据门首次通过率与检索指标，并检查确定性的硬性门槛。模型响应来自用真实模型录制的录制响应，按请求键查找，查不到就报错；嵌入向量取自固定数据。`make eval` 在没有外网路由的 Docker 网络里运行；`make record` 用真实模型重新录制，每次运行的报告都保留，回放比对一致后才替换录制响应。报告逐用例列出加载过的 skill，`bianque eval diff` 把两份报告逐用例并排对比。
 
 | 模块 | 作用 |
 | --- | --- |
@@ -249,7 +271,7 @@
 
 ## 工程化
 
-模型网关是访问模型服务的唯一出口，支持 `recorded`、`scripted`、`live` 三种模式，切换只改配置；它只接受脱敏后的输入，并在类型检查、运行时与发送前三处把关。import-linter 约束模块边界（例如只有 `bianque.api` 包导入 FastAPI，证据门不依赖模型网关），环境变量统一以 `BIANQUE_` 为前缀且只在设置模块读取，这些静态检查都有反例测试证明它们会报错。部署有 Docker Compose（回放、live 与评测）与 Helm chart（演示形态），CI 有 6 个任务。
+模型网关是访问模型服务的唯一出口，支持 `recorded`、`scripted`、`live` 三种模式，切换只改配置；它只接受脱敏后的输入，并在类型检查、运行时与发送前三处把关。import-linter 约束模块边界（例如只有 `bianque.api` 包导入 FastAPI，证据门不依赖模型网关，skill 包不导入扁鹊的其他包），环境变量统一以 `BIANQUE_` 为前缀且只在设置模块读取，这些静态检查都有反例测试证明它们会报错。部署有 Docker Compose（回放、live 与评测）与 Helm chart（演示形态），CI 有 6 个任务。
 
 | 模块 | 作用 |
 | --- | --- |

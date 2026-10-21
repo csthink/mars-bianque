@@ -1,6 +1,6 @@
 # 扁鹊架构
 
-Bianque is an alert-driven root cause analysis agent for Kubernetes. An Alertmanager webhook (or a manual trigger) starts an investigation: a LangGraph graph plans the work, dispatches one evidence sub-agent per evidence domain (`kubernetes`, `logs`, `change`) that collects read-only evidence through a single tool registry and executor, judges whether the evidence suffices, and writes a structured report in which every claim cites evidence IDs. Every model output passes a deterministic evidence gate before it is stored or shown; a report that keeps failing the gate becomes a degraded report built without a model. All model traffic leaves through one gateway that redacts first. Remediation suggestions are confirmed or rejected by a person and only recorded. The same registry is served to external clients over MCP. Storage is PostgreSQL only. Evaluation in CI replays recorded responses of a real model against recorded evidence packs, with no network access.
+Bianque is an alert-driven root cause analysis agent for Kubernetes. An Alertmanager webhook (or a manual trigger) starts an investigation: a LangGraph graph plans the work, dispatches one evidence sub-agent per evidence domain (`kubernetes`, `logs`, `change`) that collects read-only evidence through a single tool registry and executor, judges whether the evidence suffices (while planning, the model may first load skills, files in the Agent Skills format that say how Bianque investigates one kind of failure), and writes a structured report in which every claim cites evidence IDs. Every model output passes a deterministic evidence gate before it is stored or shown; a report that keeps failing the gate becomes a degraded report built without a model. All model traffic leaves through one gateway that redacts first. Remediation suggestions are confirmed or rejected by a person and only recorded. The same registry is served to external clients over MCP. Storage is PostgreSQL only. Evaluation in CI replays recorded responses of a real model against recorded evidence packs, with no network access.
 
 本文描述扁鹊的模块划分、数据流与关键机制，路径都相对仓库根目录。架构决策的理由与取舍见 [`docs/adr/`](./adr/)，功能与代码位置的对照见 [`capabilities.md`](capabilities.md)，安装与运行见 [`README.md`](../README.md)。
 
@@ -53,7 +53,7 @@ Bianque is an alert-driven root cause analysis agent for Kubernetes. An Alertman
 | 评测 | `pack` | `recorded` | `fixture` | `make eval` |
 | 测试与端到端测试 | `pack` 或测试替身 | `scripted` | `fixture` | `make test`、`make e2e` |
 
-模块之间的依赖边界由 import-linter 契约保证（`backend/pyproject.toml`），例如：只有提供方层导入模型 SDK，只有真实 Kubernetes 后端导入 `kubernetes_asyncio`，只有嵌入模块导入 fastembed，`bianque.gate` 不导入 `bianque.llm`，只有 `bianque.mcp` 导入 MCP SDK，只有 `bianque.api` 导入 FastAPI。
+模块之间的依赖边界由 import-linter 契约保证（`backend/pyproject.toml`），例如：只有提供方层导入模型 SDK，只有真实 Kubernetes 后端导入 `kubernetes_asyncio`，只有嵌入模块导入 fastembed，`bianque.gate` 不导入 `bianque.llm`，`bianque.skills` 不导入扁鹊的其他包，只有 `bianque.mcp` 导入 MCP SDK，只有 `bianque.api` 导入 FastAPI。
 
 ## 2. 调查图
 
@@ -77,11 +77,11 @@ intake → retrieve_knowledge → plan → dispatch ──Send──▶ evidence
 | --- | --- | --- |
 | `intake` | 调查状态改为 `running`；告警原文存为证据（来源 `alertmanager`），告警标签里的对象名作为保留标识符；写 `investigation_started` 与第一条 `evidence_added` | 无 |
 | `retrieve_knowledge` | 用告警名与注解组成查询检索运维手册，命中的知识编号与标题放进状态，写一条 `kind=knowledge` 的调用记录；检索出错时知识为空，调查照常进行 | 无 |
-| `plan` | 生成计划第 1 版（函数 `submit_plan`），经证据门校验；第一轮只保留 `first_round` 为真的证据域的步骤（`check_range`），越界步骤丢弃并记进调用记录的证据门结果；全部越界时退回默认计划 | 1 次结构化输出，被拒重试 1 次 |
+| `plan` | 生成计划第 1 版（函数 `submit_plan`），之前可以先加载 skill（第 2.6 节），经证据门校验；第一轮只保留 `first_round` 为真的证据域的步骤（`check_range`），越界步骤丢弃并记进调用记录的证据门结果；全部越界时退回默认计划 | 0 至 `BIANQUE_PLAN_MAX_SKILL_ACTIVATIONS` 次激活，1 次提交计划，被拒重试 1 次 |
 | `dispatch` | 标记一轮开始；路由函数 `route_steps` 把本轮步骤按证据域分组，每组一个 LangGraph `Send` | 无 |
 | `evidence_agent` | 取证子 Agent，见第 3 节 | 每步若干次 |
 | `assess` | 模型判断证据是否充分（函数 `submit_assessment`），再跑确定性充分性规则，最后检查 token 预算 | 1 次结构化输出，被拒重试 1 次 |
-| `replan` | 针对上一轮判断的缺失项生成补充计划（新版本，只含补充步骤），轮次加一 | 1 次结构化输出，被拒重试 1 次 |
+| `replan` | 针对上一轮判断的缺失项生成补充计划（新版本，只含补充步骤），轮次加一；提示词带着已加载 skill 的正文，仍可加载新的 skill | 同 `plan` |
 | `report` | 用全部证据、发现、失败的调用、知识编号与标题生成报告（函数 `submit_report`）；上一次被拒时附上违规列表 | 1 次结构化输出 |
 | `gate` | 按报告的校验清单校验；被拒的尝试写一行 `reports`（状态 `rejected`）并发 `report_rejected`，决定重试或降级 | 无 |
 | `degrade` | 由证据与确定性规则生成降级报告（`backend/bianque/gate/degrade.py`），同样过报告的校验清单 | 无 |
@@ -101,6 +101,7 @@ intake → retrieve_knowledge → plan → dispatch ──Send──▶ evidence
 | 补充计划轮数 | `BIANQUE_MAX_REPLAN_ROUNDS` | 2 | 第一轮之外最多再取证 2 轮 |
 | 子 Agent 每步的模型轮数 | `BIANQUE_SUBAGENT_MAX_STEPS` | 6 | 到上限时强制提交发现 |
 | 报告重试次数 | `BIANQUE_REPORT_MAX_RETRIES` | 2 | 被拒后最多再生成 2 次，之后降级 |
+| 一次计划生成的 skill 激活 | `BIANQUE_PLAN_MAX_SKILL_ACTIVATIONS` | 3 | 到上限后只提供 `submit_plan`；为 0 时计划阶段不使用 skill |
 | 调查 token 预算 | `BIANQUE_INVESTIGATION_TOKEN_BUDGET` | 120000 | 超出后不再补充计划，直接生成报告 |
 | 图的 superstep 上限 | `RECURSION_LIMIT`（`graph.py`） | 100 | 只防路由缺陷 |
 
@@ -108,13 +109,13 @@ token 预算只在 `assess` 里检查一次：每次模型调用的调用记录�
 
 ### 2.4 持久化
 
-图的状态只放编号与少量控制值（轮次、本轮步骤、失败列表、知识编号与标题、判断结果、报告尝试次数），业务内容都在数据库里，每个节点自己提交写入，调查进行中即可从接口读到。
+图的状态只放编号与少量控制值（轮次、本轮步骤、失败列表、知识编号与标题、已加载的 skill 名称、判断结果、报告尝试次数），业务内容都在数据库里，每个节点自己提交写入，调查进行中即可从接口读到。
 
 | 表 | 内容 |
 | --- | --- |
 | `alerts` | 告警原文；同一 fingerprint 在调查未结束时再次送达不新建调查 |
 | `investigations` | 编号（`inv_` 加 ULID）、触发方式（`alert`、`manual`、`replay`）、回放用例、状态（`pending`、`running`、`reported`、`degraded`、`interrupted`、`failed`）、工具后端、模型模式与模型名、token 预算与用量 |
-| `plans`、`steps` | 计划的各个版本（来源 `model` 或 `default`）与每个步骤（证据域、目标、建议工具、期望证据、状态、发现） |
+| `plans`、`steps` | 计划的各个版本（来源 `model` 或 `default`，生成时已加载的 skill）与每个步骤（证据域、目标、建议工具、期望证据、状态、发现） |
 | `assessments` | 每轮的判断，含 `rule_override` |
 | `evidence` | 证据原文与脱敏文本、保留标识符、来源工具、产生它的调用与步骤 |
 | `reports` | 每次报告尝试，含被拒的尝试与证据门结果 |
@@ -142,6 +143,23 @@ token 预算只在 `assess` 里检查一次：每次模型调用的调用记录�
 后端启动时、开始接受请求之前，`interrupt_unfinished` 把状态为 `pending` 或 `running` 的调查改为 `interrupted`，未结束的步骤改为 `failed`，各写一条 `investigation_interrupted`。调查不从检查点续跑；要重查时由告警再次送达新建调查，或手动触发。
 
 调查图抛出的异常（例如录制响应查不到）使调查结束为 `failed`，未结束的步骤记 `failed`，错误字段只存异常类名，详情只进日志。
+
+### 2.6 Skill
+
+skill 用 [Agent Skills](https://agentskills.io/specification) 格式写扁鹊怎么查一类故障：针对一类告警或根因，按证据域列出要用的工具（注册表里的工具名）、期望得到的证据、什么证据对应哪个根因类别、什么时候进入 `change` 域。运维手册（第 7 节）写 Kubernetes 的背景知识与处置，是报告的参考资料；skill 需要背景时写手册的主题名，不复述手册。
+
+| 主题 | 实现 |
+| --- | --- |
+| 位置 | 仓库根目录的 `.agents/skills/<name>/SKILL.md`；`.claude/skills` 是指向 `../.agents/skills` 的相对符号链接。后端镜像在构建时从具名构建上下文 `skills` 复制到 `/app/.agents/skills`，`BIANQUE_SKILLS_DIR` 默认 `.agents/skills` |
+| 加载与校验 | `backend/bianque/skills/loader.py` 在启动时读入（`backend/bianque/agents/startup.py`，API、`bianque investigate` 与评测都先调用它），按格式严格校验：`name` 1 至 64 个字符、只含小写字母、数字与单个连字符、与目录同名；`description` 1 至 1024 个字符；只允许格式定义的字段；正文少于 500 行、不超过 20000 个字符；没有 `scripts/` 与可执行文件。任一条不满足即启动失败，指出目录与规则；目录不存在也启动失败，目录为空表示没有 skill |
+| 渐进加载 | `plan` 与 `replan` 的系统提示词只列目录（名称与用途，按名称排序，`prompts/skills.md`）；请求同时提供 `activate_skill` 与 `submit_plan`，`tool_choice` 为 `required`。`activate_skill` 的参数 `name` 是目录名称的枚举，结果是去掉 YAML 头、用 `<skill_content name="…">` 包起来的正文（`backend/bianque/skills/activation.py`），作为函数结果回填，模型再调用一次（`backend/bianque/agents/skill_loop.py`）。同一次调查已加载的 skill 再激活只返回「已加载」；名称不在目录里的调用被拒，不回显模型给的名称。每次计划生成最多 `BIANQUE_PLAN_MAX_SKILL_ACTIVATIONS` 次调用（含被拒的），到上限后只提供 `submit_plan`；模型在循环里提交的计划与强制提交的计划一样过证据门，被拒重试 1 次 |
+| 补充计划 | `replan` 的用户消息有固定的 `Skills` 一节，放已加载 skill 的正文（按名称排序，正文缩进两格，免得正文里的标题被读成提示词的小节）；模型仍可加载新的 skill |
+| 只在计划阶段 | 取证子 Agent、`assess`、`report` 与追问不加载 skill；skill 的指导经由计划步骤的建议工具与期望证据传给取证子 Agent |
+| 不是证据也不是知识 | `activate_skill` 不在注册表里，不经工具执行器，不经 MCP 提供，结果不存为证据；证据门的 `knowledge_boundary` 拒绝引用字段、`references` 与 `knowledge_refs` 里的 skill 名称（第 5.2 节） |
+| 没有 skill | 目录为空或上限为 0 时，计划仍是一次强制调用：不提供 `activate_skill`，提示词里没有目录与 `Skills` 一节 |
+| 记录 | 每次激活写一条 `kind=skill` 的调用记录（第 12 节）；计划版本的 `skills` 由代码填写，是提交这一版时已加载的全部 skill |
+
+`activate_skill` 不放进注册表的理由与取舍见 [ADR 0006](./adr/0006-agent-skills-for-planning.md)。正文里的工具名就是注册表与 MCP 的工具名，所以接上扁鹊 MCP 的外部客户端可以按同一份 skill 调用工具（README「接入 MCP 客户端」）。
 
 ## 3. 取证子 Agent 与证据域
 
@@ -277,13 +295,13 @@ faults.yaml        可选：回放时注入的故障，例如某个工具超时
 | --- | --- | --- | --- | --- | --- | --- |
 | `schema` | 按 schema 严格解析，枚举取值合法 | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `citation_integrity` | 引用的编号都属于本调查；报告的时间线条目、结论、修复建议与非未知的根因，回答的非「证据不足」段，每条发现，都至少有一条引用。回答还可以引用修复建议编号 | ✓ | ✓ | | | ✓ |
-| `knowledge_boundary` | `kn_` 编号只能出现在 `references`（计划里是 `knowledge_refs`），且必须是给过模型的知识编号；出现在引用或其他文本里即违规 | ✓ | ✓ | ✓ | | ✓ |
+| `knowledge_boundary` | `kn_` 编号只能出现在 `references`（计划里是 `knowledge_refs`），且必须是给过模型的知识编号；出现在引用或其他文本里即违规。skill 名称出现在任一引用、`references` 或 `knowledge_refs` 里即违规（`skill_cited`），正文里提到 skill 名称不算 | ✓ | ✓ | ✓ | | ✓ |
 | `unknown_discipline` | 根因没有引用时 `status` 必须为 `unknown`；`unknown` 时置信度必须为 `low` | ✓ | | | | |
 | `missing_evidence_consistency` | 本调查有失败的取证调用时 `missing_evidence` 不能为空；失败的调用属于 `failure_caps_confidence` 为真的证据域（`logs`）时，根因置信度不能为 `high` | ✓ | | | | |
 | `forbidden_actions` | 写类命令（`backend/bianque/gate/forbidden.py`：`kubectl`、`oc`、`helm`、`git` 的写动词）只能出现在报告里风险为 `change` 的修复建议的动作或命令中，其余位置一律违规；紧跟在限定词之后、而且后面没有参数的命令（如 the git commit author、这次 kubectl apply 操作）是名词，不算命令；后面有选项、对象或其他参数（a kubectl rollout undo deployment/x），或者限定词前面是 run、执行一类动词时，仍算命令 | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `redaction_residue` | 用脱敏引擎的 `detect()` 扫描全部文本字段，保留标识符之外有命中即违规 | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-校验上下文（`GateContext`）包含本调查的证据编号、给过模型的知识编号、修复建议编号（追问）、保留标识符、失败的取证调用与脱敏引擎。保留标识符是本调查全部证据的标识符、告警的标识符，加注册表里的全部工具名：告警名与工具名常常超过高熵检测的长度阈值。
+校验上下文（`GateContext`）包含本调查的证据编号、给过模型的知识编号、修复建议编号（追问）、保留标识符、失败的取证调用、skill 名称与脱敏引擎。保留标识符是本调查全部证据的标识符、告警的标识符，加注册表里的全部工具名：告警名与工具名常常超过高熵检测的长度阈值。
 
 违规记录为「校验器名、JSON 路径、固定代码」，不回显输出正文；路径里模型自编的键写成 `*`。被拒时违规列表写进对应记录（报告写 `reports.gate_result`，其余写模型调用记录的 `gate_result`），并作为反馈放进下一次生成的输入。
 
@@ -445,13 +463,13 @@ MCP 调用不属于任何调查，不产生证据；`pack` 后端下读 `BIANQUE
 
 ## 12. 可观测性
 
-每次模型调用、工具调用与知识检索各写一行 `call_records`：
+每次模型调用、工具调用、知识检索与 skill 激活各写一行 `call_records`：
 
 | 字段 | 内容 |
 | --- | --- |
-| `kind` | `model`、`tool`、`knowledge` |
+| `kind` | `model`、`tool`、`knowledge`、`skill` |
 | `agent` | `investigation`、`kubernetes`、`logs`、`change`、`followup`、`mcp` |
-| `name` | 模型调用是调用点（`plan`、`assess`、`replan`、`report`、`evidence_agent`、`answer`），工具调用是工具名，知识检索是 `retrieve_knowledge` |
+| `name` | 模型调用是调用点（`plan`、`assess`、`replan`、`report`、`evidence_agent`、`answer`），工具调用是工具名，知识检索是 `retrieve_knowledge`，skill 激活是 skill 名称（输入摘要是 skill 名称，输出摘要是正文 SHA-256 的前 12 位与 `first load` 或 `already loaded`，没有 token） |
 | `investigation_id`、`session_id`、`caller` | 所属调查、追问会话、MCP 客户端 |
 | `input_summary`、`output_summary` | 脱敏后截断到 2000 字符 |
 | `status`、`error`、`retries` | 结果、错误、重试次数 |
@@ -459,13 +477,14 @@ MCP 调用不属于任何调查，不产生证据；`pack` 后端下读 `BIANQUE
 | `tokens_in`、`tokens_out` | 模型调用的 token |
 | `gate_result` | 该输出的证据门结果 |
 
-模型调用的记录由网关的 `CallRecorder` 写入（`DatabaseCallRecorder`，`backend/bianque/agents/records.py`），同一事务里把 token 累加到调查；工具调用由执行器写入；知识检索由调查图与追问流程写入。证据记录了产生它的调用编号。
+模型调用的记录由网关的 `CallRecorder` 写入（`DatabaseCallRecorder`，`backend/bianque/agents/records.py`），同一事务里把 token 累加到调查；工具调用由执行器写入；知识检索由调查图与追问流程写入，skill 激活由计划的激活循环写入。证据记录了产生它的调用编号。
 
-`GET /api/investigations/{id}/calls` 返回调用记录与合计（调用次数按类型分、输入与输出 token、耗时之和、从调查开始到结束的总时长）。模型调用的输入、输出摘要与错误文本不返回，只返回名称、Agent、耗时、token、状态与证据门结果的校验器名；工具调用与知识检索返回摘要。界面上：
+`GET /api/investigations/{id}/calls` 返回调用记录与合计（调用次数按类型分、输入与输出 token、耗时之和、从调查开始到结束的总时长）。模型调用的输入、输出摘要与错误文本不返回，只返回名称、Agent、耗时、token、状态与证据门结果的校验器名；工具调用、知识检索与 skill 激活返回摘要。界面上：
 
 - 调用时间线（`frontend/src/components/CallTimeline.tsx`）按 Agent 分行，横轴是调查开始后的秒数，可展开每次工具调用的参数、结果摘要、耗时与重试；
 - 流程图（`FlowGraph.tsx`）按取证子 Agent 分泳道，每个计划版本一列，颜色表示步骤状态；
-- 调用记录表（`CallTable.tsx`）列出全部调用与合计。
+- 调用记录表（`CallTable.tsx`）列出全部调用与合计；
+- 计划卡片（`PlanPanel.tsx`）列出该版计划生成时已加载的 skill，调用时间线把 skill 激活画在调查 Agent 一行。
 
 ## 13. 确定性与录制回放
 
@@ -485,7 +504,7 @@ MCP 调用不属于任何调查，不产生证据；`pack` 后端下读 `BIANQUE
 
 请求键（`backend/bianque/llm/request.py`）是「Agent 名称、规范化的消息列表、工具 schema、采样参数、模型名」规范 JSON 的 SHA-256；调查编号与会话编号不在请求里。录制文件保存规范化的请求与响应，文件名含请求键前 16 位。
 
-`eval/recordings/manifest.json`（录制清单，`backend/bianque/config/manifest.py`）记录录制所用的模型名、`extra_body`、模型服务主机、录制时间、用例列表、每个提示词文件的 SHA-256 与全部工具 schema 的 SHA-256。`recorded` 模式从清单读取模型名与 `extra_body`（两者都进请求键），显式配置与清单不一致时启动失败。
+`eval/recordings/manifest.json`（录制清单，`backend/bianque/config/manifest.py`）记录录制所用的模型名、`extra_body`、模型服务主机、录制时间、用例列表、每个提示词文件的 SHA-256 与全部工具 schema 的 SHA-256。`recorded` 模式从清单读取模型名与 `extra_body`（两者都进请求键），显式配置与清单不一致时启动失败。清单（格式第 2 版）还记录每个 `SKILL.md` 的 SHA-256；`recorded` 模式启动时把提示词文件与 skill 的哈希逐个与清单比对，内容不同、清单有而磁盘没有、磁盘有而清单没有，都启动失败并指出文件，而不是等到某个请求查不到录制。skill 目录在系统提示词里，正文在函数结果里，都进请求键，改 skill 要重新录制。
 
 ### 13.3 提示词的确定性
 
@@ -502,17 +521,17 @@ MCP 调用不属于任何调查，不产生证据；`pack` 后端下读 `BIANQUE
 
 `backend/tests/agents/test_investigation_concurrency.py` 在 `scripted` 模式下打乱子 Agent 的完成顺序，断言每个请求键不变。
 
-提示词放在 `backend/bianque/agents/prompts/`，每个模型调用点一个 Markdown 文件（`plan.md`、`replan.md`、`assess.md`、`report.md`、`evidence_agent.md`、`followup.md`），共用的证据纪律在 `discipline.md`，占位符用 Python `string.Template`。提示词只写角色、证据纪律与本步任务；输出格式由函数 schema 约束，工具说明来自注册表生成的 schema。改提示词、工具 schema 或模型都会改变请求键，需要用 `make record` 重新录制：它对每个用例以 `live` 模式运行调查与追问并录制，再以 `recorded` 模式回放，用 `bianque eval compare` 核对回放逐项重现了录制那次运行，然后才替换 `eval/recordings/`。
+提示词放在 `backend/bianque/agents/prompts/`，每个模型调用点一个 Markdown 文件（`plan.md`、`replan.md`、`assess.md`、`report.md`、`evidence_agent.md`、`followup.md`），共用的证据纪律在 `discipline.md`，计划阶段的 skill 说明与目录在 `skills.md`（没有 skill 时不嵌入），占位符用 Python `string.Template`。提示词只写角色、证据纪律与本步任务；输出格式由函数 schema 约束，工具说明来自注册表生成的 schema。改提示词、工具 schema 或模型都会改变请求键，需要用 `make record` 重新录制：它对每个用例以 `live` 模式运行调查与追问并录制，真实运行一结束就把报告存进 `eval/reports/<日期>-<模型>/`（同一天再录加 `-2`、`-3`，不覆盖），再以 `recorded` 模式回放，用 `bianque eval compare` 核对回放逐项重现了录制那次运行，然后才替换 `eval/recordings/`。
 
 ### 13.4 评测
 
-`bianque eval run`（`backend/bianque/evals/`）在一个空数据库里导入知识、运行检索评测，再对 `eval/cases/` 的每个用例回放调查、按 `questions.yaml` 逐题追问，计算指标并写 `report.json` 与 `report.md`。硬门槛都是确定性检查：每个调查以报告结束；每份最终报告与回答用运行时同一个 `validate` 与当时的上下文重新校验都通过；最终报告符合导出的 JSON Schema；没有注册写工具；证据没有来自 Agent 的；知识编号没有出现在引用里；加 `--check-network-isolation` 时确认评测进程连不上外部地址。根因判对率等准确率指标只报告，并注明模型模式与模型名。
+`bianque eval run`（`backend/bianque/evals/`）在一个空数据库里导入知识、运行检索评测，再对 `eval/cases/` 的每个用例回放调查、按 `questions.yaml` 逐题追问，计算指标并写 `report.json` 与 `report.md`。硬门槛都是确定性检查：每个调查以报告结束；每份最终报告与回答用运行时同一个 `validate` 与当时的上下文重新校验都通过；最终报告符合导出的 JSON Schema；没有注册写工具；证据没有来自 Agent 的；知识编号没有出现在引用里；加 `--check-network-isolation` 时确认评测进程连不上外部地址。根因判对率等准确率指标只报告，并注明模型模式与模型名。报告（格式第 2 版）逐用例列出加载过的 skill 与次数；`bianque eval diff <基线> <新报告>` 把两份报告逐用例并排：根因、首份报告的引用完整率、必需证据覆盖、token、模型调用次数与 skill，第 1 版报告的 skill 一栏显示未记录。
 
 ## 14. 部署
 
 ### 14.1 回放形态（Docker Compose）
 
-`make replay` 用 `deploy/compose/replay.yaml` 起 PostgreSQL（`pgvector/pgvector:pg16`）、后端与前端，页面在 `127.0.0.1:8080`。后端配置为 `BIANQUE_TOOL_BACKEND=pack`、`BIANQUE_EMBEDDING_MODE=fixture`、`BIANQUE_LLM_MODE=recorded`（`LLM_MODE` 可改为 `scripted` 或 `live`），仓库的 `eval/` 与 `knowledge/` 只读挂入。`BIANQUE_REPLAY_SEED=true` 让后端启动后导入知识，并对每个有证据包、还没有回放调查的用例依次建一次调查。数据库口令在第一次运行时随机生成（数据卷保留它），演示口令、会话密钥与 MCP 令牌每次运行重新随机生成，都写进被 Git 忽略的 `.demo/`；MCP 客户端只配置令牌的 SHA-256。`LLM_MODE=live` 时叠加 `deploy/compose/live.yaml`，把密钥文件只读挂进容器并以 `file:` 引用，密钥不进环境变量与镜像。
+`make replay` 用 `deploy/compose/replay.yaml` 起 PostgreSQL（`pgvector/pgvector:pg16`）、后端与前端，页面在 `127.0.0.1:8080`。后端配置为 `BIANQUE_TOOL_BACKEND=pack`、`BIANQUE_EMBEDDING_MODE=fixture`、`BIANQUE_LLM_MODE=recorded`（`LLM_MODE` 可改为 `scripted` 或 `live`），仓库的 `eval/` 与 `knowledge/` 只读挂入，skill 在镜像里（第 2.6 节）。`BIANQUE_REPLAY_SEED=true` 让后端启动后导入知识，并对每个有证据包、还没有回放调查的用例依次建一次调查。数据库口令在第一次运行时随机生成（数据卷保留它），演示口令、会话密钥与 MCP 令牌每次运行重新随机生成，都写进被 Git 忽略的 `.demo/`；MCP 客户端只配置令牌的 SHA-256。`LLM_MODE=live` 时叠加 `deploy/compose/live.yaml`，把密钥文件只读挂进容器并以 `file:` 引用，密钥不进环境变量与镜像。
 
 后端镜像启动时先执行 `alembic upgrade head`，再启动 uvicorn。
 
@@ -572,6 +591,7 @@ chart 只按名字引用三个 Secret（数据库口令；演示账号、会话�
 | 写类命令模式 | `backend/bianque/gate/forbidden.py` | 新领域的写操作命令与动词 |
 | 降级报告的规则提示 | `backend/bianque/gate/degrade.py` | 从结构化证据推出根因类别提示的规则 |
 | 提示词 | `backend/bianque/agents/prompts/` | 领域说明与证据纪律中的领域举例 |
+| skill | `.agents/skills/` | 新领域各类故障的排查方法；正文里的工具名随取证工具一起改，改后重新录制 |
 | 告警接入 | `backend/bianque/api/alertmanager.py` | 告警证据的文本与保留标识符（`IDENTIFIER_LABELS`）；新的告警来源加自己的字段映射 |
 | `scripted` 规则 | `backend/bianque/agents/scripted_rules.py` | 测试用的角色规则读的是 Kubernetes 与 Git 证据 |
 | 界面的证据域列表 | `frontend/src/lib/flow.ts`（`LANES`）、`frontend/src/lib/timeline.ts`（`AGENT_ORDER`）、`frontend/src/lib/agents.ts` | 流程图泳道与调用时间线的行 |
