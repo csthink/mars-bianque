@@ -4,33 +4,43 @@ Bianque is an alert-driven root cause analysis agent for Kubernetes: when an ale
 
 扁鹊是告警驱动的 Kubernetes 根因分析 Agent：告警触发后规划调查、用只读工具取证，生成每条结论都引用证据的报告。开发中。
 
-## 演示环境
+## 演示形态
 
-演示环境是一个本机 kind 集群，里面有演示应用 `s1-app`、Prometheus、Alertmanager 与 kube-state-metrics。演示应用的清单放在本机的一个 Git 仓里，故障都通过提交清单引入。扁鹊自身的部署还在开发中。
+演示形态是一个本机 kind 集群：演示应用 `s1-app`、Prometheus、Alertmanager、kube-state-metrics，以及用 Helm chart（`deploy/helm/bianque`）装进集群的扁鹊（后端、前端、PostgreSQL）。演示应用的清单放在本机的一个 Git 仓里，故障都通过提交清单引入；Alertmanager 把告警推给扁鹊，扁鹊读真实的集群与清单仓，调用真实模型。
 
 前置工具与验证过的版本：
 
 | 工具 | 版本 |
 | --- | --- |
-| Docker | 29.8 |
+| Docker | 29.9 |
 | kind | 0.33.0 |
 | kubectl | 1.37 |
-| Helm | 4.3.1 |
-| jq | 任意版本（`make demo-alerts` 使用） |
+| Helm | 4.3 |
+| jq | 任意版本（`make demo-alerts` 与 `make record-pack` 使用） |
 
-演示环境起好后，kind 节点容器（集群里的全部 Pod 都在其中）实测占用约 1.0 GiB 内存，注入故障期间约 1.3 GiB。
+另需一个模型密钥文件（默认 DeepSeek，模型与地址同回放形态的 `live` 模式，可用 `LLM_MODEL`、`LLM_BASE_URL`、`LLM_EXTRA_BODY` 改）。首次 `make demo` 要联网：后端镜像在构建时下载本地嵌入模型并核对 SHA-256，运行时不访问外部的嵌入服务。
+
+```bash
+make demo LLM_API_KEY_FILE=<密钥文件>
+```
+
+完成后打印页面地址 `http://127.0.0.1:8180`（`BIANQUE_DEMO_PORT` 可改，建集群时生效，只监听本机回环地址）、演示账号 `demo` 的口令，以及 Claude Code 接入 MCP 的命令。口令、会话密钥、MCP 令牌、数据库口令与 Alertmanager 的 webhook 令牌都在本机生成，放在被忽略的 `.demo/kind/`，以 Secret 交给集群，不进 Helm 的 release 记录；模型密钥同样以 Secret 只读挂成文件，不进环境变量与镜像。
 
 | 命令 | 作用 |
 | --- | --- |
-| `make demo` | 创建 kind 集群 `bianque-demo`，在 `.demo/manifests` 初始化清单仓，构建并载入演示应用镜像，安装 Prometheus 与 Alertmanager，部署演示应用。重复执行不会重建已有的部分 |
+| `make demo LLM_API_KEY_FILE=<密钥文件>` | 起演示环境（下一行），再构建并载入扁鹊的后端与前端镜像，创建 Secret 与运维手册 ConfigMap，安装或升级 chart，导入运维手册。重复执行只更新有变化的部分，数据库保留 |
+| `make demo-env` | 只起演示环境，不装扁鹊：创建 kind 集群 `bianque-demo`，在 `.demo/manifests` 初始化清单仓，构建并载入演示应用镜像，安装 Prometheus 与 Alertmanager，部署演示应用 |
 | `make inject-s1 CASE=a` | 注入故障：`a` 把 `APP_MODE` 改成非法值；`b` 把内存限制改小；`c` 把存活检查指向不存在的路径；`e` 先做 `a`，再提交一次无关的改动 |
 | `make restore-s1` | 回退注入的提交，等待演示应用恢复 |
 | `make demo-alerts` | 列出 Alertmanager 当前的告警 |
-| `make record-pack CASE=a` | 录制一个用例的证据包（`a`、`b`、`c`、`e`）：把 `demo-s1` 重置到干净的基线，注入故障，取 Alertmanager 发出的第一条告警，把命名空间与清单仓的快照写到 `eval/cases/s1-<用例>/pack/`，跑一遍真实集群上的集成测试，最后恢复 |
+| `make record-pack CASE=a` | 录制一个用例的证据包（`a`、`b`、`c`、`e`），只在 `make demo-env` 起的、没有扁鹊的环境里运行：把 `demo-s1` 重置到干净的基线，注入故障，用替身接收器取 Alertmanager 发出的第一条告警，把命名空间与清单仓的快照写到 `eval/cases/s1-<用例>/pack/`，跑一遍真实集群上的集成测试，最后恢复 |
 | `make derive-packs` | 从 S1-a 的证据包派生 S1-d（回放时日志工具超时）与 S1-f（只留告警与 Pod） |
-| `make demo-down` | 删除 kind 集群；`.demo/` 保留，要从头开始就另外删除 `.demo/` |
+| `make helm-rbac` | 检查 chart：`helm lint`，并确认渲染出的 RBAC 只有 get、list、watch（CI 的 `helm-rbac` 任务） |
+| `make demo-down` | 删除 kind 集群与 `.demo/kind/`；`.demo/` 的其余内容保留，要从头开始就另外删除 `.demo/` |
 
-注入后 Pod 反复重启，约 1 分钟内（实测 48 至 76 秒）Alertmanager 出现一条 `BianquePodRestarting` 告警；恢复后 1 至 2 分钟内告警解除。所有命令都指定 `kind-bianque-demo` 这个 kubectl context，建集群后会切回原来的当前 context，不会改动其他集群。
+注入 S1-a 后约 1 分钟（实测 48 至 76 秒）Alertmanager 发出 `BianquePodRestarting` 告警，扁鹊随即开始调查，页面上能看到实时进度与流程图；实测一次 S1-a 调查约 70 秒、40 余次调用、约 10 万 token。告警规则只看 `demo-s1`；扁鹊的 ServiceAccount 只能在 `demo-s1` 里 get、list、watch Pod、Pod 日志、事件、Deployment 与 ReplicaSet，读不到其他命名空间。所有命令都指定 `kind-bianque-demo` 这个 kubectl context，建集群后会切回原来的当前 context，不会改动其他集群。
+
+内存：kind 节点容器（集群里的全部 Pod 都在其中）在 `make demo` 完成后实测约 1.9 GiB，一次调查之后约 2.1 GiB；其中扁鹊后端加载嵌入模型后约 320 MiB。给 Docker 分 4 GiB 以上即可。
 
 ## 回放形态
 
@@ -38,7 +48,7 @@ Bianque is an alert-driven root cause analysis agent for Kubernetes: when an ale
 
 模型模式由 `LLM_MODE` 选择：
 
-- `recorded`（默认）：用 `eval/recordings/` 里录制的真实模型响应回放，不需要模型密钥。全部用例的录制还在制作中，没有录制时调查以失败结束，原因是查不到录制。
+- `recorded`（默认）：用 `eval/recordings/` 里录制的真实模型响应回放，不需要模型密钥；模型名与附加请求体取自录制清单 `eval/recordings/manifest.json`。
 - `scripted`：规则响应器代替模型，用于测试。
 - `live`：调用真实模型，追问可以自由提问。`LLM_API_KEY_FILE` 指向保存密钥的文件，密钥不进环境变量与镜像；模型默认 DeepSeek `deepseek-v4-pro`，可用 `LLM_MODEL`、`LLM_BASE_URL`、`LLM_EXTRA_BODY` 改。启动前把本地嵌入模型下载到模型卷，运行时不访问外部的嵌入服务。
 
@@ -78,6 +88,8 @@ claude mcp add --transport http bianque http://127.0.0.1:8080/mcp \
 ```
 
 之后在 Claude Code 里可以问「用 bianque 列出 demo-s1 最近的调查，读最近一次的报告，根因是什么」。重新启动回放形态会换令牌，要重新加一次。回放形态下工具读证据包（默认用例 S1-a，`BIANQUE_PACK_CASE` 可改），`knowledge_search` 的自由查询只走全文检索。
+
+演示形态下地址是 `http://127.0.0.1:8180/mcp`，令牌在 `.demo/kind/mcp-token`，`make demo` 完成时打印对应的命令；工具读的是 kind 里的真实集群与清单仓。
 
 ## 证据包
 

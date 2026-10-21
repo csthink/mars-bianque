@@ -1,0 +1,142 @@
+# The backend: HTTP API, Alertmanager webhook, investigation runner and MCP server.
+# Real tool backend (the cluster through the service account, the manifest repository
+# from the node), live model, local embedding model built into the image.
+apiVersion: v1
+kind: Service
+metadata:
+  name: bianque-backend
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "bianque.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  selector:
+    {{- include "bianque.selector" (dict "root" . "component" "backend") | nindent 4 }}
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bianque-backend
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "bianque.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  replicas: 1
+  # One investigation runner and one database migration at a time.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "bianque.selector" (dict "root" . "component" "backend") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "bianque.selector" (dict "root" . "component" "backend") | nindent 8 }}
+      {{- with .Values.images.backend.id }}
+      annotations:
+        bianque/image-id: {{ . | quote }}
+      {{- end }}
+    spec:
+      serviceAccountName: bianque-backend
+      securityContext:
+        fsGroup: 10001
+      # The database Service publishes no address until the database is ready, and the
+      # backend migrates it on start: wait for it rather than crash and restart.
+      initContainers:
+        - name: wait-for-database
+          image: {{ include "bianque.image" .Values.images.database }}
+          imagePullPolicy: {{ .Values.images.database.pullPolicy }}
+          command: [sh, -c, "until pg_isready -h bianque-db -p 5432 -U postgres -q; do sleep 1; done"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 999
+            capabilities:
+              drop: [ALL]
+      containers:
+        - name: backend
+          image: {{ include "bianque.image" .Values.images.backend }}
+          imagePullPolicy: {{ .Values.images.backend.pullPolicy }}
+          securityContext:
+            {{- include "bianque.backendSecurity" . | nindent 12 }}
+          env:
+            {{- include "bianque.databaseEnv" . | nindent 12 }}
+            - name: BIANQUE_TOOL_BACKEND
+              value: live
+            - name: BIANQUE_LLM_MODE
+              value: live
+            - name: BIANQUE_LLM_BASE_URL
+              value: {{ .Values.llm.baseUrl | quote }}
+            - name: BIANQUE_LLM_MODEL
+              value: {{ .Values.llm.model | quote }}
+            - name: BIANQUE_LLM_EXTRA_BODY
+              value: {{ .Values.llm.extraBody | toJson | quote }}
+            - name: BIANQUE_LLM_API_KEY
+              value: file:/run/secrets/bianque-llm-key
+            {{- if .Values.manifests.hostPath }}
+            - name: BIANQUE_GIT_REPO_PATH
+              value: /var/lib/bianque/manifests
+            {{- end }}
+            - name: BIANQUE_SESSION_COOKIE_SECURE
+              value: {{ .Values.session.cookieSecure | quote }}
+            {{- range list "BIANQUE_DEMO_USERS" "BIANQUE_SESSION_SECRET" "BIANQUE_MCP_CLIENTS" "BIANQUE_ALERTMANAGER_TOKEN" }}
+            - name: {{ . }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.secrets.auth }}
+                  key: {{ . }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: 8000
+          # Migrations run before the server listens.
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: llm-key
+              mountPath: /run/secrets/bianque-llm-key
+              subPath: api-key
+              readOnly: true
+            {{- if .Values.manifests.hostPath }}
+            - name: manifests
+              mountPath: /var/lib/bianque/manifests
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: llm-key
+          secret:
+            secretName: {{ .Values.secrets.llm }}
+            defaultMode: 0440
+        {{- if .Values.manifests.hostPath }}
+        - name: manifests
+          hostPath:
+            path: {{ .Values.manifests.hostPath }}
+            type: Directory
+        {{- end }}

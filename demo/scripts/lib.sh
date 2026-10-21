@@ -12,6 +12,8 @@
 #   KUBECTL       kubectl binary (default: kubectl); the tests set it to `true` to
 #                 exercise the manifest repository logic without a cluster
 #   KIND_CLUSTER  kind cluster name (default: bianque-demo)
+#   BIANQUE_DEMO_PORT  port of the Bianque pages on 127.0.0.1 (default: 8180); takes
+#                 effect when the kind cluster is created
 
 set -euo pipefail
 
@@ -23,6 +25,22 @@ KUBECTL="${KUBECTL:-kubectl}"
 KIND_CLUSTER="${KIND_CLUSTER:-bianque-demo}"
 KUBE_CONTEXT="kind-$KIND_CLUSTER"
 
+DEMO_PORT="${BIANQUE_DEMO_PORT:-8180}"
+# The node port of the Bianque frontend Service (demo/bianque/values.yaml), mapped to
+# DEMO_PORT by the kind config.
+DEMO_NODE_PORT=30080
+
+# Secrets of the Bianque installation in the kind cluster, apart from those of the
+# replay profile: the database password and the Alertmanager webhook token, generated
+# once (the database volume keeps its password), and the demo login, new on every run.
+KIND_SECRETS_DIR="$DEMO_DIR/kind"
+KIND_ENV="$KIND_SECRETS_DIR/demo.env"
+KIND_LOGIN_ENV="$KIND_SECRETS_DIR/login.env"
+KIND_PASSWORD="$KIND_SECRETS_DIR/demo-password"
+KIND_MCP_TOKEN="$KIND_SECRETS_DIR/mcp-token"
+
+BIANQUE_NAMESPACE="bianque"
+MONITORING_NAMESPACE="monitoring"
 DEMO_NAMESPACE="demo-s1"
 DEMO_DEPLOYMENT="s1-app"
 ROLLOUT_TIMEOUT="180s"
@@ -138,4 +156,36 @@ reset_demo() {
   init_manifests
   apply_manifests
   wait_rollout
+}
+
+# Generate $KIND_ENV once: the database password and the Alertmanager webhook token.
+init_kind_env() {
+  [ -f "$KIND_ENV" ] && return
+  mkdir -p "$KIND_SECRETS_DIR"
+  (
+    umask 077
+    printf 'BIANQUE_DB_PASSWORD=%s\nBIANQUE_ALERTMANAGER_TOKEN=%s\n' \
+      "$(openssl rand -hex 16)" "$(openssl rand -hex 32)" >"$KIND_ENV.tmp"
+  )
+  mv "$KIND_ENV.tmp" "$KIND_ENV"
+}
+
+# apply_secret <namespace> <name> <key=file>...
+# Create or update a generic Secret from files, without the values ever being command
+# line arguments.
+apply_secret() {
+  local namespace="$1" name="$2" entry
+  shift 2
+  local args=()
+  for entry in "$@"; do
+    args+=(--from-file="$entry")
+  done
+  kube -n "$namespace" create secret generic "$name" "${args[@]}" --dry-run=client -o yaml |
+    kube apply -f - >/dev/null
+}
+
+# Whether the Bianque chart is installed in the demo cluster.
+bianque_installed() {
+  [ "$(kube -n "$BIANQUE_NAMESPACE" get deployment bianque-backend --ignore-not-found \
+    -o jsonpath='{.metadata.labels.app\.kubernetes\.io/managed-by}')" = "Helm" ]
 }

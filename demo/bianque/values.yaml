@@ -1,0 +1,18 @@
+# Values for the Bianque chart (deploy/helm/bianque) in the kind demo cluster.
+# demo/scripts/up.sh creates the Secrets and the runbook ConfigMap the chart reads, and
+# sets the model with --set and --set-json.
+
+# The manifest repository: .demo/manifests on the workstation, mounted into the kind
+# node at this path (demo/kind/cluster.yaml.tmpl).
+manifests:
+  hostPath: /var/lib/bianque/manifests
+
+# The pages are served over plain http on the workstation.
+session:
+  cookieSecure: false
+
+# kind maps node port 30080 to 127.0.0.1:8180 on the workstation (BIANQUE_DEMO_PORT).
+frontend:
+  service:
+    type: NodePort
+    nodePort: 30080

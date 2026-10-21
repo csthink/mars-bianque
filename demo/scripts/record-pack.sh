@@ -24,6 +24,11 @@ case "$case" in
 esac
 
 require "$KUBECTL" kind jq git uv
+# The capture receiver takes the address of the Bianque backend and is removed with its
+# namespace: recording with Bianque installed would delete Bianque.
+if bianque_installed; then
+  die "Bianque is installed in the demo cluster; record from make demo-env: make demo-down && make demo-env"
+fi
 RECEIVER="$REPO_ROOT/demo/monitoring/capture-receiver.yaml"
 WORK_DIR="$DEMO_DIR/record/s1-$case"
 PACK_DIR="$REPO_ROOT/eval/cases/s1-$case/pack"

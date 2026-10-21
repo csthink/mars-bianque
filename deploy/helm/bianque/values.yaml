@@ -1,0 +1,79 @@
+# Defaults of the Bianque chart. They do not depend on the demo environment: the
+# manifest repository volume is off and the pages are reachable inside the cluster only.
+# demo/bianque/values.yaml turns on what the kind demo needs.
+
+# `id`, when set, is written into the pod template as an annotation: an image rebuilt
+# under the same tag (kind load) then rolls the pods on upgrade.
+images:
+  backend:
+    repository: bianque-backend
+    tag: dev
+    pullPolicy: IfNotPresent
+    id: ""
+  frontend:
+    repository: bianque-frontend
+    tag: dev
+    pullPolicy: IfNotPresent
+    id: ""
+  database:
+    repository: pgvector/pgvector
+    tag: pg16
+    pullPolicy: IfNotPresent
+
+# Namespaces Bianque may read. Each gets a RoleBinding to the read-only ClusterRole;
+# there is no ClusterRoleBinding, so no other namespace is readable. Every namespace
+# listed must exist before the chart is installed.
+readNamespaces:
+  - demo-s1
+
+# The model Bianque calls (live model mode). The key is not a value: it is the
+# `api-key` entry of the Secret named in secrets.llm, mounted as a file.
+llm:
+  baseUrl: https://api.deepseek.com
+  model: deepseek-v4-pro
+  # Merged into every request body; DeepSeek's thinking mode stays off.
+  extraBody:
+    thinking:
+      type: disabled
+
+# Secrets the chart reads but never creates, so that no password, token or key is
+# kept in the release. Their keys:
+#   database: password (the PostgreSQL password)
+#   auth:     BIANQUE_DEMO_USERS, BIANQUE_SESSION_SECRET, BIANQUE_MCP_CLIENTS,
+#             BIANQUE_ALERTMANAGER_TOKEN
+#   llm:      api-key
+secrets:
+  database: bianque-db
+  auth: bianque-auth
+  llm: bianque-llm
+
+# The ConfigMap holding the runbooks, one key per Markdown file; a hook Job imports it
+# after every install and upgrade. Empty skips the import.
+knowledge:
+  configMap: bianque-runbooks
+
+# The manifest Git repository read by the change tools, as a directory on the node.
+# Empty leaves the change tools without a repository.
+manifests:
+  hostPath: ""
+
+session:
+  # Keep true behind https; a browser does not store a Secure cookie over plain http.
+  cookieSecure: true
+
+frontend:
+  service:
+    type: ClusterIP
+    # Only used when type is NodePort.
+    nodePort: null
+
+database:
+  storage: 1Gi
+
+backend:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      memory: 1536Mi

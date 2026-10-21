@@ -1,0 +1,42 @@
+# Read-only access for the backend: get, list and watch on the five resources the
+# Kubernetes and change tools read, granted per namespace in readNamespaces. CI checks
+# the rendered rules (make helm-rbac).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: bianque-backend
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "bianque.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: bianque-read
+  labels:
+    {{- include "bianque.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [pods, pods/log, events]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments, replicasets]
+    verbs: [get, list, watch]
+{{- range .Values.readNamespaces }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: bianque-read
+  namespace: {{ . }}
+  labels:
+    {{- include "bianque.labels" $ | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: bianque-read
+subjects:
+  - kind: ServiceAccount
+    name: bianque-backend
+    namespace: {{ $.Release.Namespace }}
+{{- end }}

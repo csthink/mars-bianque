@@ -65,6 +65,22 @@ jobs:
           path: .demo/eval
           if-no-files-found: ignore
 
+  # The RBAC the Helm chart renders, with the default and the demo values, only gets,
+  # lists and watches.
+  helm-rbac:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: azure/setup-helm@v5.0.1
+        with:
+          version: v4.3.0
+      - name: Install dependencies
+        working-directory: backend
+        run: uv sync --locked
+      - name: Lint the chart and check its RBAC
+        run: make helm-rbac
+
   public-safety:
     runs-on: ubuntu-24.04
     steps:

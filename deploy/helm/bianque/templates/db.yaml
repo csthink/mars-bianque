@@ -1,0 +1,68 @@
+# PostgreSQL with pgvector, one replica on a persistent volume.
+apiVersion: v1
+kind: Service
+metadata:
+  name: bianque-db
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "bianque.labels" . | nindent 4 }}
+    app.kubernetes.io/component: database
+spec:
+  clusterIP: None
+  selector:
+    {{- include "bianque.selector" (dict "root" . "component" "database") | nindent 4 }}
+  ports:
+    - name: postgres
+      port: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: bianque-db
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "bianque.labels" . | nindent 4 }}
+    app.kubernetes.io/component: database
+spec:
+  serviceName: bianque-db
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "bianque.selector" (dict "root" . "component" "database") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "bianque.selector" (dict "root" . "component" "database") | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: postgres
+          image: {{ include "bianque.image" .Values.images.database }}
+          imagePullPolicy: {{ .Values.images.database.pullPolicy }}
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.database }}
+                  key: password
+            # A subdirectory: the volume's root holds lost+found on some provisioners.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - name: postgres
+              containerPort: 5432
+          readinessProbe:
+            exec:
+              command: [pg_isready, -U, postgres]
+            periodSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: {{ .Values.database.storage }}

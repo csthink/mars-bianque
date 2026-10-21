@@ -1,5 +1,5 @@
-.PHONY: check lint test frontend-check public-safety hooks demo demo-down demo-alerts inject-s1 \
-	restore-s1 record-pack derive-packs replay-login replay replay-down e2e knowledge-fixtures \
+.PHONY: check lint test frontend-check public-safety hooks demo demo-env demo-down demo-alerts inject-s1 \
+	restore-s1 record-pack derive-packs helm-rbac replay-login replay replay-down e2e knowledge-fixtures \
 	eval record
 
 UV := cd backend && uv run --locked
@@ -32,7 +32,29 @@ public-safety:
 hooks:
 	tools/install-hooks.sh
 
-demo:
+# The Helm chart lints, and the RBAC it renders with the default and the demo values only
+# gets, lists and watches. Needs Helm, so it is not part of `make check`; CI runs it.
+HELM_CHART := deploy/helm/bianque
+
+helm-rbac:
+	helm lint $(HELM_CHART)
+	helm lint $(HELM_CHART) --values demo/bianque/values.yaml
+	helm template bianque $(HELM_CHART) --namespace bianque | ($(UV) python -m tools.check_rbac)
+	helm template bianque $(HELM_CHART) --namespace bianque --values demo/bianque/values.yaml | \
+		($(UV) python -m tools.check_rbac)
+
+# The demo profile: the environment (kind, Prometheus and Alertmanager, s1-app) and
+# Bianque installed with its Helm chart, calling a live model. Needs LLM_API_KEY_FILE,
+# the path of a file holding the key; the model defaults are those of
+# `make replay LLM_MODE=live`.
+demo: demo-env
+	@test -n '$(LLM_API_KEY_FILE)' && test -r '$(LLM_API_KEY_FILE)' || \
+		{ echo "make demo needs LLM_API_KEY_FILE, a readable file holding the key" >&2; exit 2; }
+	LLM_API_KEY_FILE='$(LLM_API_KEY_FILE)' LLM_BASE_URL='$(LLM_BASE_URL)' LLM_MODEL='$(LLM_MODEL)' \
+		LLM_EXTRA_BODY='$(LLM_EXTRA_BODY)' demo/scripts/install-bianque.sh
+
+# The demo environment without Bianque, which recording evidence packs needs.
+demo-env:
 	KIND_NODE_IMAGE='$(KIND_NODE_IMAGE)' PROMETHEUS_CHART_VERSION='$(PROMETHEUS_CHART_VERSION)' \
 		demo/scripts/up.sh
 
@@ -80,7 +102,7 @@ $(REPLAY_ENV):
 replay-login:
 	mkdir -p .demo
 	demo/scripts/demo-login.sh $(REPLAY_LOGIN_ENV) $(DEMO_PASSWORD) $(MCP_TOKEN) \
-		docker run --rm -i "$$(docker build -q backend)" bianque auth hash-password
+		docker run --rm -i "$$(docker build -q --target runtime backend)" bianque auth hash-password
 
 # LLM_MODE picks the model mode: recorded (the default) replays recorded responses;
 # scripted answers with the scripted rules; live calls a real model and needs

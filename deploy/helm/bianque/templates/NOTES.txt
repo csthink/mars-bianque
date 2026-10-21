@@ -1,0 +1,5 @@
+Bianque is installed in namespace {{ .Release.Namespace }}.
+
+Pages and the MCP endpoint are served by the Service bianque-frontend (port 80); the
+Alertmanager webhook is http://bianque-backend.{{ .Release.Namespace }}.svc:8000/api/alerts/alertmanager.
+Bianque reads these namespaces only: {{ join ", " .Values.readNamespaces }}.

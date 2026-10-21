@@ -20,7 +20,10 @@ services:
       retries: 30
 
   backend:
-    build: ../../backend
+    build:
+      context: ../../backend
+      # The embedding fixture stands in for the model, so the model-free stage.
+      target: runtime
     environment:
       BIANQUE_DATABASE_URL: postgresql+psycopg://postgres:${BIANQUE_DB_PASSWORD}@db:5432/postgres
       BIANQUE_TOOL_BACKEND: pack

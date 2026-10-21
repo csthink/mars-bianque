@@ -1,0 +1,47 @@
+{{- if .Values.knowledge.configMap }}
+# Imports the runbooks after every install and upgrade. With `helm upgrade --install
+# --wait`, post hooks run once the release's resources are ready, so the backend has
+# migrated the database by then. Unchanged documents are skipped by their SHA-256.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: bianque-knowledge-ingest
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "bianque.labels" . | nindent 4 }}
+    app.kubernetes.io/component: knowledge-ingest
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        {{- include "bianque.selector" (dict "root" . "component" "knowledge-ingest") | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      containers:
+        - name: ingest
+          image: {{ include "bianque.image" .Values.images.backend }}
+          imagePullPolicy: {{ .Values.images.backend.pullPolicy }}
+          securityContext:
+            {{- include "bianque.backendSecurity" . | nindent 12 }}
+          command: [bianque, knowledge, ingest, /var/lib/bianque/runbooks]
+          env:
+            {{- include "bianque.databaseEnv" . | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: runbooks
+              mountPath: /var/lib/bianque/runbooks
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: runbooks
+          configMap:
+            name: {{ .Values.knowledge.configMap }}
+{{- end }}

@@ -10,3 +10,10 @@ nodes:
       - hostPath: @MANIFESTS_DIR@
         containerPath: /var/lib/bianque/manifests
         readOnly: true
+    # The Bianque pages and /mcp (frontend NodePort 30080) on the workstation's loopback
+    # address only.
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: @DEMO_PORT@
+        listenAddress: 127.0.0.1
+        protocol: TCP

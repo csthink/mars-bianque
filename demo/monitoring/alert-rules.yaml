@@ -5,6 +5,10 @@
 # more than twice within two minutes. Both conditions are aggregated by the same
 # labels, so one container yields one alert with one fingerprint.
 #
+# Only the demo namespace is watched: Bianque reads demo-s1 alone (its RBAC), so an
+# alert about a pod elsewhere, such as Bianque's own pods while they start, would start
+# an investigation that can read nothing.
+#
 # The CrashLoopBackOff condition looks at the last minute rather than the current
 # sample: between restarts the container is briefly running or terminated, and
 # without the window those moments reset the pending period, delaying the alert by
@@ -18,9 +22,9 @@ serverFiles:
         rules:
           - alert: BianquePodRestarting
             expr: |
-              max by (namespace, pod, container) (max_over_time(kube_pod_container_status_waiting_reason{reason="CrashLoopBackOff"}[1m])) > 0
+              max by (namespace, pod, container) (max_over_time(kube_pod_container_status_waiting_reason{namespace="demo-s1", reason="CrashLoopBackOff"}[1m])) > 0
               or
-              max by (namespace, pod, container) (increase(kube_pod_container_status_restarts_total[2m])) > 2
+              max by (namespace, pod, container) (increase(kube_pod_container_status_restarts_total{namespace="demo-s1"}[2m])) > 2
             for: 30s
             labels:
               severity: warning

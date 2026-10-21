@@ -15,15 +15,25 @@ server:
 alertmanager:
   persistence:
     enabled: false
+  # The webhook token, from a Secret demo/scripts/up.sh creates before this chart.
+  extraSecretMounts:
+    - name: bianque-alertmanager-token
+      mountPath: /etc/alertmanager/bianque
+      secretName: bianque-alertmanager-token
+      readOnly: true
   config:
     global: {}
     receivers:
       - name: bianque
         webhook_configs:
           # The Bianque backend Service; until Bianque is deployed, deliveries fail
-          # and are only logged by Alertmanager.
+          # and are only logged by Alertmanager. Bianque takes only notifications
+          # carrying the token.
           - url: http://bianque-backend.bianque.svc:8000/api/alerts/alertmanager
             send_resolved: true
+            http_config:
+              authorization:
+                credentials_file: /etc/alertmanager/bianque/token
     route:
       receiver: bianque
       group_by: [alertname, namespace, pod, container]
