@@ -1,16 +1,17 @@
 # 扁鹊架构
 
-Bianque is an alert-driven root cause analysis agent for Kubernetes. An Alertmanager webhook (or a manual trigger) starts an investigation: a LangGraph graph plans the work, dispatches one evidence sub-agent per evidence domain (`kubernetes`, `logs`, `change`) that collects read-only evidence through a single tool registry and executor, judges whether the evidence suffices (while planning, the model may first load skills, files in the Agent Skills format that say how Bianque investigates one kind of failure), and writes a structured report in which every claim cites evidence IDs. Every model output passes a deterministic evidence gate before it is stored or shown; a report that keeps failing the gate becomes a degraded report built without a model. All model traffic leaves through one gateway that redacts first. Remediation suggestions are confirmed or rejected by a person and only recorded. The same registry is served to external clients over MCP. Storage is PostgreSQL only. Evaluation in CI replays recorded responses of a real model against recorded evidence packs, with no network access.
+Bianque is an alert-driven root cause analysis agent for Kubernetes. An Alertmanager webhook (or a manual trigger) starts an investigation: a LangGraph graph plans the work, dispatches one evidence sub-agent per evidence domain (`kubernetes`, `logs`, `change`) that collects read-only evidence through a single tool registry and executor, judges whether the evidence suffices (while planning, the model may first load skills, files in the Agent Skills format that say how Bianque investigates one kind of failure), and writes a structured report in which every claim cites evidence IDs. Every model output passes a deterministic evidence gate before it is stored or shown; a report that keeps failing the gate becomes a degraded report built without a model. All model traffic leaves through one gateway that redacts first. Remediation suggestions are confirmed or rejected by a person and only recorded. The same registry is served to external clients over MCP, and whole investigations are offered to other agents over A2A. Storage is PostgreSQL only. Evaluation in CI replays recorded responses of a real model against recorded evidence packs, with no network access.
 
 本文描述扁鹊的模块划分、数据流与关键机制，路径都相对仓库根目录。架构决策的理由与取舍见 [`docs/adr/`](./adr/)，功能与代码位置的对照见 [`capabilities.md`](capabilities.md)，安装与运行见 [`README.md`](../README.md)。
 
 ## 1. 概览
 
-扁鹊的后端是一个 Python 进程（`backend/bianque/`），HTTP 接口、调查运行、追问、MCP 服务与评测命令共用同一组模块；前端是一个 React 单页应用（`frontend/`），由 nginx 提供静态文件并反向代理 `/api` 与 `/mcp`；存储是一个 PostgreSQL 16 实例（带 pgvector 扩展）。
+扁鹊的后端是一个 Python 进程（`backend/bianque/`），HTTP 接口、调查运行、追问、MCP 服务、A2A 服务与评测命令共用同一组模块；前端是一个 React 单页应用（`frontend/`），由 nginx 提供静态文件并反向代理 `/api`、`/mcp` 与 `/a2a`；存储是一个 PostgreSQL 16 实例（带 pgvector 扩展）。
 
 ```text
  Alertmanager webhook ──▶ POST /api/alerts/alertmanager ─┐
  手动触发 ──────────────▶ POST /api/investigations ───────┤
+ A2A 客户端（其他 Agent）▶ POST /a2a（第 17 节）──────────┤
                                                           ▼
                                   InvestigationService（进程内后台任务）
                                                           │
@@ -32,7 +33,7 @@ Bianque is an alert-driven root cause analysis agent for Kubernetes. An Alertman
 
 一次调查的数据流：
 
-1. 告警经 webhook 进入，或由登录用户手动触发（重查一条已收到的告警，或在回放形态下回放一个评测用例）。后端建一行 `investigations`，在同一进程的后台任务里执行调查图（`backend/bianque/agents/service.py`）。
+1. 告警经 webhook 进入，或由登录用户手动触发（重查一条已收到的告警，或在回放形态下回放一个评测用例），或由 A2A 客户端以任务发起（第 17 节）。后端建一行 `investigations`，在同一进程的后台任务里执行调查图（`backend/bianque/agents/service.py`）。
 2. 调查图把告警原文存为第一条证据，检索运维手册，生成计划，把计划步骤按证据域分派给取证子 Agent 并行取证，判断证据是否充分，不充分时补充计划，最后生成报告。
 3. 每个模型输出先过证据门；通过的报告发布为正式报告并生成修复建议，重试用尽时发布降级报告。
 4. 过程中的每一步写进度事件，页面经 SSE 实时显示；每次模型调用、工具调用与知识检索写一条调用记录。
@@ -53,7 +54,7 @@ Bianque is an alert-driven root cause analysis agent for Kubernetes. An Alertman
 | 评测 | `pack` | `recorded` | `fixture` | `make eval` |
 | 测试与端到端测试 | `pack` 或测试替身 | `scripted` | `fixture` | `make test`、`make e2e` |
 
-模块之间的依赖边界由 import-linter 契约保证（`backend/pyproject.toml`），例如：只有提供方层导入模型 SDK，只有真实 Kubernetes 后端导入 `kubernetes_asyncio`，只有嵌入模块导入 fastembed，`bianque.gate` 不导入 `bianque.llm`，`bianque.skills` 不导入扁鹊的其他包，只有 `bianque.mcp` 导入 MCP SDK，只有 `bianque.api` 导入 FastAPI。
+模块之间的依赖边界由 import-linter 契约保证（`backend/pyproject.toml`），例如：只有提供方层导入模型 SDK，只有真实 Kubernetes 后端导入 `kubernetes_asyncio`，只有嵌入模块导入 fastembed，`bianque.gate` 不导入 `bianque.llm`，`bianque.skills` 不导入扁鹊的其他包，只有 `bianque.mcp` 导入 MCP SDK，只有 `bianque.a2a` 导入 A2A SDK，只有 `bianque.api` 导入 FastAPI。
 
 ## 2. 调查图
 
@@ -114,7 +115,7 @@ token 预算只在 `assess` 里检查一次：每次模型调用的调用记录�
 | 表 | 内容 |
 | --- | --- |
 | `alerts` | 告警原文；同一 fingerprint 在调查未结束时再次送达不新建调查 |
-| `investigations` | 编号（`inv_` 加 ULID）、触发方式（`alert`、`manual`、`replay`）、回放用例、状态（`pending`、`running`、`reported`、`degraded`、`interrupted`、`failed`）、工具后端、模型模式与模型名、token 预算与用量 |
+| `investigations` | 编号（`inv_` 加 ULID）、触发方式（`alert`、`manual`、`replay`、`a2a`）、回放用例、状态（`pending`、`running`、`reported`、`degraded`、`interrupted`、`failed`）、工具后端、模型模式与模型名、token 预算与用量 |
 | `plans`、`steps` | 计划的各个版本（来源 `model` 或 `default`，生成时已加载的 skill）与每个步骤（证据域、目标、建议工具、期望证据、状态、发现） |
 | `assessments` | 每轮的判断，含 `rule_override` |
 | `evidence` | 证据原文与脱敏文本、保留标识符、来源工具、产生它的调用与步骤 |
@@ -124,6 +125,7 @@ token 预算只在 `assess` 里检查一次：每次模型调用的调用记录�
 | `investigation_events` | 进度事件（第 10 节） |
 | `followup_sessions`、`followup_messages` | 追问会话与问答（第 8 节） |
 | `knowledge_documents`、`knowledge_chunks` | 运维手册与分块（第 7 节） |
+| `a2a_tasks` | A2A 任务：任务编号、上下文编号、关联的调查或被拒的原因代码、调用方；任务状态不存，由调查现算（第 17 节） |
 
 表结构由 Alembic 迁移建立（`backend/migrations/versions/`）。LangGraph 检查点由 `langgraph-checkpoint-postgres` 自建表，放在迁移预先创建的 `langgraph` schema 里：检查点用独立的连接池，连接参数把 `search_path` 设为 `langgraph`（`backend/bianque/agents/runner.py`），Alembic 只管理默认 schema。
 
@@ -132,6 +134,7 @@ token 预算只在 `assess` 里检查一次：每次模型调用的调用记录�
 | 前缀 | 生成方式 | 原因 |
 | --- | --- | --- |
 | `inv_` | ULID | 按时间有序；不进提示词 |
+| `task_`、`ctx_` | ULID | A2A 任务与扁鹊开的上下文；不进提示词 |
 | `ev_` 加 10 位十六进制 | 取证工具证据：SHA-256（工具名、身份参数、脱敏文本）；告警证据：SHA-256（`alertmanager`、fingerprint、脱敏文本） | 证据编号进提示词，必须由内容决定；同一内容在一次调查内只存一份 |
 | `sg_` 加 10 位十六进制 | SHA-256（序号、动作、命令、风险等级、引用） | 追问提示词里有修复建议编号 |
 | `kn_` 加 12 位十六进制 | SHA-256（文件路径、标题链、分块序号） | 重复导入得到同一编号 |
@@ -425,9 +428,11 @@ HTTP 接口在 `backend/bianque/api/`，由 FastAPI 提供。
 | `POST /api/sessions/{id}/messages` | 提问，响应是 SSE 流（第 8 节） | 是 |
 | `POST /api/auth/login`、`POST /api/auth/logout`、`GET /api/auth/session` | 登录、登出、当前登录人 | |
 | `/mcp` | MCP 服务（第 11 节） | 否（令牌） |
+| `GET /.well-known/agent-card.json` | A2A 的 Agent Card（第 17 节） | 否 |
+| `POST /a2a` | A2A 服务，JSON-RPC 绑定（第 17 节） | 否（令牌） |
 | `GET /healthz` | 存活检查 | 否 |
 
-读接口不需要登录，写操作（触发、确认、追问）需要登录。账号由 `BIANQUE_DEMO_USERS` 配置（用户名到 bcrypt 哈希），`make replay` 与 `make demo` 每次生成随机口令。会话不存服务端（`backend/bianque/auth/sessions.py`）：Cookie 里是签名令牌（用户名与签发时刻，HMAC-SHA256），签名密钥由 `BIANQUE_SESSION_SECRET` 与该用户当前的口令哈希派生，换口令或换密钥使旧令牌失效；有效期 `BIANQUE_SESSION_TTL_SECONDS`（默认 12 小时）。Cookie 为 `HttpOnly`、`SameSite=Strict`、`Path=/api`，`Secure` 由 `BIANQUE_SESSION_COOKIE_SECURE` 控制。前端与接口同源，nginx 对两个 SSE 路径与 `/mcp` 关闭代理缓冲并延长读超时（`frontend/nginx.conf.template`）。
+读接口不需要登录，写操作（触发、确认、追问）需要登录。账号由 `BIANQUE_DEMO_USERS` 配置（用户名到 bcrypt 哈希），`make replay` 与 `make demo` 每次生成随机口令。会话不存服务端（`backend/bianque/auth/sessions.py`）：Cookie 里是签名令牌（用户名与签发时刻，HMAC-SHA256），签名密钥由 `BIANQUE_SESSION_SECRET` 与该用户当前的口令哈希派生，换口令或换密钥使旧令牌失效；有效期 `BIANQUE_SESSION_TTL_SECONDS`（默认 12 小时）。Cookie 为 `HttpOnly`、`SameSite=Strict`、`Path=/api`，`Secure` 由 `BIANQUE_SESSION_COOKIE_SECURE` 控制。前端与接口同源，nginx 对两个 SSE 路径、`/mcp` 与 `/a2a` 关闭代理缓冲并延长读超时（`frontend/nginx.conf.template`）。
 
 ### 10.1 进度事件
 
@@ -444,7 +449,7 @@ HTTP 接口在 `backend/bianque/api/`，由 FastAPI 提供。
 | `report_published`、`report_degraded` | `report_id` |
 | `investigation_finished`、`investigation_interrupted` | `status` |
 
-`GET /api/investigations/{id}/events` 的每帧带 `id: <seq>`。流从 `Last-Event-ID`（浏览器 `EventSource` 重连时发送）与查询参数 `after`（页面重新加载时发送）中较大的一个之后开始，在 `investigation_finished` 或 `investigation_interrupted` 之后结束；空闲时每 15 秒发一行注释保持连接。进程内的 `EventNotifier` 在事件提交后唤醒该调查的读者；读者被唤醒或等满 1 秒后都重新读表，数据库是事件的唯一来源（[ADR 0004](./adr/0004-postgresql-only.md)）。
+`GET /api/investigations/{id}/events` 的每帧带 `id: <seq>`。流从 `Last-Event-ID`（浏览器 `EventSource` 重连时发送）与查询参数 `after`（页面重新加载时发送）中较大的一个之后开始，在 `investigation_finished` 或 `investigation_interrupted` 之后结束；空闲时每 15 秒发一行注释保持连接。读表与等待的循环是 `backend/bianque/agents/records.py` 的 `follow_events`，A2A 的任务流也用它。进程内的 `EventNotifier` 在事件提交后唤醒该调查的读者；读者被唤醒或等满 1 秒后都重新读表，数据库是事件的唯一来源（[ADR 0004](./adr/0004-postgresql-only.md)）。
 
 ## 11. MCP 服务
 
@@ -453,7 +458,7 @@ MCP 服务（`backend/bianque/mcp/`）用 MCP Python SDK 的 Streamable HTTP 传
 | 机制 | 实现 |
 | --- | --- |
 | 客户端配置 | `BIANQUE_MCP_CLIENTS`：JSON 数组，每项 `name`、`token_sha256`、`tools`（名称或 `fnmatch` 通配）、`namespaces`；通配在启动时按注册表展开，匹配不到任何工具即启动失败 |
-| 认证 | `/mcp` 前的 ASGI 中间件 `BearerAuth` 计算 Bearer 令牌的 SHA-256 并做常量时间比较；无令牌或令牌不属于任何客户端返回 401 |
+| 认证 | `/mcp` 前的 ASGI 中间件 `BearerAuth`（`backend/bianque/auth/bearer.py`，与 A2A 共用）计算 Bearer 令牌的 SHA-256 并做常量时间比较；无令牌或令牌不属于任何客户端返回 401 |
 | 工具集合 | `list_tools` 只列出该客户端允许的工具；直接调用其他工具由执行器拒绝 |
 | 命名空间范围 | 执行器检查所有带 `namespace` 参数的调用；`investigation_list` 与 `investigation_get_report` 只返回告警在该命名空间的调查，其他命名空间的调查按不存在处理 |
 | 调用记录 | 每次调用写一条调用记录，`agent` 为 `mcp`，`caller` 为客户端名；拒绝也写 |
@@ -531,7 +536,7 @@ MCP 调用不属于任何调查，不产生证据；`pack` 后端下读 `BIANQUE
 
 ### 14.1 回放形态（Docker Compose）
 
-`make replay` 用 `deploy/compose/replay.yaml` 起 PostgreSQL（`pgvector/pgvector:pg16`）、后端与前端，页面在 `127.0.0.1:8080`。后端配置为 `BIANQUE_TOOL_BACKEND=pack`、`BIANQUE_EMBEDDING_MODE=fixture`、`BIANQUE_LLM_MODE=recorded`（`LLM_MODE` 可改为 `scripted` 或 `live`），仓库的 `eval/` 与 `knowledge/` 只读挂入，skill 在镜像里（第 2.6 节）。`BIANQUE_REPLAY_SEED=true` 让后端启动后导入知识，并对每个有证据包、还没有回放调查的用例依次建一次调查。数据库口令在第一次运行时随机生成（数据卷保留它），演示口令、会话密钥与 MCP 令牌每次运行重新随机生成，都写进被 Git 忽略的 `.demo/`；MCP 客户端只配置令牌的 SHA-256。`LLM_MODE=live` 时叠加 `deploy/compose/live.yaml`，把密钥文件只读挂进容器并以 `file:` 引用，密钥不进环境变量与镜像。
+`make replay` 用 `deploy/compose/replay.yaml` 起 PostgreSQL（`pgvector/pgvector:pg16`）、后端与前端，页面在 `127.0.0.1:8080`。后端配置为 `BIANQUE_TOOL_BACKEND=pack`、`BIANQUE_EMBEDDING_MODE=fixture`、`BIANQUE_LLM_MODE=recorded`（`LLM_MODE` 可改为 `scripted` 或 `live`），仓库的 `eval/` 与 `knowledge/` 只读挂入，skill 在镜像里（第 2.6 节）。`BIANQUE_REPLAY_SEED=true` 让后端启动后导入知识，并对每个有证据包、还没有回放调查的用例依次建一次调查。数据库口令在第一次运行时随机生成（数据卷保留它），演示口令、会话密钥、MCP 令牌与 A2A 令牌每次运行重新随机生成，都写进被 Git 忽略的 `.demo/`；MCP 与 A2A 客户端只配置令牌的 SHA-256。Agent Card 里的接口地址由 `BIANQUE_A2A_PUBLIC_URL` 设为 nginx 的 `/a2a`。`LLM_MODE=live` 时叠加 `deploy/compose/live.yaml`，把密钥文件只读挂进容器并以 `file:` 引用，密钥不进环境变量与镜像。
 
 后端镜像启动时先执行 `alembic upgrade head`，再启动 uvicorn。
 
@@ -550,7 +555,7 @@ chart 的组成：
 | RBAC | ServiceAccount `bianque-backend`；ClusterRole `bianque-read` 只对 `pods`、`pods/log`、`events`、`deployments`、`replicasets` 授予 `get`、`list`、`watch`；按 `readNamespaces` 为每个命名空间建 RoleBinding，没有 ClusterRoleBinding |
 | 清单仓 | 只在演示 values 里以只读 hostPath 卷挂入，供 `change` 域工具读取 |
 
-chart 只按名字引用三个 Secret（数据库口令；演示账号、会话密钥、MCP 客户端与 webhook 令牌；模型密钥），自己不创建，所以口令、令牌与密钥不进 Helm release 记录。演示脚本在安装前创建它们，模型密钥以文件挂入并以 `file:` 引用。
+chart 只按名字引用三个 Secret（数据库口令；演示账号、会话密钥、MCP 客户端、A2A 客户端与 webhook 令牌；模型密钥），自己不创建，所以口令、令牌与密钥不进 Helm release 记录。演示脚本在安装前创建它们，模型密钥以文件挂入并以 `file:` 引用。
 
 ### 14.3 CI
 
@@ -563,7 +568,7 @@ chart 只按名字引用三个 Secret（数据库口令；演示账号、会话�
 | `helm-rbac` | `helm lint`，渲染 chart（默认与演示 values）后由 `backend/tools/check_rbac.py` 检查 RBAC |
 | `public-safety` | `tools/check-public-safety.sh` 扫描凭据、私钥、云密钥形态、本机路径与内网地址 |
 | `frontend` | eslint、tsc、vitest、生产构建 |
-| `e2e` | 以 `scripted` 模式起回放形态，Playwright 端到端测试；只在 PR 与 `main` 上运行 |
+| `e2e` | 以 `scripted` 模式起回放形态，Playwright 端到端测试，再用官方 A2A SDK 的客户端测 A2A 服务（`backend/e2e/`）；只在 PR 与 `main` 上运行 |
 
 ## 15. 安全边界
 
@@ -575,8 +580,9 @@ chart 只按名字引用三个 Secret（数据库口令；演示账号、会话�
 | 模型出口唯一且先脱敏 | 只有 `bianque/llm/gateway.py` 导入提供方层（`backend/tests/test_llm_egress_static.py` 检查）；类型门、运行时检查与发送前复查（第 6 节）。嵌入在本地计算，不经模型服务 |
 | 模型文本不直接到达客户端 | 所有模型输出过证据门后才写入业务表；进度事件没有文本字段；被拒的输出只以校验器名出现；模型调用的摘要不经接口返回；追问先校验后推送 |
 | 确认不执行 | 确认与驳回只插入一行只追加的确认记录，没有写外部系统的代码路径 |
-| 写操作需要登录 | 触发、确认、追问要求有效的会话 Cookie；webhook 与 MCP 各自用 Bearer 令牌 |
+| 写操作需要登录 | 触发、确认、追问要求有效的会话 Cookie；webhook、MCP 与 A2A 各自用 Bearer 令牌 |
 | MCP 权限 | 每个客户端一个令牌，只存哈希；工具集合与命名空间范围由执行器检查，拒绝也写调用记录 |
+| A2A 权限 | 每个客户端一个令牌，只存哈希；告警的命名空间必须在令牌范围内；客户端只读得到自己发起的任务，别人的任务与不存在的任务得到同一个错误；A2A 没有确认修复建议的入口 |
 | 凭据不进仓库 | 口令、令牌与密钥运行时生成或由 Secret、密钥文件提供；环境变量统一 `BIANQUE_` 前缀，只在 `bianque.config` 读取 |
 
 ## 16. 换一个领域要改哪几处
@@ -598,4 +604,25 @@ chart 只按名字引用三个 Secret（数据库口令；演示账号、会话�
 | 知识与评测 | `knowledge/runbooks/`、`eval/cases/` | 新领域的运维手册、评测用例、证据包与追问问题；之后重新生成向量夹具（`make knowledge-fixtures`）并重新录制（`make record`） |
 | 部署 | `deploy/helm/bianque/templates/rbac.yaml` | 新数据源的只读权限 |
 
-不随领域变化的部分：调查图的结构与路由、取证子 Agent 的实现、模型网关与三种模型模式、脱敏引擎、工具注册表与执行器的规则、七个校验器的逻辑与校验清单机制、存储与迁移机制、进度事件与 SSE、追问流程、人工确认、MCP 服务与评测框架。
+不随领域变化的部分：调查图的结构与路由、取证子 Agent 的实现、模型网关与三种模型模式、脱敏引擎、工具注册表与执行器的规则、七个校验器的逻辑与校验清单机制、存储与迁移机制、进度事件与 SSE、追问流程、人工确认、MCP 服务、A2A 服务与评测框架。
+
+## 17. A2A 服务
+
+A2A 服务（`backend/bianque/a2a/`）让别的 Agent 把一条告警交给扁鹊调查：客户端发起一个任务，收到由进度事件转换的任务状态，最后拿到报告。它与 MCP 服务的分工：MCP 把只读工具交给客户端，由客户端自己调查；A2A 把整次调查交给扁鹊，客户端不接触工具与证据原文。两者共用令牌做法，互不依赖（[ADR 0007](./adr/0007-a2a-server.md)）。
+
+协议由官方 `a2a-sdk` 实现：SDK 解析 JSON-RPC 请求、检查协议版本（`A2A-Version: 1.0`）、把错误映射为规范的错误码，流式应答用 SSE；扁鹊实现 SDK 的请求处理接口（`handler.py`）与任务存储接口（`tasks.py`）。只开 JSON-RPC 一种绑定，没有 gRPC 与 HTTP+JSON。
+
+| 机制 | 实现 |
+| --- | --- |
+| Agent Card | `GET /.well-known/agent-card.json`，不需要令牌（`card.py`）：一个技能 `investigate_alert`；一个接口，JSON-RPC 绑定，地址取自 `BIANQUE_A2A_PUBLIC_URL`，协议版本 `1.0`；`streaming` 为真，`pushNotifications` 与 `extendedAgentCard` 为假；认证为 HTTP Bearer；输入模式只有 `application/json` |
+| 客户端与认证 | `BIANQUE_A2A_CLIENTS`：JSON 数组，每项 `name`、`token_sha256`、`namespaces`，与 MCP 客户端同一格式（没有工具列表）。`/a2a` 前是与 MCP 共用的 `BearerAuth`；没有配置客户端时一律 401，Agent Card 照常可读。认证后客户端成为 SDK 调用上下文里的用户（`clients.py`） |
+| 发起 | 消息里有且只有一个 `data` 片段；含 `text`、`raw`、`url` 片段的消息返回 ContentTypeNotSupported（-32005），不建任务。回放形态（`pack` 后端）的内容是 `{"case_id": "…"}`，按用例新开一次调查；演示形态（`live` 后端）的内容是一条 Alertmanager 告警，由 `parse_alert` 解析，经 `InvestigationService.deliver` 走与 webhook 相同的路径与指纹去重，同一告警正在调查时任务关联那次调查。调查的触发方式是 `a2a`（`intake.py`） |
+| 拒绝 | 其余无法服务的请求建任务并直接结束为 `REJECTED`，`a2a_tasks.rejected_reason` 记原因代码：`malformed`（不是恰好一个片段，或内容既不是告警也不是用例请求）、`profile_mismatch`（告警发给回放形态，或用例发给演示形态）、`unknown_case`、`namespace_denied`（告警或用例告警的命名空间不在令牌范围内，先于告警状态检查）、`resolved_alert` |
+| 任务状态 | 不另存，每次读取时由调查现算：`pending` 为 `SUBMITTED`，`running` 为 `WORKING`，`reported` 与 `degraded` 为 `COMPLETED`，`failed` 与 `interrupted` 为 `FAILED`。状态消息由代码按最新进度事件的类型与载荷生成（例如 `plan version 2 (model)`），另带一个 `data` 片段放事件类型、序号与载荷；进度事件没有文本字段（第 10.1 节），所以状态里没有模型文本。进程重启后任务照常可读 |
+| 流式与续传 | `SendStreamingMessage` 先发任务（新调查为 `SUBMITTED`），再把该调查的每个进度事件按序转成状态更新，最后发 Artifact 与终止态。`SubscribeToTask` 的第一个事件是当前状态的任务，之后从当前最后一个事件接着发；对已结束的任务按规范返回 UnsupportedOperation，此时用 `GetTask` 读结果。读事件用 `follow_events`（第 10.1 节）。不流式的 `SendMessage` 默认等任务结束再返回，`returnImmediately` 时立即返回 |
+| 产出 | 调查发布正式报告或降级报告时，任务带 Artifact `report`：`data` 片段是 `{investigation_id, report_status, report, suggestions, detail_url}`，`report` 与 `GET /api/investigations/{id}` 的报告正文相同，`suggestions` 是修复建议的编号、动作、命令、风险与确认状态；`text` 片段是由代码按报告生成的摘要。详情页地址取 `BIANQUE_A2A_PUBLIC_URL` 的源 |
+| 归属 | 按任务编号读任务的入口只有任务存储的读取方法，按 `a2a_tasks.caller` 过滤：`GetTask`、`SubscribeToTask`、`CancelTask`、带任务编号的 `SendMessage` 遇到别的客户端的任务与不存在的任务一样返回 TaskNotFound；`ListTasks` 只列自己的任务 |
+| 不提供的操作 | 推送配置的四个操作返回 PushNotificationNotSupported；`CancelTask` 返回 TaskNotCancelable（调查不能中途取消）；带已有任务编号的 `SendMessage` 返回 UnsupportedOperation（扁鹊不做多轮）；`GetExtendedAgentCard` 返回 UnsupportedOperation。任务不进入 `INPUT_REQUIRED`：修复建议只能由登录的人在页面上确认 |
+| 可观测 | 调查的触发方式为 `a2a`；`a2a_tasks` 记录任务编号、上下文编号、调查编号与调用方；详情接口的 `investigation.caller` 是最早关联该调查的任务的调用方，告警卡片显示「触发：A2A」与调用方 |
+
+A2A 发起的调查与其他方式发起的调查走同一张调查图、同一组提示词与工具，发出相同的模型请求，录制响应照常命中（`backend/tests/api/test_api_a2a.py` 在 `scripted` 模式下比对请求键，在 `recorded` 模式下回放用例）。

@@ -13,6 +13,7 @@ flowchart LR
   AM["Alertmanager"] -->|"webhook"| API["后端<br/>FastAPI"]
   UI["React 前端"] -->|"REST、SSE"| API
   MCPC["MCP 客户端"] -->|"/mcp"| API
+  A2AC["A2A 客户端<br/>其他 Agent"] -->|"/a2a"| API
   API --> GRAPH["调查图<br/>LangGraph"]
   GRAPH -->|"先脱敏"| LLM["模型网关"]
   GRAPH --> EXEC["工具执行器<br/>与注册表"]
@@ -49,6 +50,7 @@ flowchart TB
 - [`docs/adr/0004-postgresql-only.md`](docs/adr/0004-postgresql-only.md)
 - [`docs/adr/0005-recorded-model-responses-for-eval.md`](docs/adr/0005-recorded-model-responses-for-eval.md)
 - [`docs/adr/0006-agent-skills-for-planning.md`](docs/adr/0006-agent-skills-for-planning.md)
+- [`docs/adr/0007-a2a-server.md`](docs/adr/0007-a2a-server.md)
 
 ## 能力
 
@@ -63,6 +65,7 @@ flowchart TB
 - **知识检索（RAG）**：运维手册按标题分块，向量检索（pgvector）与全文检索用 RRF 融合（`backend/bianque/knowledge/search.py`）。知识只作参考资料，证据门禁止把知识编号当证据引用。
 - **Agent Skills**：扁鹊怎么查一类故障写成 [Agent Skills](https://agentskills.io/specification) 格式的 skill（`.agents/skills/`，见下文「Skill」一节）。生成计划时提示词只列目录，模型用 `activate_skill` 按需加载正文，同一次调查不重复注入，激活次数有上限；skill 不是证据也不是知识，证据门拒绝引用与参考资料里的 skill 名称。每次激活写调用记录，每版计划记录加载过的 skill（`backend/bianque/skills/`、`backend/bianque/agents/skill_loop.py`）。
 - **MCP 服务**：把注册表里的只读工具经 MCP（Streamable HTTP）提供给 Claude Code 等客户端，令牌绑定允许的工具与命名空间（`backend/bianque/mcp/`）。
+- **A2A 服务**：别的 Agent 用 A2A 协议把一条告警（回放形态下是一个用例编号）交给扁鹊，收到由进度事件转换的任务状态与引用证据的报告；令牌绑定命名空间，客户端只能读到自己的任务（`backend/bianque/a2a/`）。
 - **人工确认**：登录用户对修复建议确认或驳回，每条建议只能决定一次；决定表由数据库触发器保证只追加，扁鹊不执行任何命令。
 - **脱敏**：送进模型与展示在界面上的文本都经过脱敏引擎（`backend/bianque/redaction/`）；模型网关在类型检查、运行时与发送前三处拒绝未脱敏的输入。
 - **中断与重启**：调查图的状态以 LangGraph 检查点存进 PostgreSQL；后端重启时把未结束的调查标为中断，不续跑。
@@ -119,11 +122,11 @@ Docker Compose 起数据库、后端与前端，nginx 提供页面并把 `/api` 
 
 | 命令 | 作用 |
 | --- | --- |
-| `make replay` | 构建镜像并启动，健康检查通过后打印地址（默认 `http://127.0.0.1:8080`，`BIANQUE_REPLAY_PORT` 可改）、演示账号口令与接入 MCP 的命令。第一次运行时生成数据库口令，写进被忽略的 `.demo/replay.env` |
+| `make replay` | 构建镜像并启动，健康检查通过后打印地址（默认 `http://127.0.0.1:8080`，`BIANQUE_REPLAY_PORT` 可改）、演示账号口令、接入 MCP 的命令与发起 A2A 任务的命令。第一次运行时生成数据库口令，写进被忽略的 `.demo/replay.env` |
 | `make replay LLM_MODE=scripted` | 同上，规则响应器代替模型 |
 | `make replay LLM_MODE=live LLM_API_KEY_FILE=<密钥文件>` | 同上，调用真实模型 |
 | `make replay-down` | 停止并删除容器与数据卷，下次从空数据库开始 |
-| `make e2e` | 从空数据库以 `scripted` 模式起回放形态，对启动时现跑的调查与测试中新触发的调查跑 Playwright 端到端测试；宽屏与窄屏、浅色与深色的截图写到 `frontend/e2e/screenshots/` |
+| `make e2e` | 从空数据库以 `scripted` 模式起回放形态，对启动时现跑的调查与测试中新触发的调查跑 Playwright 端到端测试，再用官方 A2A SDK 的客户端跑 A2A 的端到端测试（`backend/e2e/`，需要 uv）；宽屏与窄屏、浅色与深色的截图写到 `frontend/e2e/screenshots/` |
 
 模型模式由 `LLM_MODE` 选择：
 
@@ -151,7 +154,7 @@ make demo LLM_API_KEY_FILE=<密钥文件>
 
 演示形态是一个本机 kind 集群：演示应用 `s1-app`、Prometheus、Alertmanager、kube-state-metrics，以及用 Helm chart（`deploy/helm/bianque`）装进集群的扁鹊（后端、前端、PostgreSQL）。演示应用的清单放在本机的一个 Git 仓里，故障都通过提交清单引入；Alertmanager 把告警推给扁鹊，扁鹊读真实的集群与清单仓，调用真实模型。
 
-完成后打印页面地址 `http://127.0.0.1:8180`（`BIANQUE_DEMO_PORT` 可改，建集群时生效）、演示账号口令与接入 MCP 的命令。口令、会话密钥、MCP 令牌、数据库口令与 Alertmanager 的 webhook 令牌都在本机生成，放在被忽略的 `.demo/kind/`，以 Secret 交给集群，不进 Helm 的 release 记录；模型密钥同样以 Secret 只读挂成文件，不进环境变量与镜像。
+完成后打印页面地址 `http://127.0.0.1:8180`（`BIANQUE_DEMO_PORT` 可改，建集群时生效）、演示账号口令、接入 MCP 的命令与 A2A 的 Agent Card 地址。口令、会话密钥、MCP 令牌、A2A 令牌、数据库口令与 Alertmanager 的 webhook 令牌都在本机生成，放在被忽略的 `.demo/kind/`，以 Secret 交给集群，不进 Helm 的 release 记录；模型密钥同样以 Secret 只读挂成文件，不进环境变量与镜像。
 
 | 命令 | 作用 |
 | --- | --- |
@@ -220,6 +223,57 @@ skill 写扁鹊怎么查：按证据域列出要用的工具、期望的证据�
 
 - **Claude Code**：Claude Code 读 `.claude/skills/`，仓库里的 `.claude/skills` 是指向 `../.agents/skills` 的相对符号链接，在仓库根目录启动 Claude Code 即可看到这 5 个 skill（已用 Claude Code 2.1.306 实测）。按上一节接入 MCP 后，Claude Code 里扁鹊的工具名带服务名前缀，例如 `k8s_get_pod_status` 显示为 `mcp__bianque__k8s_get_pod_status`；skill 正文写的是不带前缀的名字。Windows 上没有开启符号链接支持（`git config core.symlinks true` 并具备创建符号链接的权限）的克隆里，`.claude/skills` 是一个内容为路径的普通文件，Claude Code 读不到 skill。
 - **Codex**：依据 Codex 的文档，它扫描项目里的 `.agents/skills/`；这一点没有实测。
+
+### 接入 A2A 客户端
+
+扁鹊也是一个 A2A 服务端（协议 1.0，JSON-RPC 绑定）：别的 Agent 把一条告警交给扁鹊，收到调查进度与引用证据的报告。与 MCP 的区别：MCP 把只读工具交给客户端，由客户端自己调查；A2A 把整次调查交给扁鹊，客户端只发起任务、接收进度与报告，接触不到工具与证据原文。两者用同一种令牌做法（配置里只存令牌的 SHA-256，令牌绑定命名空间），互不依赖。
+
+- **Agent Card**：`http://127.0.0.1:8080/.well-known/agent-card.json`，读取不需要令牌。一个技能 `investigate_alert`；一个接口 `http://127.0.0.1:8080/a2a`（`BIANQUE_A2A_PUBLIC_URL` 配置）；支持流式，不提供推送通知与扩展 Agent Card；认证为 HTTP Bearer。
+- **令牌**：`make replay` 每次启动生成一个随机令牌，保存在被忽略的 `.demo/a2a-token`，配置客户端 `demo-agent`（命名空间 `demo-s1`）。演示形态的地址是 `http://127.0.0.1:8180`，令牌在 `.demo/kind/a2a-token`。重新启动后令牌更换。
+- **发起任务**：消息里只放一个 `data` 片段。回放形态是 `{"case_id": "s1-a"}`，按用例新开一次调查；演示形态是一条 firing 的 Alertmanager 告警（webhook 请求体 `alerts` 里的一项），与 webhook 走同一路径与指纹去重，同一告警正在调查时任务关联那次调查。含 `text` 等其他类型片段的消息返回 ContentTypeNotSupported，不建任务。
+
+用官方 Python SDK（`a2a-sdk`）回放一个用例，逐条打印任务状态，最后是报告：
+
+```python
+import asyncio
+import uuid
+
+import httpx
+from a2a.client import A2ACardResolver, ClientConfig, ClientFactory
+from a2a.types import Message, Part, Role, SendMessageRequest
+from google.protobuf import struct_pb2
+from google.protobuf.json_format import ParseDict
+
+
+async def main() -> None:
+    token = open(".demo/a2a-token").read().strip()
+    headers = {"Authorization": f"Bearer {token}"}
+    async with httpx.AsyncClient(headers=headers, timeout=600) as http:
+        card = await A2ACardResolver(http, "http://127.0.0.1:8080").get_agent_card()
+        async with ClientFactory(ClientConfig(httpx_client=http)).create(card) as client:
+            data = ParseDict({"case_id": "s1-a"}, struct_pb2.Value())
+            message = Message(message_id=str(uuid.uuid4()), role=Role.ROLE_USER, parts=[Part(data=data)])
+            async for event in client.send_message(SendMessageRequest(message=message)):
+                print(event)
+
+
+asyncio.run(main())
+```
+
+不用 SDK 时，`make replay` 打印的 `curl` 命令发一条 JSON-RPC `SendMessage`（带 `A2A-Version: 1.0` 请求头与 `returnImmediately`），立即返回任务；之后用 `GetTask` 或 `SubscribeToTask` 跟进。
+
+| 任务状态 | 含义 |
+| --- | --- |
+| `SUBMITTED` | 调查已建立，尚未开始 |
+| `WORKING` | 调查进行中；状态消息由最新进度事件生成，例如 `plan version 2 (model)`、`round 1 assessment: insufficient`，只含事件类型、编号与枚举值，不含模型文本 |
+| `COMPLETED` | 发布了正式报告或降级报告；Artifact `report` 含报告正文（与 `GET /api/investigations/{id}` 的报告相同）、修复建议的编号、动作、命令、风险与确认状态、详情页地址，以及由代码生成的文本摘要 |
+| `FAILED` | 调查失败，或因后端重启中断 |
+| `REJECTED` | 请求无法服务，状态消息以原因代码开头：`malformed`（不是一个告警或用例请求）、`namespace_denied`（告警的命名空间不在令牌范围内）、`profile_mismatch`（告警发给回放形态，或用例发给演示形态）、`unknown_case`、`resolved_alert` |
+
+- 流式：`SendStreamingMessage` 先返回任务，再按顺序推送每个进度事件对应的状态更新，最后是 Artifact 与终止态。断线后 `SubscribeToTask` 先给出任务当前状态，再接着推送；任务已经结束时按规范返回不支持，用 `GetTask` 读结果。
+- 客户端只能读到自己发起的任务：读、订阅、取消别的客户端的任务，或向它追加消息，都与任务不存在一样返回 TaskNotFound；`ListTasks` 只列自己的任务。
+- 不提供：推送通知（返回 PushNotificationNotSupported）、取消（TaskNotCancelable，调查不能中途停止）、向已有任务追加消息（UnsupportedOperation，扁鹊不做多轮）、扩展 Agent Card。修复建议只能由登录的人在扁鹊页面上确认，任务不会停在等人输入的状态。
+- A2A 发起的调查触发方式是 `a2a`，列表与详情页显示「A2A」，详情页的告警卡片显示调用方。它与其他方式发起的调查用同一张调查图、同一组提示词与工具，回放形态下照常命中录制响应。
 
 ### 本地开发
 
@@ -305,7 +359,7 @@ skill 写扁鹊怎么查：按证据域列出要用的工具、期望的证据�
 
 ## 换一个领域要改哪几处
 
-扁鹊面向 Kubernetes，领域知识集中在下表几处。换到另一个领域时改这几处即可；调查图、取证子 Agent 的实现、模型网关、脱敏引擎、工具执行器、证据门各校验器的逻辑、存储、MCP 服务与评测框架不随领域变化。逐项说明见 [`docs/architecture.md`](docs/architecture.md) 第 16 节。
+扁鹊面向 Kubernetes，领域知识集中在下表几处。换到另一个领域时改这几处即可；调查图、取证子 Agent 的实现、模型网关、脱敏引擎、工具执行器、证据门各校验器的逻辑、存储、MCP 服务、A2A 服务与评测框架不随领域变化。逐项说明见 [`docs/architecture.md`](docs/architecture.md) 第 16 节。
 
 | 改动点 | 位置 | 改什么 |
 | --- | --- | --- |
@@ -326,7 +380,7 @@ skill 写扁鹊怎么查：按证据域列出要用的工具、期望的证据�
 
 | 层 | 技术 |
 | --- | --- |
-| 后端 | Python 3.12、FastAPI、LangGraph、SQLAlchemy、Alembic、pydantic、MCP Python SDK、OpenAI 兼容接口 |
+| 后端 | Python 3.12、FastAPI、LangGraph、SQLAlchemy、Alembic、pydantic、MCP Python SDK、A2A Python SDK（`a2a-sdk`）、OpenAI 兼容接口 |
 | 存储 | PostgreSQL 16 与 pgvector（镜像 `pgvector/pgvector:pg16`），LangGraph 检查点用 `langgraph-checkpoint-postgres` |
 | 嵌入 | `BAAI/bge-small-en-v1.5`，由 fastembed（ONNX）在本地运行 |
 | 前端 | React 19、TypeScript、Vite、TanStack Query、React Router、`@xyflow/react`、Tailwind CSS |
@@ -337,7 +391,7 @@ skill 写扁鹊怎么查：按证据域列出要用的工具、期望的证据�
 ## 目录结构
 
 ```text
-backend/     后端：接口、调查 Agent、工具、证据门、知识检索、MCP 服务、评测，以及测试与迁移
+backend/     后端：接口、调查 Agent、工具、证据门、知识检索、MCP 服务、A2A 服务、评测，以及测试与迁移
 frontend/    前端：React 单页应用、单元测试与 Playwright 端到端测试
 deploy/      Docker Compose 文件（回放、live、评测）与 Helm chart
 demo/        演示形态：kind 集群配置、监控与告警规则、演示应用 s1-app、脚本
@@ -358,7 +412,7 @@ docs/        架构说明、架构决策、能力对照与 README 的截图
 | `public-safety` | `make public-safety`：扫描仓库中不应公开的内容 |
 | `eval` | `make eval`：在隔离网络里回放全部用例，硬性门槛不通过则失败，报告作为构建产物上传 |
 | `frontend` | `make frontend-check`：前端 lint、类型检查、单元测试与构建 |
-| `e2e` | `make e2e`：以 `scripted` 模式起回放形态并运行 Playwright，上传报告与截图；在 pull request 与 `main` 上运行 |
+| `e2e` | `make e2e`：以 `scripted` 模式起回放形态，运行 Playwright 与 A2A 的端到端测试，上传报告与截图；在 pull request 与 `main` 上运行 |
 | `helm-rbac` | `make helm-rbac`：`helm lint`，并检查默认值与演示值渲染出的 RBAC 只有 get、list、watch |
 
 ## 许可证

@@ -176,6 +176,30 @@
 | `backend/tests/tools/test_tool_investigations.py` | 辅助工具按命名空间限定范围 |
 | `backend/tests/tools/test_tool_knowledge.py` | `knowledge_search` 的结果不是证据 |
 
+## A2A 服务
+
+扁鹊是一个 A2A 服务端：别的 Agent 用 A2A 协议（JSON-RPC 绑定，协议版本 1.0）把一条告警交给扁鹊调查，收到任务状态与报告。Agent Card 在 `/.well-known/agent-card.json`，读取不需要令牌；`/a2a` 需要客户端的 Bearer 令牌，令牌绑定命名空间，配置里只存令牌的 SHA-256。演示形态接受一条 firing 的 Alertmanager 告警，与 webhook 走同一路径与指纹去重；回放形态接受一个用例编号；其他类型的片段返回内容类型不支持，其余无法服务的请求以 `REJECTED` 结束并写明原因代码。任务状态由调查现算，状态消息由代码按进度事件生成，不含模型文本；报告作为 Artifact 返回，与详情接口的报告相同。客户端只能读到自己的任务；推送通知、取消、多轮消息与扩展 Agent Card 都不提供，修复建议只能在扁鹊页面上确认。A2A 发起的调查与其他方式发起的调查发出相同的模型请求。
+
+| 模块 | 作用 |
+| --- | --- |
+| `backend/bianque/a2a/card.py` | Agent Card |
+| `backend/bianque/a2a/clients.py` | 客户端与调用上下文 |
+| `backend/bianque/a2a/intake.py` | 发起：读 `data` 片段，判断是告警、用例还是要拒绝的请求 |
+| `backend/bianque/a2a/tasks.py` | 由调查现算任务、状态消息与 Artifact；按调用方过滤的任务存储 |
+| `backend/bianque/a2a/handler.py` | A2A 各操作：发起、流式、续传、读取、列表与不提供的操作 |
+| `backend/bianque/a2a/server.py` | `/a2a` 端点：Bearer 认证与 SDK 的 JSON-RPC 分发 |
+| `backend/bianque/auth/bearer.py` | 与 MCP 共用的 Bearer 令牌校验 |
+| `backend/bianque/agents/records.py` 的 `follow_events` | 读进度事件，调查的 SSE 与 A2A 任务流共用 |
+| `backend/migrations/versions/0005_a2a_tasks.py` | `a2a_tasks` 表与触发方式 `a2a` |
+
+| 测试 | 覆盖 |
+| --- | --- |
+| `backend/tests/api/test_api_a2a.py` | 用官方 A2A SDK 客户端经 HTTP 调用：流式到报告、报告与详情接口一致、认证、归属、每种拒绝原因、告警去重、断线续传、重启后的状态、不提供的操作、状态消息不含模型文本、请求键与经回放发起相同、`recorded` 模式全部命中录制 |
+| `backend/tests/a2a/test_a2a_units.py` | Agent Card、客户端配置、发起判断、状态消息与报告摘要 |
+| `backend/tests/agents/test_investigation_recorded.py` | 同一用例在 `recorded` 模式下再次调查全部命中录制 |
+| `backend/e2e/test_e2e_a2a.py` | `make e2e`：经 nginx 用官方 SDK 客户端读 Card、发起、流式、续传、认证、命名空间、归属与不提供的操作 |
+| `frontend/e2e/a2a.spec.ts` | `make e2e`：A2A 发起的调查在详情页显示「A2A」与调用方 |
+
 ## 人工确认
 
 报告里的修复建议分为 `read_only` 与 `change` 两个风险级别，会改动系统的命令只能出现在 `change` 级建议里。登录用户可以对每条建议确认或驳回一次，系统记录决定、操作人与时间，不执行任何命令。决定表只追加：数据库触发器拒绝更新与删除，请求体里没有表示操作人的字段，操作人取自登录会话。
