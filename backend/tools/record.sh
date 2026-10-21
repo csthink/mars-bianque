@@ -3,10 +3,11 @@
 #
 # 1. In a throwaway database, evaluate every case in live mode and record every model
 #    response into a new directory, one subdirectory per case, with the manifest.
-# 2. In a second throwaway database, evaluate again in recorded mode from that
+# 2. Keep the live run's report in a new eval/reports/<date>-<model>[-<n>]/ at once,
+#    whatever the run's result: every live run's report stays, and none is overwritten.
+# 3. In a second throwaway database, evaluate again in recorded mode from that
 #    directory, and check that the replay reproduced the live run.
-# 3. Only then replace eval/recordings with the new recordings, and keep the live run's
-#    report in eval/reports/<date>-<model>/.
+# 4. Only then replace eval/recordings with the new recordings.
 #
 # Usage: backend/tools/record.sh <work directory>
 # Needs LLM_API_KEY_FILE (a file holding the model key), LLM_MODEL, LLM_BASE_URL and
@@ -54,24 +55,40 @@ database() {
 cd "$root/backend"
 export BIANQUE_TOOL_BACKEND=pack BIANQUE_EMBEDDING_MODE=fixture \
   BIANQUE_EMBEDDING_FIXTURE="$root/eval/embeddings/bge-small-en-v1.5.json" \
-  BIANQUE_KNOWLEDGE_DIR="$root/knowledge/runbooks"
+  BIANQUE_KNOWLEDGE_DIR="$root/knowledge/runbooks" BIANQUE_SKILLS_DIR="$root/.agents/skills"
 evaluate=(uv run --locked bianque eval run --cases "$root/eval/cases"
   --queries "$root/eval/retrieval/queries.yaml")
 
 echo "recording every case with $LLM_MODEL into $work/recordings"
+status=0
 BIANQUE_DATABASE_URL=$(database) BIANQUE_LLM_API_KEY="$key_ref" \
   BIANQUE_LLM_BASE_URL="$LLM_BASE_URL" BIANQUE_LLM_MODEL="$LLM_MODEL" \
   BIANQUE_LLM_EXTRA_BODY="${LLM_EXTRA_BODY:-}" \
-  "${evaluate[@]}" --llm-mode live --record "$work/recordings" --out "$work/live"
+  "${evaluate[@]}" --llm-mode live --record "$work/recordings" --out "$work/live" || status=$?
+
+# The report of every live run is kept, in a directory no earlier run used.
+base="$root/eval/reports/$(date -u +%Y-%m-%d)-$LLM_MODEL"
+reports="$base"
+n=2
+while [ -e "$reports" ]; do
+  reports="$base-$n"
+  n=$((n + 1))
+done
+if [ -f "$work/live/report.json" ]; then
+  mkdir -p "$reports"
+  cp "$work/live/report.json" "$work/live/report.md" "$reports/"
+  echo "live report: ${reports#"$root"/}"
+fi
+if [ "$status" -ne 0 ]; then
+  echo "the live run failed (exit $status); eval/recordings is unchanged" >&2
+  exit "$status"
+fi
 
 echo "replaying the recordings"
 BIANQUE_DATABASE_URL=$(database) BIANQUE_LLM_RECORDINGS_DIR="$work/recordings" \
   "${evaluate[@]}" --llm-mode recorded --out "$work/replay"
 uv run --locked bianque eval compare "$work/live/report.json" "$work/replay/report.json"
 
-reports="$root/eval/reports/$(date -u +%Y-%m-%d)-$LLM_MODEL"
-rm -rf "$root/eval/recordings" "$reports"
+rm -rf "$root/eval/recordings"
 mv "$work/recordings" "$root/eval/recordings"
-mkdir -p "$reports"
-cp "$work/live/report.json" "$work/live/report.md" "$reports/"
 echo "recordings: eval/recordings; live report: ${reports#"$root"/}"
