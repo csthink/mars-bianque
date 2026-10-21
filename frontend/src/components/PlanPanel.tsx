@@ -73,6 +73,16 @@ export function PlanPanel({
               计划 v{plan.version}（{plan.source === "default" ? "模型的计划被拒，退回默认计划" : "模型生成"}）：
               {plan.rationale}
             </p>
+            {plan.skills.length > 0 && (
+              <p data-testid="plan-skills" className="-mt-1 mb-3 flex flex-wrap items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                <span className="mr-0.5">参考的 skill</span>
+                {plan.skills.map((name) => (
+                  <Badge key={name}>
+                    <span className="font-mono">{name}</span>
+                  </Badge>
+                ))}
+              </p>
+            )}
             <ol className="space-y-2.5">
               {plan.steps.map((step) => {
                 const status = STEP_STATUS[step.status] ?? { label: step.status, className: "" };

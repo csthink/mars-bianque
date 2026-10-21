@@ -7,12 +7,13 @@ const KIND_LABELS: Record<CallList["calls"][number]["kind"], string> = {
   model: "模型",
   tool: "工具",
   knowledge: "知识检索",
+  skill: "skill",
 };
 
 export function CallTable({ data, startedAt }: { data: CallList; startedAt: string }) {
   const { calls, totals } = data;
   const origin = new Date(startedAt).getTime();
-  const summary = `合计 ${totals.calls} 次调用（模型 ${totals.model_calls} 次、工具 ${totals.tool_calls} 次、知识检索 ${totals.knowledge_calls} 次）· token ${formatTokens(
+  const summary = `合计 ${totals.calls} 次调用（模型 ${totals.model_calls} 次、工具 ${totals.tool_calls} 次、知识检索 ${totals.knowledge_calls} 次、skill ${totals.skill_calls} 次）· token ${formatTokens(
     totals.tokens_in + totals.tokens_out,
   )} · 总耗时 ${formatDuration(totals.elapsed_ms)}`;
   return (

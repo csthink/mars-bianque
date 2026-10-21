@@ -65,6 +65,8 @@ export interface PlanView {
   version: number;
   source: string;
   rationale: string;
+  /** The skills loaded when this version was generated, by name. */
+  skills: string[];
   created_at: string;
   steps: StepView[];
 }
@@ -156,7 +158,7 @@ export interface InvestigationDetail {
 export interface CallView {
   id: number;
   agent: string;
-  kind: "model" | "tool" | "knowledge";
+  kind: "model" | "tool" | "knowledge" | "skill";
   name: string;
   caller: string | null;
   started_at: string;
@@ -177,6 +179,7 @@ export interface CallTotals {
   model_calls: number;
   tool_calls: number;
   knowledge_calls: number;
+  skill_calls: number;
   tokens_in: number;
   tokens_out: number;
   latency_ms: number;

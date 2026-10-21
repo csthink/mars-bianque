@@ -65,13 +65,26 @@ export const callList: CallList = {
       tokens_out: null,
       gate: null,
     }),
+    call({
+      id: 5,
+      kind: "skill",
+      name: "investigate-pod-restarts",
+      started_at: "2026-10-19T22:34:01Z",
+      latency_ms: 1,
+      input_summary: "investigate-pod-restarts",
+      output_summary: "sha256 5d41402abc4b; first load",
+      tokens_in: null,
+      tokens_out: null,
+      gate: null,
+    }),
     call({ id: 3, name: "report", started_at: "2026-10-19T22:34:30Z", gate: { passed: false, validators: ["citation_integrity"] } }),
   ],
   totals: {
-    calls: 4,
+    calls: 5,
     model_calls: 2,
     tool_calls: 1,
     knowledge_calls: 1,
+    skill_calls: 1,
     tokens_in: 38000,
     tokens_out: 210,
     latency_ms: 2390,
@@ -96,6 +109,6 @@ export function step(overrides: Partial<StepView>): StepView {
   };
 }
 
-export function plan(version: number, steps: StepView[], source = "model"): PlanView {
-  return { id: version, version, source, rationale: "", created_at: "2026-10-19T22:34:00Z", steps };
+export function plan(version: number, steps: StepView[], source = "model", skills: string[] = []): PlanView {
+  return { id: version, version, source, rationale: "", skills, created_at: "2026-10-19T22:34:00Z", steps };
 }

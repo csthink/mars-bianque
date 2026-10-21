@@ -9,7 +9,8 @@ import { CallTimeline } from "../../src/components/CallTimeline";
 import { Citation } from "../../src/components/Citation";
 import { CitableIds } from "../../src/components/citableContext";
 import { StepCard, type StepNode } from "../../src/components/FlowGraph";
-import { callList, step } from "./fixtures";
+import { PlanPanel } from "../../src/components/PlanPanel";
+import { callList, plan, step } from "./fixtures";
 
 function withEvidence(ids: string[], node: ReactNode) {
   return (
@@ -42,11 +43,13 @@ describe("Citation", () => {
 describe("CallTable", () => {
   it("shows every call and the totals", () => {
     render(withEvidence(["ev_0000000002"], <CallTable data={callList} startedAt="2026-10-19T22:34:00Z" />));
-    expect(screen.getAllByTestId("call-row")).toHaveLength(4);
+    expect(screen.getAllByTestId("call-row")).toHaveLength(5);
     expect(screen.getByTestId("call-totals")).toHaveTextContent(
-      "合计 4 次调用（模型 2 次、工具 1 次、知识检索 1 次）· token 38.2k · 总耗时 1 分 24 秒",
+      "合计 5 次调用（模型 2 次、工具 1 次、知识检索 1 次、skill 1 次）· token 38.2k · 总耗时 1 分 24 秒",
     );
     expect(screen.getByText("知识检索", { selector: "td" })).toBeInTheDocument();
+    expect(screen.getByText("skill", { selector: "td" })).toBeInTheDocument();
+    expect(screen.getByText("investigate-pod-restarts", { selector: "td" })).toBeInTheDocument();
     expect(screen.getByText("拒绝：citation_integrity")).toBeInTheDocument();
   });
 });
@@ -69,6 +72,40 @@ describe("CallTimeline", () => {
     expect(detail()).toHaveTextContent("检索查询Bianque Pod Restarting");
     expect(detail()).toHaveTextContent("知识不是证据");
     expect(detail()).toHaveTextContent("kn_c73d8439117f");
+    await userEvent.click(screen.getByRole("button", { name: /^investigate-pod-restarts，/ }));
+    expect(detail()).toHaveTextContent("skill 名investigate-pod-restarts");
+    expect(detail()).toHaveTextContent("首次加载");
+    expect(detail()).toHaveTextContent("sha256 5d41402abc4b");
+    expect(detail()).toHaveTextContent("skill 只说明怎么查，不是证据");
+  });
+
+  it("names the loading of a skill again", async () => {
+    const again = callList.calls.map((item) =>
+      item.kind === "skill" ? { ...item, output_summary: "sha256 5d41402abc4b; already loaded" } : item,
+    );
+    render(withEvidence([], <CallTimeline calls={again} startedAt="2026-10-19T22:34:00Z" elapsedMs={84000} />));
+    await userEvent.click(screen.getByRole("button", { name: /^investigate-pod-restarts，/ }));
+    expect(screen.getByTestId("call-detail")).toHaveTextContent("已加载（本次调查之前加载过）");
+  });
+});
+
+describe("PlanPanel", () => {
+  it("lists the skills of the shown plan version", async () => {
+    const plans = [
+      plan(1, [step({ id: 1 })], "model", ["investigate-pod-restarts"]),
+      plan(2, [step({ id: 2, domain: "change" })], "model", ["diagnose-config-error", "investigate-pod-restarts"]),
+    ];
+    render(withEvidence([], <PlanPanel plans={plans} assessments={[]} />));
+    expect(screen.getByTestId("plan-skills")).toHaveTextContent("参考的 skillinvestigate-pod-restarts");
+    await userEvent.click(screen.getByRole("tab", { name: "v2" }));
+    expect(screen.getByTestId("plan-skills")).toHaveTextContent(
+      "参考的 skilldiagnose-config-errorinvestigate-pod-restarts",
+    );
+  });
+
+  it("shows no skill line for a plan made without skills", () => {
+    render(withEvidence([], <PlanPanel plans={[plan(1, [step({ id: 1 })])]} assessments={[]} />));
+    expect(screen.queryByTestId("plan-skills")).toBeNull();
   });
 });
 

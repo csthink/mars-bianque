@@ -108,9 +108,23 @@ test("the call table lists every call with token and time totals", async ({ page
   await expect(page.getByTestId("call-row")).toHaveCount(calls.calls.length);
   const tokens = ((totals.tokens_in + totals.tokens_out) / 1000).toFixed(1);
   await expect(page.getByTestId("call-totals")).toContainText(
-    `合计 ${totals.calls} 次调用（模型 ${totals.model_calls} 次、工具 ${totals.tool_calls} 次、知识检索 ${totals.knowledge_calls} 次）· token ${tokens}k · 总耗时`,
+    `合计 ${totals.calls} 次调用（模型 ${totals.model_calls} 次、工具 ${totals.tool_calls} 次、知识检索 ${totals.knowledge_calls} 次、skill ${totals.skill_calls} 次）· token ${tokens}k · 总耗时`,
   );
   await expect(page.getByTestId("investigation-stats")).toContainText(`${totals.calls} 次调用`);
+});
+
+test("the skill loaded while planning shows on the plan and among the calls", async ({ page }) => {
+  const id = await seededInvestigation(page.request);
+  const data = await detail(page.request, id);
+  // The scripted planning model loads the pod restart skill for the S1 alert.
+  expect(data.plans[0]?.skills).toEqual(["investigate-pod-restarts"]);
+  await page.goto(`/investigations/${id}`);
+  await expect(page.getByTestId("plan-skills")).toHaveText(/参考的 skill\s*investigate-pod-restarts/);
+  const row = page.getByTestId("call-row").filter({ hasText: "investigate-pod-restarts" });
+  await expect(row).toHaveCount(1);
+  await expect(row).toContainText("skill");
+  await page.getByRole("button", { name: /^investigate-pod-restarts，/ }).click();
+  await expect(page.getByTestId("call-detail")).toContainText("首次加载");
 });
 
 test("an unknown investigation shows a not-found message", async ({ page }) => {
