@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDuration, formatTokens } from "../../src/lib/format";
+import { formatDuration, formatTokens, triggerLabel } from "../../src/lib/format";
 
 describe("formatTokens", () => {
   it("keeps small counts and abbreviates thousands", () => {
@@ -15,5 +15,11 @@ describe("formatDuration", () => {
     expect(formatDuration(5200)).toBe("5.2 秒");
     expect(formatDuration(5000)).toBe("5 秒");
     expect(formatDuration(84000)).toBe("1 分 24 秒");
+  });
+});
+
+describe("triggerLabel", () => {
+  it("names every trigger, A2A included", () => {
+    expect(["alert", "manual", "replay", "a2a"].map(triggerLabel)).toEqual(["告警", "手动", "回放", "A2A"]);
   });
 });

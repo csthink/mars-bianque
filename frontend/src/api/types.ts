@@ -28,6 +28,8 @@ export interface InvestigationInfo {
   started_at: string;
   finished_at: string | null;
   error: string | null;
+  /** The A2A client of the earliest task that follows the investigation. */
+  caller: string | null;
 }
 
 export interface AlertView {

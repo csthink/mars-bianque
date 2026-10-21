@@ -4,13 +4,14 @@ import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
+import { AlertCard } from "../../src/components/AlertCard";
 import { CallTable } from "../../src/components/CallTable";
 import { CallTimeline } from "../../src/components/CallTimeline";
 import { Citation } from "../../src/components/Citation";
 import { CitableIds } from "../../src/components/citableContext";
 import { StepCard, type StepNode } from "../../src/components/FlowGraph";
 import { PlanPanel } from "../../src/components/PlanPanel";
-import { callList, plan, step } from "./fixtures";
+import { callList, detail, plan, step } from "./fixtures";
 
 function withEvidence(ids: string[], node: ReactNode) {
   return (
@@ -37,6 +38,20 @@ describe("Citation", () => {
     render(withEvidence([], <Citation id="ev_ffffffffff" />));
     expect(screen.queryByRole("link")).toBeNull();
     expect(screen.getByText("ev_ffffffffff")).toHaveAttribute("title", "本调查没有这条证据");
+  });
+});
+
+describe("AlertCard", () => {
+  it("names the A2A client of an investigation an A2A task started", () => {
+    render(withEvidence([], <AlertCard detail={detail({ trigger: "a2a", caller: "demo-agent" })} />));
+    expect(screen.getByTestId("alert-card")).toHaveTextContent("触发：A2A");
+    expect(screen.getByTestId("alert-card")).toHaveTextContent("调用方 demo-agent");
+  });
+
+  it("names no client otherwise", () => {
+    render(withEvidence([], <AlertCard detail={detail({})} />));
+    expect(screen.getByTestId("alert-card")).toHaveTextContent("触发：告警");
+    expect(screen.getByTestId("alert-card")).not.toHaveTextContent("调用方");
   });
 });
 

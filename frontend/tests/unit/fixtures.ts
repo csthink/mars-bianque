@@ -1,4 +1,12 @@
-import type { CallList, CallView, EvidenceView, PlanView, StepView } from "../../src/api/types";
+import type {
+  CallList,
+  CallView,
+  EvidenceView,
+  InvestigationDetail,
+  InvestigationInfo,
+  PlanView,
+  StepView,
+} from "../../src/api/types";
 
 export function call(overrides: Partial<CallView>): CallView {
   return {
@@ -111,4 +119,41 @@ export function step(overrides: Partial<StepView>): StepView {
 
 export function plan(version: number, steps: StepView[], source = "model", skills: string[] = []): PlanView {
   return { id: version, version, source, rationale: "", skills, created_at: "2026-10-19T22:34:00Z", steps };
+}
+
+export function detail(overrides: Partial<InvestigationInfo>): InvestigationDetail {
+  return {
+    investigation: {
+      id: "inv_01M5FD2RKZMZQHV1VN898AQHB0",
+      status: "reported",
+      trigger: "alert",
+      case_id: null,
+      tool_backend: "live",
+      llm_mode: "live",
+      llm_model: "deepseek-v4-pro",
+      token_budget: 120000,
+      tokens_used: 38210,
+      started_at: "2026-10-19T22:34:00Z",
+      finished_at: "2026-10-19T22:35:24Z",
+      error: null,
+      caller: null,
+      ...overrides,
+    },
+    alert: {
+      name: "KubePodCrashLooping",
+      status: "firing",
+      fingerprint: "3f2a9c01de4b7a65",
+      labels: { alertname: "KubePodCrashLooping", namespace: "demo-s1", pod: "s1-app-7d9c" },
+      annotations: {},
+      starts_at: "2026-10-19T22:30:00Z",
+      received_at: "2026-10-19T22:34:00Z",
+      evidence_id: null,
+    },
+    plans: [],
+    assessments: [],
+    evidence: [],
+    report: null,
+    rejected_attempts: [],
+    suggestions: [],
+  };
 }

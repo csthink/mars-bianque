@@ -11,6 +11,7 @@ export function AlertCard({ detail, totals }: { detail: InvestigationDetail; tot
     labels.container ? `容器 ${labels.container}` : null,
     `开始 ${formatClock(investigation.started_at)}`,
     `触发：${triggerLabel(investigation.trigger)}`,
+    investigation.caller ? `调用方 ${investigation.caller}` : null,
     investigation.case_id ? `用例 ${investigation.case_id}` : null,
   ].filter((fact): fact is string => fact !== null);
   const stats = [
