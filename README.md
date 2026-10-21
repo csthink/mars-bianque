@@ -71,7 +71,7 @@ flowchart TB
 
 ## 演示
 
-三分钟演示在演示形态（本机 kind 集群、真实模型）上进行：
+三分钟演示在演示形态（本机 kind 集群、真实模型）上进行。录屏 [bianque-demo.mp4](https://github.com/csthink/mars-bianque/releases/download/v0.1.0/bianque-demo.mp4)（3 分 29 秒，中文字幕）是 `v0.1.0` Release 的附件，录的是一次全新环境的运行：删除本机的扁鹊镜像、kind 集群与 `.demo/` 后，从全新克隆运行 `make demo`，再注入故障。等告警与等模型生成报告两段按 4 倍速播放，画面上标出实际时长，其余是实际速度。
 
 1. `make inject-s1 CASE=a` 向清单仓提交一次改动，把演示应用的 `APP_MODE` 改成非法值，Pod 进入 CrashLoopBackOff。
 2. 约 1 分钟后 Alertmanager 把 `BianquePodRestarting` 告警推给扁鹊，调查列表出现一次新调查。
@@ -81,6 +81,24 @@ flowchart TB
 6. 追问「为什么认定是这次提交」：校验期间只显示进度，通过后带引用的回答分段出现。
 7. 确认一条「变更」级修复建议：页面记录操作人与时间，系统不执行命令。
 8. 调用记录按 Agent 列出全部模型与工具调用，以及 token 与耗时合计。
+
+下面四张截图取自录屏的同一次调查。
+
+流程图：计划步骤按取证子 Agent 分泳道，第 2 轮的补充计划加入 `change` 泳道。
+
+![调查详情：告警卡片、流程图与进度事件](docs/images/investigation-flow.png)
+
+报告：每轮判断写明理由与是否被确定性规则推翻；根因与时间线的每条结论都引用证据编号。
+
+![调查详情：计划与判断、报告](docs/images/report.png)
+
+追问：回答每段都引用证据，运维手册只作为参考资料列出。
+
+![追问面板](docs/images/follow-up.png)
+
+调用记录：每次模型、工具与知识调用的耗时、token 与证据门结果。
+
+![调用记录](docs/images/call-records.png)
 
 ## 快速开始
 
@@ -145,7 +163,7 @@ make demo LLM_API_KEY_FILE=<密钥文件>
 | `make helm-rbac` | `helm lint`，并确认 chart 渲染出的 RBAC 只有 get、list、watch |
 | `make demo-down` | 删除 kind 集群与 `.demo/kind/`；`.demo/` 的其余内容保留，要从头开始就另外删除 `.demo/` |
 
-注入 S1-a 后约 1 分钟（实测 48 至 76 秒）Alertmanager 发出 `BianquePodRestarting` 告警，扁鹊随即开始调查，页面上能看到实时进度与流程图；实测一次 S1-a 调查约 70 秒、40 余次调用、约 10 万 token。告警规则只看 `demo-s1`；扁鹊的 ServiceAccount 只能在 `demo-s1` 里 get、list、watch Pod、Pod 日志、事件、Deployment 与 ReplicaSet，读不到其他命名空间。所有命令都指定 `kind-bianque-demo` 这个 kubectl context，建集群后切回原来的当前 context，不改动其他集群。
+注入 S1-a 后约 1 分钟（2026-10-21 四次实测 50 至 85 秒）Alertmanager 发出 `BianquePodRestarting` 告警，扁鹊随即开始调查，页面上能看到实时进度与流程图；同样四次实测，一次 S1-a 调查用时 1 分 30 秒至 1 分 40 秒、34 至 41 次调用、8.5 万至 10 万 token。告警规则只看 `demo-s1`；扁鹊的 ServiceAccount 只能在 `demo-s1` 里 get、list、watch Pod、Pod 日志、事件、Deployment 与 ReplicaSet，读不到其他命名空间。所有命令都指定 `kind-bianque-demo` 这个 kubectl context，建集群后切回原来的当前 context，不改动其他集群。
 
 内存：kind 节点容器（集群里的全部 Pod 都在其中）在 `make demo` 完成后实测约 1.5 至 1.9 GiB，一次调查之后约 1.7 至 2.1 GiB，其中扁鹊后端加载嵌入模型后约 320 MiB。给 Docker 分 4 GiB 以上即可。
 
@@ -211,6 +229,8 @@ claude mcp add --transport http bianque http://127.0.0.1:8080/mcp \
 | 调查消耗的 token | 630926 |
 
 6 个用例是配置错误（S1-a）、内存限制过小（S1-b）、存活检查指向错误路径（S1-c）、回放时日志工具超时的 S1-a（S1-d）、故障提交不是最近一次提交（S1-e）、只有告警与 Pod 可用（S1-f，期望根因为未知）。检索指标按 `eval/retrieval/queries.yaml` 的 24 条标注查询计算，取前 5 条结果。
+
+报告里 S1-d 与 S1-f 的 token 超过了 120000 的调查预算。预算在每轮取证后检查一次（`backend/bianque/agents/nodes.py` 的 `assess`），超出后不再补充计划，直接生成报告，所以最后一轮与生成报告的消耗不受预算限制。这两个用例证据不全（日志工具超时；只有告警与 Pod），调查用了更多轮次：模型调用分别是 43 与 50 次，其余用例是 25 至 29 次。
 
 硬性门槛是确定性检查：每个调查都以报告结束；每份最终报告与追问回答用运行时的同一个 `validate` 重新通过证据门，最终报告还要符合导出的 JSON Schema；注册表里没有写工具；没有来自 Agent 的证据；没有把知识编号当证据引用。`make eval` 另把网络隔离作为一项硬性门槛。
 
@@ -283,7 +303,7 @@ demo/        演示形态：kind 集群配置、监控与告警规则、演示�
 eval/        评测用例与证据包、录制响应、嵌入向量固定数据、检索查询、评测报告
 knowledge/   运维手册（Markdown）
 tools/       公开内容扫描与 Git hook 安装脚本
-docs/        架构说明、架构决策与能力对照
+docs/        架构说明、架构决策、能力对照与 README 的截图
 ```
 
 ## CI
