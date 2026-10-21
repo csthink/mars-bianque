@@ -7,45 +7,29 @@ Bianque is an alert-driven root cause analysis agent for Kubernetes. When Alertm
 ## 架构
 
 ```mermaid
-flowchart TB
+flowchart LR
   AM["Alertmanager"] -->|"webhook"| API["FastAPI 接口"]
   UI["React 前端"] -->|"REST、SSE"| API
-
-  subgraph AGENT["调查 Agent（LangGraph）"]
-    PLAN["plan"] --> ASSESS["assess"]
-    ASSESS -->|"不充分"| REPLAN["replan"]
-    ASSESS -->|"充分"| REPORT["report"]
-  end
   API --> PLAN
 
-  PLAN -->|"分派步骤"| SUB
-  REPLAN -->|"分派步骤"| SUB
-  subgraph SUB["取证子 Agent（同一轮并行）"]
-    K8S["kubernetes"]
-    LOGS["logs"]
-    CHANGE["change"]
+  subgraph GRAPH["调查图（LangGraph）"]
+    direction TB
+    PLAN["plan / replan"] -->|"按证据域分派"| SUB["取证子 Agent<br/>kubernetes、logs、change<br/>同一轮并行"]
+    SUB -->|"发现"| ASSESS["assess"]
+    ASSESS -->|"不充分"| PLAN
+    ASSESS -->|"充分"| REPORT["report"]
+    REPORT --> GATE{"证据门"}
+    GATE -->|"被拒，重试"| REPORT
+    GATE -->|"通过"| PUB["正式报告"]
+    GATE -->|"重试用尽"| DEG["降级报告"]
   end
-  SUB -->|"发现"| ASSESS
 
-  SUB --> EXEC["工具执行器与注册表"]
-  MCPC["MCP 客户端"] -->|"Streamable HTTP"| MCP["MCP 服务 /mcp"]
-  MCP --> EXEC
-  EXEC --> KAPI["Kubernetes API"]
-  EXEC --> PODLOGS["Pod 日志"]
-  EXEC --> GIT["清单 Git 仓"]
-
-  REPORT --> GATE{"证据门"}
-  GATE -->|"通过"| PUB["发布报告"]
-  GATE -->|"被拒"| REPORT
-  GATE -->|"重试用尽"| DEG["降级报告"]
-
-  AGENT -.-> LLM["模型网关"]
-  SUB -.-> LLM
-
-  PG[("PostgreSQL + pgvector<br/>业务数据、检查点、事件、知识")]
-  API --> PG
-  AGENT --> PG
+  GRAPH -.->|"先脱敏"| LLM["模型网关"]
+  GRAPH --> PG[("PostgreSQL<br/>pgvector")]
+  SUB --> EXEC["工具执行器<br/>与注册表"]
+  MCPC["MCP 客户端"] -->|"/mcp"| EXEC
   EXEC --> PG
+  EXEC --> SRC["只读数据源<br/>Kubernetes API<br/>Pod 日志<br/>清单 Git 仓"]
 ```
 
 - 调查图在 `backend/bianque/agents/graph.py`，节点在 `nodes.py`，取证子 Agent 在 `subagent.py`。三个取证子 Agent 是同一份实现，区别只在证据域。
